@@ -137,7 +137,7 @@ public sealed partial class SshConfigService
     public static string BuildManagedBlock(GitHubIdentity identity, string newline)
     {
         var keyPath = ConvertWindowsPathToOpenSsh(identity.PrivateKeyPath);
-        if (keyPath.Contains(' ', StringComparison.Ordinal))
+        if (keyPath.Contains(' '))
         {
             keyPath = $"\"{keyPath}\"";
         }
