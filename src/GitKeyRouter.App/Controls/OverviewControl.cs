@@ -9,13 +9,17 @@ public sealed class OverviewControl : UserControl, IAsyncRefreshable
 {
     private readonly ApplicationServices _services;
     private readonly Action<string> _status;
-    private readonly TextBox _summary = new()
+    private readonly RichTextBox _summary = new()
     {
         Dock = DockStyle.Fill,
-        Multiline = true,
         ReadOnly = true,
-        ScrollBars = ScrollBars.Vertical,
-        Font = new Font("Segoe UI", 10F)
+        BorderStyle = BorderStyle.None,
+        BackColor = UiHelpers.Surface,
+        ForeColor = UiHelpers.TextPrimary,
+        DetectUrls = false,
+        ScrollBars = RichTextBoxScrollBars.Vertical,
+        Font = new Font("Segoe UI", 10F),
+        Margin = Padding.Empty
     };
 
     public OverviewControl(ApplicationServices services, Action<string> status)
@@ -23,19 +27,13 @@ public sealed class OverviewControl : UserControl, IAsyncRefreshable
         _services = services;
         _status = status;
 
-        var header = new Label
-        {
-            Text = "概览",
-            Dock = DockStyle.Top,
-            Height = 44,
-            Font = new Font("Segoe UI Semibold", 18F)
-        };
+        var header = UiHelpers.CreatePageHeader("概览", "快速检查工具链、身份、路由和备份状态");
         var toolbar = UiHelpers.CreateToolbar();
         toolbar.Controls.Add(UiHelpers.Button("刷新", async (_, _) => await RefreshAsync()));
         toolbar.Controls.Add(UiHelpers.Button("一键诊断", async (_, _) => await RunDiagnosticsAsync()));
         toolbar.Controls.Add(UiHelpers.Button("打开配置目录", (_, _) => OpenDirectory(_services.Paths.AppDataDirectory)));
 
-        Controls.Add(_summary);
+        Controls.Add(UiHelpers.CreateCard(_summary, new Padding(22)));
         Controls.Add(toolbar);
         Controls.Add(header);
     }

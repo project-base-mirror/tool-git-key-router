@@ -21,13 +21,7 @@ public sealed class SshConfigControl : UserControl, IAsyncRefreshable
         _services = services;
         _status = status;
 
-        var header = new Label
-        {
-            Text = "SSH Config",
-            Dock = DockStyle.Top,
-            Height = 44,
-            Font = new Font("Segoe UI Semibold", 18F)
-        };
+        var header = UiHelpers.CreatePageHeader("SSH Config", "查看、同步和恢复 GitKeyRouter 管理的 Host 配置");
         var toolbar = UiHelpers.CreateToolbar();
         toolbar.Controls.Add(UiHelpers.Button("同步全部身份", async (_, _) => await SynchronizeAllAsync()));
         toolbar.Controls.Add(UiHelpers.Button("删除选中区块", async (_, _) => await DeleteSelectedAsync()));

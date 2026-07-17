@@ -17,13 +17,7 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
         _services = services;
         _status = status;
 
-        var header = new Label
-        {
-            Text = "GitHub 身份",
-            Dock = DockStyle.Top,
-            Height = 44,
-            Font = new Font("Segoe UI Semibold", 18F)
-        };
+        var header = UiHelpers.CreatePageHeader("GitHub 身份", "管理身份信息、SSH 密钥、公钥格式与连接测试");
         var toolbar = UiHelpers.CreateToolbar();
         toolbar.Controls.Add(UiHelpers.Button("新建", async (_, _) => await CreateAsync()));
         toolbar.Controls.Add(UiHelpers.Button("编辑", async (_, _) => await EditAsync()));

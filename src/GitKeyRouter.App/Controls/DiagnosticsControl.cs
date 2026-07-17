@@ -26,13 +26,7 @@ public sealed class DiagnosticsControl : UserControl, IAsyncRefreshable
     {
         _services = services;
         _status = status;
-        var header = new Label
-        {
-            Text = "诊断",
-            Dock = DockStyle.Top,
-            Height = 44,
-            Font = new Font("Segoe UI Semibold", 18F)
-        };
+        var header = UiHelpers.CreatePageHeader("诊断", "集中检查工具链、配置文件、SSH 与 Git rewrite 状态");
         var toolbar = UiHelpers.CreateToolbar();
         toolbar.Controls.Add(UiHelpers.Button("一键诊断", async (_, _) => await RefreshAsync()));
         toolbar.Controls.Add(UiHelpers.Button("复制诊断报告", (_, _) => CopyReport()));

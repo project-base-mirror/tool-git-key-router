@@ -17,13 +17,7 @@ public sealed class GitRewritesControl : UserControl, IAsyncRefreshable
     {
         _services = services;
         _status = status;
-        var header = new Label
-        {
-            Text = "Git 重写配置",
-            Dock = DockStyle.Top,
-            Height = 44,
-            Font = new Font("Segoe UI Semibold", 18F)
-        };
+        var header = UiHelpers.CreatePageHeader("Git 重写配置", "检查并修复 Git URL 到 SSH HostAlias 的重写规则");
         var toolbar = UiHelpers.CreateToolbar();
         toolbar.Controls.Add(UiHelpers.Button("应用缺失配置", async (_, _) => await ApplyPlanAsync(await _services.GitUrlRewriteService.BuildApplyMissingPlanAsync(), "应用缺失配置")));
         toolbar.Controls.Add(UiHelpers.Button("修复当前全部路由", async (_, _) => await ApplyPlanAsync(await _services.GitUrlRewriteService.BuildReconcilePlanAsync(), "修复 Git rewrite")));

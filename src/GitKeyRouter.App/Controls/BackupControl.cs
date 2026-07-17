@@ -18,13 +18,7 @@ public sealed class BackupControl : UserControl, IAsyncRefreshable
     {
         _services = services;
         _status = status;
-        var header = new Label
-        {
-            Text = "备份与恢复",
-            Dock = DockStyle.Top,
-            Height = 44,
-            Font = new Font("Segoe UI Semibold", 18F)
-        };
+        var header = UiHelpers.CreatePageHeader("备份与恢复", "创建配置快照，并按需恢复 SSH、Git 或程序配置");
         var toolbar = UiHelpers.CreateToolbar();
         toolbar.Controls.Add(UiHelpers.Button("立即创建快照", async (_, _) => await CreateSnapshotAsync()));
         toolbar.Controls.Add(UiHelpers.Button("查看内容", async (_, _) => await ViewAsync()));

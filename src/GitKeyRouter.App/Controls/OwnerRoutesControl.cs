@@ -16,13 +16,7 @@ public sealed class OwnerRoutesControl : UserControl, IAsyncRefreshable
     {
         _services = services;
         _status = status;
-        var header = new Label
-        {
-            Text = "Owner 路由",
-            Dock = DockStyle.Top,
-            Height = 44,
-            Font = new Font("Segoe UI Semibold", 18F)
-        };
+        var header = UiHelpers.CreatePageHeader("Owner 路由", "把不同 GitHub Owner 稳定映射到对应 SSH 身份");
         var toolbar = UiHelpers.CreateToolbar();
         toolbar.Controls.Add(UiHelpers.Button("新建", async (_, _) => await CreateAsync()));
         toolbar.Controls.Add(UiHelpers.Button("编辑", async (_, _) => await EditAsync()));
