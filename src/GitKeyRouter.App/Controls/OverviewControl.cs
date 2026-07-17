@@ -1,5 +1,7 @@
 using System.Text;
 using GitKeyRouter.App.Presentation;
+using GitKeyRouter.Core.Diagnostics;
+using GitKeyRouter.Core.Models;
 
 namespace GitKeyRouter.App.Controls;
 
@@ -88,12 +90,12 @@ public sealed class OverviewControl : UserControl, IAsyncRefreshable
     {
         _status("正在执行一键诊断...");
         var report = await _services.DiagnosticService.RunAsync();
-        using var form = new Forms.TextViewForm("诊断报告", Core.Diagnostics.DiagnosticReportFormatter.Format(report));
+        using var form = new GitKeyRouter.App.Forms.TextViewForm("诊断报告", DiagnosticReportFormatter.Format(report));
         form.ShowDialog(this);
         _status($"诊断完成：错误 {report.ErrorCount}，警告 {report.WarningCount}");
     }
 
-    private static void AppendTool(StringBuilder builder, Core.Models.ExecutableInfo tool)
+    private static void AppendTool(StringBuilder builder, ExecutableInfo tool)
     {
         builder.AppendLine($"{tool.Name}: {(tool.Exists ? "已找到" : "缺失")}");
         builder.AppendLine($"  路径：{tool.SelectedPath ?? "<未找到>"}");

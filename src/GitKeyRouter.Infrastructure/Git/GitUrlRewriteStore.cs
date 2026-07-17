@@ -8,11 +8,16 @@ public sealed class GitUrlRewriteStore : IGitUrlRewriteStore
     private const string InsteadOfSuffix = ".insteadof";
     private readonly IProcessRunner _processRunner;
     private readonly IToolchainService _toolchainService;
+    private readonly IReadOnlyDictionary<string, string?> _environmentVariables;
 
-    public GitUrlRewriteStore(IProcessRunner processRunner, IToolchainService toolchainService)
+    public GitUrlRewriteStore(
+        IProcessRunner processRunner,
+        IToolchainService toolchainService,
+        IReadOnlyDictionary<string, string?>? environmentVariables = null)
     {
         _processRunner = processRunner;
         _toolchainService = toolchainService;
+        _environmentVariables = environmentVariables ?? new Dictionary<string, string?>();
     }
 
     public string? GitExecutablePath { get; private set; }
@@ -99,6 +104,7 @@ public sealed class GitUrlRewriteStore : IGitUrlRewriteStore
         {
             ExecutablePath = executablePath,
             Arguments = arguments,
-            Timeout = timeout ?? TimeSpan.FromSeconds(20)
+            Timeout = timeout ?? TimeSpan.FromSeconds(20),
+            EnvironmentVariables = _environmentVariables
         }, cancellationToken);
 }

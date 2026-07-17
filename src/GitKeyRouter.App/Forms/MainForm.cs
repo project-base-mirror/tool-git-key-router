@@ -116,7 +116,7 @@ public sealed class MainForm : Form
     {
         if (InvokeRequired)
         {
-            BeginInvoke(() => SetStatus(text));
+            BeginInvoke(new Action(() => SetStatus(text)));
             return;
         }
 

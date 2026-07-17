@@ -77,7 +77,8 @@ public sealed class GitUrlRewriteService
         var plan = new GitRewritePlan();
         foreach (var rule in expected)
         {
-            if (!actual.Any(item => RuleEquals(item, rule)))
+            var samePrefix = actual.Any(item => string.Equals(item.InsteadOfUrl, rule.InsteadOfUrl, StringComparison.OrdinalIgnoreCase));
+            if (!samePrefix)
             {
                 plan.Adds.Add(rule);
             }
