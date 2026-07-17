@@ -101,6 +101,23 @@ public sealed class GitUrlRewriteService
         return plan;
     }
 
+    public async Task<GitRewritePlan> BuildDeleteRulePlanAsync(
+        string baseUrl,
+        string insteadOfUrl,
+        CancellationToken cancellationToken = default)
+    {
+        var actual = await _store.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        var plan = new GitRewritePlan();
+        var rule = actual.FirstOrDefault(item => string.Equals(item.BaseUrl, baseUrl, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(item.InsteadOfUrl, insteadOfUrl, StringComparison.OrdinalIgnoreCase));
+        if (rule is not null)
+        {
+            plan.Removes.Add(rule);
+        }
+
+        return plan;
+    }
+
     public async Task<GitRewritePlan> BuildDeleteOwnerPlanAsync(string owner, CancellationToken cancellationToken = default)
     {
         var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
