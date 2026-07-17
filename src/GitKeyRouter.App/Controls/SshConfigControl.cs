@@ -62,6 +62,16 @@ public sealed class SshConfigControl : UserControl, IAsyncRefreshable
         var parsed = new StringBuilder();
         parsed.AppendLine($"路径：{_services.Paths.SshConfigPath}");
         parsed.AppendLine($"受管理区块：{_blocks.Count}");
+        var hostLines = _raw.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n')
+            .Split('\n')
+            .Select(line => line.Trim())
+            .Where(line => line.StartsWith("Host ", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        parsed.AppendLine($"全部 Host 声明：{hostLines.Count}");
+        foreach (var hostLine in hostLines)
+        {
+            parsed.AppendLine($"  {hostLine}");
+        }
         parsed.AppendLine();
         foreach (var block in _blocks)
         {

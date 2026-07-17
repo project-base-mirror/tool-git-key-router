@@ -28,6 +28,7 @@ public sealed class GitRewritesControl : UserControl, IAsyncRefreshable
         toolbar.Controls.Add(UiHelpers.Button("应用缺失配置", async (_, _) => await ApplyPlanAsync(await _services.GitUrlRewriteService.BuildApplyMissingPlanAsync(), "应用缺失配置")));
         toolbar.Controls.Add(UiHelpers.Button("修复当前全部路由", async (_, _) => await ApplyPlanAsync(await _services.GitUrlRewriteService.BuildReconcilePlanAsync(), "修复 Git rewrite")));
         toolbar.Controls.Add(UiHelpers.Button("清理重复规则", async (_, _) => await ApplyPlanAsync(await _services.GitUrlRewriteService.BuildCleanupDuplicatesPlanAsync(), "清理重复 Git rewrite")));
+        toolbar.Controls.Add(UiHelpers.Button("全部重新生成", async (_, _) => await ApplyPlanAsync(await _services.GitUrlRewriteService.BuildRegeneratePlanAsync(), "全部重新生成受管理 Git rewrite")));
         toolbar.Controls.Add(UiHelpers.Button("删除选中规则", async (_, _) => await DeleteSelectedAsync()));
         toolbar.Controls.Add(UiHelpers.Button("复制对应命令", (_, _) => CopySelectedCommand()));
         toolbar.Controls.Add(UiHelpers.Button("刷新", async (_, _) => await RefreshAsync()));

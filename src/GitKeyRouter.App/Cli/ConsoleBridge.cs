@@ -3,7 +3,7 @@ using Microsoft.Win32.SafeHandles;
 
 namespace GitKeyRouter.App.Cli;
 
-internal static partial class ConsoleBridge
+internal static class ConsoleBridge
 {
     private const uint AttachParentProcess = 0xFFFFFFFF;
 
@@ -24,20 +24,29 @@ internal static partial class ConsoleBridge
 
     private static void ResetStreams()
     {
-        var output = new FileStream(new SafeFileHandle(GetStdHandle(-11), false), FileAccess.Write);
-        var error = new FileStream(new SafeFileHandle(GetStdHandle(-12), false), FileAccess.Write);
-        Console.SetOut(new StreamWriter(output) { AutoFlush = true });
-        Console.SetError(new StreamWriter(error) { AutoFlush = true });
+        var outputHandle = GetStdHandle(-11);
+        var errorHandle = GetStdHandle(-12);
+        if (outputHandle != nint.Zero && outputHandle != new nint(-1))
+        {
+            var output = new FileStream(new SafeFileHandle(outputHandle, false), FileAccess.Write);
+            Console.SetOut(new StreamWriter(output) { AutoFlush = true });
+        }
+
+        if (errorHandle != nint.Zero && errorHandle != new nint(-1))
+        {
+            var error = new FileStream(new SafeFileHandle(errorHandle, false), FileAccess.Write);
+            Console.SetError(new StreamWriter(error) { AutoFlush = true });
+        }
     }
 
-    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool AttachConsole(uint processId);
+    private static extern bool AttachConsole(uint processId);
 
-    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool AllocConsole();
+    private static extern bool AllocConsole();
 
-    [LibraryImport("kernel32.dll")]
-    private static partial nint GetStdHandle(int standardHandle);
+    [DllImport("kernel32.dll")]
+    private static extern nint GetStdHandle(int standardHandle);
 }

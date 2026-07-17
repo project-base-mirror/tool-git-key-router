@@ -55,8 +55,8 @@ public sealed class SshConfigServiceTests
 
         var preview = service.PreviewUpsert(original, Identity("github-project-base", @"C:\Users\x\.ssh\id_ed25519_project_base"));
 
-        Assert.StartsWith(original, preview.UpdatedText, StringComparison.Ordinal);
-        Assert.DoesNotContain("\nHost github-project-base\n", preview.UpdatedText.Replace("\r\n", "\n\r\n", StringComparison.Ordinal));
+        Assert.True(preview.UpdatedText.StartsWith(original, StringComparison.Ordinal));
+        Assert.DoesNotContain("\n", preview.UpdatedText.Replace("\r\n", string.Empty, StringComparison.Ordinal));
         Assert.Contains("\r\n", preview.UpdatedText);
     }
 

@@ -143,6 +143,28 @@ public sealed class GitUrlRewriteService
         return plan;
     }
 
+    public async Task<GitRewritePlan> BuildRegeneratePlanAsync(CancellationToken cancellationToken = default)
+    {
+        var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        var expected = OwnerRouteService.BuildExpectedRules(config);
+        var actual = await _store.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        var plan = new GitRewritePlan();
+        foreach (var expectedRule in expected)
+        {
+            foreach (var currentRule in actual.Where(item => string.Equals(item.InsteadOfUrl, expectedRule.InsteadOfUrl, StringComparison.OrdinalIgnoreCase)))
+            {
+                if (!plan.Removes.Any(item => RuleEquals(item, currentRule)))
+                {
+                    plan.Removes.Add(currentRule);
+                }
+            }
+
+            plan.Adds.Add(expectedRule);
+        }
+
+        return plan;
+    }
+
     public async Task<GitRewritePlan> BuildReconcilePlanAsync(CancellationToken cancellationToken = default)
     {
         var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);

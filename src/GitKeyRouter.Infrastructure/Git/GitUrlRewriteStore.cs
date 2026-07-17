@@ -54,11 +54,15 @@ public sealed class GitUrlRewriteStore : IGitUrlRewriteStore
 
         var origins = result.StandardOutput
             .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(line => line.Split([' ', '\t'], 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault())
+            .Select(ExtractOrigin)
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .Select(value => value!.StartsWith("file:", StringComparison.OrdinalIgnoreCase) ? value[5..] : value)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+        if (origins.Count == 0)
+        {
+            origins.Add(ResolveDefaultGlobalConfigPath());
+        }
         return OperationResult<IReadOnlyList<string>>.Ok(origins, "Git global configuration origins resolved.");
     }
 
@@ -104,6 +108,44 @@ public sealed class GitUrlRewriteStore : IGitUrlRewriteStore
         }
 
         return result;
+    }
+
+    private static string? ExtractOrigin(string line)
+    {
+        var tabIndex = line.IndexOf('\t');
+        if (tabIndex > 0)
+        {
+            return line[..tabIndex].Trim().Trim('"');
+        }
+
+        var markerIndex = line.IndexOf(" url.", StringComparison.OrdinalIgnoreCase);
+        if (markerIndex > 0)
+        {
+            return line[..markerIndex].Trim().Trim('"');
+        }
+
+        var separator = line.IndexOf(' ');
+        return separator > 0 ? line[..separator].Trim().Trim('"') : null;
+    }
+
+    private string ResolveDefaultGlobalConfigPath()
+    {
+        if (_environmentVariables.TryGetValue("GIT_CONFIG_GLOBAL", out var configured)
+            && !string.IsNullOrWhiteSpace(configured))
+        {
+            return configured;
+        }
+
+        var environmentOverride = Environment.GetEnvironmentVariable("GIT_CONFIG_GLOBAL");
+        if (!string.IsNullOrWhiteSpace(environmentOverride))
+        {
+            return environmentOverride;
+        }
+
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var dotGitConfig = Path.Combine(home, ".gitconfig");
+        var xdgConfig = Path.Combine(home, ".config", "git", "config");
+        return File.Exists(xdgConfig) && !File.Exists(dotGitConfig) ? xdgConfig : dotGitConfig;
     }
 
     private async Task<string> RequireGitAsync(CancellationToken cancellationToken)
