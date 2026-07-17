@@ -77,7 +77,8 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
 
     private async Task CreateAsync()
     {
-        using var form = new IdentityEditForm(_services.Paths.SshDirectory);
+        var discoveredKeys = await DiscoverPrivateKeysAsync();
+        using var form = new IdentityEditForm(_services.Paths.SshDirectory, discoveredKeys: discoveredKeys);
         if (form.ShowDialog(this) != DialogResult.OK || form.ResultIdentity is null)
         {
             return;
@@ -103,7 +104,8 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
         }
 
         var oldAlias = identity.HostAlias;
-        using var form = new IdentityEditForm(_services.Paths.SshDirectory, identity);
+        var discoveredKeys = await DiscoverPrivateKeysAsync();
+        using var form = new IdentityEditForm(_services.Paths.SshDirectory, identity, discoveredKeys);
         if (form.ShowDialog(this) != DialogResult.OK || form.ResultIdentity is null)
         {
             return;
@@ -118,6 +120,20 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
 
         await RefreshAsync();
         await OfferSshSyncAsync(form.ResultIdentity, oldAlias);
+    }
+
+    private async Task<IReadOnlyList<SshPrivateKeyCandidate>> DiscoverPrivateKeysAsync()
+    {
+        _status("正在扫描用户 SSH 目录中的密钥...");
+        var result = await _services.SshKeyService.DiscoverPrivateKeysAsync(_services.Paths.SshDirectory);
+        if (!result.Success || result.Value is null)
+        {
+            _status("SSH 密钥自动发现失败，仍可手动输入路径");
+            return [];
+        }
+
+        _status($"已发现 {result.Value.Count} 个可能的私钥");
+        return result.Value;
     }
 
     private async Task DeleteAsync()

@@ -40,6 +40,74 @@ public sealed partial class SshKeyService
 
     public bool PublicKeyExists(GitHubIdentity identity) => _fileSystem.FileExists(identity.PublicKeyPath);
 
+    public async Task<OperationResult<IReadOnlyList<SshPrivateKeyCandidate>>> DiscoverPrivateKeysAsync(
+        string sshDirectory,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sshDirectory) || !_fileSystem.DirectoryExists(sshDirectory))
+        {
+            return OperationResult<IReadOnlyList<SshPrivateKeyCandidate>>.Ok(
+                [],
+                "SSH directory does not exist; no private keys were discovered.");
+        }
+
+        try
+        {
+            var candidates = new List<SshPrivateKeyCandidate>();
+            foreach (var path in _fileSystem.EnumerateFiles(sshDirectory, "*"))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (ShouldSkipPrivateKeyCandidate(path))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var text = await _fileSystem.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
+                    var inspection = SshKeyFormatDetector.Detect(text, path);
+                    if (!inspection.IsPrivateMaterial)
+                    {
+                        continue;
+                    }
+
+                    candidates.Add(new SshPrivateKeyCandidate
+                    {
+                        Path = Path.GetFullPath(path),
+                        FileName = Path.GetFileName(path),
+                        Inspection = inspection
+                    });
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch
+                {
+                    // Ignore unreadable or non-text files. Discovery must not block identity editing.
+                }
+            }
+
+            var ordered = candidates
+                .OrderByDescending(item => item.FileName.StartsWith("id_", StringComparison.OrdinalIgnoreCase))
+                .ThenBy(item => item.FileName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            return OperationResult<IReadOnlyList<SshPrivateKeyCandidate>>.Ok(
+                ordered,
+                $"Discovered {ordered.Count} private-key candidate(s).");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            return OperationResult<IReadOnlyList<SshPrivateKeyCandidate>>.Fail(
+                "Unable to scan the SSH directory for private keys.",
+                exception.Message);
+        }
+    }
+
     public async Task<OperationResult<IReadOnlyList<SshPublicKeyVariant>>> ListPublicKeyVariantsAsync(
         GitHubIdentity identity,
         CancellationToken cancellationToken = default)
@@ -567,6 +635,24 @@ public sealed partial class SshKeyService
 
     private static bool PathsEqual(string left, string right)
         => string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
+
+    private static bool ShouldSkipPrivateKeyCandidate(string path)
+    {
+        var fileName = Path.GetFileName(path);
+        if (fileName.EndsWith(".pub", StringComparison.OrdinalIgnoreCase)
+            || fileName.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)
+            || fileName.Contains(".gitkeyrouter.", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return fileName.Equals("config", StringComparison.OrdinalIgnoreCase)
+            || fileName.Equals("known_hosts", StringComparison.OrdinalIgnoreCase)
+            || fileName.Equals("known_hosts.old", StringComparison.OrdinalIgnoreCase)
+            || fileName.Equals("authorized_keys", StringComparison.OrdinalIgnoreCase)
+            || fileName.Equals("environment", StringComparison.OrdinalIgnoreCase)
+            || fileName.Equals("rc", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static string Classify(string output, bool authenticated, ProcessResult process)
     {

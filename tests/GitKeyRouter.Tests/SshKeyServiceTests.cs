@@ -12,6 +12,46 @@ public sealed class SshKeyServiceTests
     private const string Pem = "-----BEGIN PUBLIC KEY-----\nAQID\n-----END PUBLIC KEY-----";
 
     [Fact]
+    public async Task DiscoversRecognizedPrivateKeysAndSkipsPublicOrSshMetadataFiles()
+    {
+        using var directory = new TemporaryDirectory();
+        var openSshPath = Path.Combine(directory.Path, "id_ed25519");
+        var pemPath = Path.Combine(directory.Path, "work-key.pem");
+        var puttyPath = Path.Combine(directory.Path, "legacy.ppk");
+        await File.WriteAllTextAsync(openSshPath, "-----BEGIN OPENSSH PRIVATE KEY-----\nsecret");
+        await File.WriteAllTextAsync(pemPath, "-----BEGIN RSA PRIVATE KEY-----\nsecret");
+        await File.WriteAllTextAsync(puttyPath, "PuTTY-User-Key-File-3: ssh-rsa");
+        await File.WriteAllTextAsync(openSshPath + ".pub", OpenSsh);
+        await File.WriteAllTextAsync(Path.Combine(directory.Path, "config"), "Host github.com");
+        await File.WriteAllTextAsync(Path.Combine(directory.Path, "known_hosts"), "github.com ssh-ed25519 AAAA");
+        var service = CreateService(_ => Success());
+
+        var result = await service.DiscoverPrivateKeysAsync(directory.Path);
+
+        Assert.True(result.Success);
+        Assert.NotNull(result.Value);
+        Assert.Equal(3, result.Value.Count);
+        Assert.Equal(openSshPath, result.Value[0].Path);
+        Assert.Contains(result.Value, item => item.Path == pemPath && item.Inspection.Format == SshKeyFormat.PemPrivate);
+        Assert.Contains(result.Value, item => item.Path == puttyPath && item.Inspection.Format == SshKeyFormat.PuttyPrivate);
+        Assert.DoesNotContain(result.Value, item => item.Path.EndsWith(".pub", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task DiscoverPrivateKeysReturnsEmptyForMissingDirectory()
+    {
+        using var directory = new TemporaryDirectory();
+        var missing = Path.Combine(directory.Path, "missing");
+        var service = CreateService(_ => Success());
+
+        var result = await service.DiscoverPrivateKeysAsync(missing);
+
+        Assert.True(result.Success);
+        Assert.NotNull(result.Value);
+        Assert.Empty(result.Value);
+    }
+
+    [Fact]
     public async Task ListsAllPublicKeyVariantsAndSkipsPrivateMaterial()
     {
         using var directory = new TemporaryDirectory();

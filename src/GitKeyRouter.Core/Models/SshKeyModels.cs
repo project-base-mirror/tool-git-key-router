@@ -51,6 +51,13 @@ public sealed class SshPublicKeyVariant
     public bool IsConfiguredPath { get; init; }
 }
 
+public sealed class SshPrivateKeyCandidate
+{
+    public required string Path { get; init; }
+    public required string FileName { get; init; }
+    public required SshKeyInspectionResult Inspection { get; init; }
+}
+
 public sealed class SshKeyConversionResult
 {
     public required SshKeyInspectionResult Source { get; init; }

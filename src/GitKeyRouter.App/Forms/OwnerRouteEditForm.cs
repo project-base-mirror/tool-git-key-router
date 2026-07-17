@@ -4,7 +4,7 @@ namespace GitKeyRouter.App.Forms;
 
 public sealed class OwnerRouteEditForm : Form
 {
-    private readonly TextBox _owner = new();
+    private readonly TextBox _owner = new() { PlaceholderText = "例如：openai 或你的 GitHub 组织名" };
     private readonly ComboBox _identity = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly CheckBox _enabled = new() { Text = "启用", Checked = true, AutoSize = true };
     private readonly OwnerRoute? _original;
@@ -23,6 +23,10 @@ public sealed class OwnerRouteEditForm : Form
         _identity.DataSource = choices;
         _identity.DisplayMember = nameof(IdentityChoice.DisplayText);
         _identity.ValueMember = nameof(IdentityChoice.Id);
+        if (route is null)
+        {
+            _identity.SelectedIndex = -1;
+        }
 
         var table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(14) };
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
