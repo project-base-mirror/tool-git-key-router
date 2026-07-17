@@ -1,0 +1,31 @@
+using GitKeyRouter.Core.Abstractions;
+using GitKeyRouter.Core.Services;
+
+namespace GitKeyRouter.App;
+
+public sealed class ApplicationServices
+{
+    public required IAppPaths Paths { get; init; }
+
+    public required IFileSystem FileSystem { get; init; }
+
+    public required IAppConfigStore ConfigStore { get; init; }
+
+    public required IToolchainService ToolchainService { get; init; }
+
+    public required IBackupService BackupService { get; init; }
+
+    public required IdentityService IdentityService { get; init; }
+
+    public required OwnerRouteService OwnerRouteService { get; init; }
+
+    public required SshKeyService SshKeyService { get; init; }
+
+    public required SshConfigService SshConfigService { get; init; }
+
+    public required GitUrlRewriteService GitUrlRewriteService { get; init; }
+
+    public required DiagnosticService DiagnosticService { get; init; }
+
+    public required ISafeLogger Logger { get; init; }
+}

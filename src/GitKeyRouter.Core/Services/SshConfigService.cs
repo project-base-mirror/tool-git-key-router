@@ -115,6 +115,23 @@ public sealed partial class SshConfigService
         };
     }
 
+    public ChangePreview PreviewSynchronizeAll(string original, IEnumerable<GitHubIdentity> identities)
+    {
+        var updated = original;
+        foreach (var identity in identities.OrderBy(item => item.HostAlias, StringComparer.OrdinalIgnoreCase))
+        {
+            updated = PreviewUpsert(updated, identity).UpdatedText;
+        }
+
+        return new ChangePreview
+        {
+            Description = "Synchronize all GitKeyRouter SSH managed blocks",
+            OriginalText = original,
+            UpdatedText = updated,
+            DiffText = TextDiffService.CreateSimpleDiff(original, updated, "ssh_config.before", "ssh_config.after")
+        };
+    }
+
     public async Task<OperationResult> ApplyAsync(ChangePreview preview, string reason, CancellationToken cancellationToken = default)
     {
         if (!preview.HasChanges)
