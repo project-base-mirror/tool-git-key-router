@@ -30,7 +30,8 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
         toolbar.Controls.Add(UiHelpers.Button("删除记录", async (_, _) => await DeleteAsync()));
         toolbar.Controls.Add(UiHelpers.Button("生成密钥", async (_, _) => await GenerateKeyAsync()));
         toolbar.Controls.Add(UiHelpers.Button("查看公钥", async (_, _) => await ViewPublicKeyAsync(false)));
-        toolbar.Controls.Add(UiHelpers.Button("复制公钥", async (_, _) => await ViewPublicKeyAsync(true)));
+        toolbar.Controls.Add(UiHelpers.Button("复制到 GitHub", async (_, _) => await ViewPublicKeyAsync(true)));
+        toolbar.Controls.Add(UiHelpers.Button("转换格式", async (_, _) => await ConvertPublicKeyAsync()));
         toolbar.Controls.Add(UiHelpers.Button("导出公钥", async (_, _) => await ExportPublicKeyAsync()));
         toolbar.Controls.Add(UiHelpers.Button("同步 SSH Config", async (_, _) => await SyncSshAsync()));
         toolbar.Controls.Add(UiHelpers.Button("测试 SSH", async (_, _) => await TestSshAsync(false)));
@@ -49,22 +50,35 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
         _identities = await _services.IdentityService.ListAsync();
         var raw = await _services.SshConfigService.ReadRawAsync();
         var blocks = _services.SshConfigService.ParseManagedBlocks(raw);
-        _grid.DataSource = _identities.Select(identity => new IdentityRow
+        var rows = new List<IdentityRow>();
+        foreach (var identity in _identities)
         {
-            Id = identity.Id,
-            显示名称 = identity.DisplayName,
-            GitHub用户名 = identity.GitHubUsername,
-            HostAlias = identity.HostAlias,
-            私钥 = _services.FileSystem.FileExists(identity.PrivateKeyPath) ? "存在" : "缺失",
-            公钥 = _services.FileSystem.FileExists(identity.PublicKeyPath) ? "存在" : "缺失",
-            SSH配置 = blocks.Count(block => string.Equals(block.HostAlias, identity.HostAlias, StringComparison.OrdinalIgnoreCase)) == 1 ? "正常" : "未同步"
-        }).ToList();
-        if (_grid.Columns[nameof(IdentityRow.Id)] is { } idColumn)
-        {
-            idColumn.Visible = false;
+            var sshConfigStatus = blocks.Count(block => string.Equals(block.HostAlias, identity.HostAlias, StringComparison.OrdinalIgnoreCase)) == 1
+                ? "正常"
+                : "未同步";
+            var variantsResult = await _services.SshKeyService.ListPublicKeyVariantsAsync(identity);
+            var variants = variantsResult.Success && variantsResult.Value is not null
+                ? variantsResult.Value
+                : [];
+            if (variants.Count == 0)
+            {
+                rows.Add(CreateRow(identity, null, sshConfigStatus));
+                continue;
+            }
+
+            rows.AddRange(variants.Select(variant => CreateRow(identity, variant, sshConfigStatus)));
         }
 
-        _status($"已加载 {_identities.Count} 个身份");
+        _grid.DataSource = rows;
+        foreach (var hiddenName in new[] { nameof(IdentityRow.Id), nameof(IdentityRow.PublicKeyPath) })
+        {
+            if (_grid.Columns[hiddenName] is { } column)
+            {
+                column.Visible = false;
+            }
+        }
+
+        _status($"已加载 {_identities.Count} 个身份、{rows.Count(row => !string.IsNullOrWhiteSpace(row.PublicKeyPath))} 个公钥变体");
     }
 
     private async Task CreateAsync()
@@ -214,12 +228,19 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
     private async Task ViewPublicKeyAsync(bool copyOnly)
     {
         var identity = SelectedIdentity();
-        if (identity is null)
+        var row = SelectedRow();
+        if (identity is null || row is null)
         {
             return;
         }
 
-        var result = await _services.SshKeyService.ReadPublicKeyAsync(identity);
+        if (string.IsNullOrWhiteSpace(row.PublicKeyPath))
+        {
+            MessageBox.Show(this, "该身份还没有公钥变体。可以先生成密钥，或从现有私钥转换出 OpenSSH 公钥。", "GitKeyRouter", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var result = await _services.SshKeyService.ReadPublicKeyAsync(row.PublicKeyPath, requireOpenSsh: copyOnly);
         if (!result.Success || result.Value is null)
         {
             UiHelpers.ShowErrors(this, result);
@@ -229,25 +250,26 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
         if (copyOnly)
         {
             Clipboard.SetText(result.Value);
-            _status("公钥已复制到剪贴板");
+            _status("OpenSSH 公钥已复制，可直接粘贴到 GitHub");
             return;
         }
 
-        using var form = new TextViewForm($"公钥 - {identity.DisplayName}", result.Value);
+        using var form = new TextViewForm($"{row.公钥格式} - {identity.DisplayName}", result.Value);
         form.ShowDialog(this);
     }
 
     private async Task ExportPublicKeyAsync()
     {
-        var identity = SelectedIdentity();
-        if (identity is null)
+        var row = SelectedRow();
+        if (row is null || string.IsNullOrWhiteSpace(row.PublicKeyPath))
         {
+            MessageBox.Show(this, "请先选择一个已存在的公钥变体。", "GitKeyRouter", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
         using var dialog = new SaveFileDialog
         {
-            FileName = Path.GetFileName(identity.PublicKeyPath),
+            FileName = Path.GetFileName(row.PublicKeyPath),
             Filter = "Public key (*.pub)|*.pub|All files (*.*)|*.*",
             OverwritePrompt = true
         };
@@ -256,7 +278,7 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
             return;
         }
 
-        var result = await _services.SshKeyService.ExportPublicKeyAsync(identity, dialog.FileName, true);
+        var result = await _services.SshKeyService.ExportPublicKeyAsync(row.PublicKeyPath, dialog.FileName, true);
         if (!result.Success)
         {
             UiHelpers.ShowErrors(this, result);
@@ -264,6 +286,65 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
         }
 
         _status($"公钥已导出：{dialog.FileName}");
+    }
+
+    private async Task ConvertPublicKeyAsync()
+    {
+        var identity = SelectedIdentity();
+        var row = SelectedRow();
+        if (identity is null || row is null)
+        {
+            return;
+        }
+
+        var sourcePath = row.PublicKeyPath;
+        if (string.IsNullOrWhiteSpace(sourcePath))
+        {
+            if (!_services.FileSystem.FileExists(identity.PrivateKeyPath))
+            {
+                MessageBox.Show(this, "没有可转换的公钥或私钥文件。", "GitKeyRouter", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            sourcePath = identity.PrivateKeyPath;
+        }
+
+        var inspection = await _services.SshKeyService.InspectKeyFileAsync(sourcePath);
+        if (!inspection.Success || inspection.Value is null)
+        {
+            UiHelpers.ShowErrors(this, inspection);
+            return;
+        }
+
+        using var form = new KeyFormatConversionForm(inspection.Value.DisplayName, sourcePath);
+        if (form.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _status($"正在转换公钥：{inspection.Value.DisplayName} → {form.SelectedFormat}");
+        var result = await _services.SshKeyService.ConvertPublicKeyAsync(
+            identity,
+            sourcePath,
+            form.SelectedFormat,
+            form.OverwriteExisting);
+        if (!result.Success || result.Value is null)
+        {
+            UiHelpers.ShowErrors(this, result);
+            return;
+        }
+
+        var details = result.Value.Changed
+            ? $"已创建：{result.Value.DestinationPath}"
+            : $"文件已存在且内容相同：{result.Value.DestinationPath}";
+        if (!string.IsNullOrWhiteSpace(result.Value.BackupFile))
+        {
+            details += $"\r\n备份：{result.Value.BackupFile}";
+        }
+
+        MessageBox.Show(this, details, "公钥转换完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        await RefreshAsync();
+        _status(result.Message);
     }
 
     private async Task SyncSshAsync()
@@ -354,6 +435,25 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
         System.Diagnostics.Process.Start(startInfo);
     }
 
+    private static IdentityRow CreateRow(GitHubIdentity identity, SshPublicKeyVariant? variant, string sshConfigStatus)
+        => new()
+        {
+            Id = identity.Id,
+            PublicKeyPath = variant?.Path ?? string.Empty,
+            显示名称 = identity.DisplayName,
+            GitHub用户名 = identity.GitHubUsername,
+            HostAlias = identity.HostAlias,
+            私钥 = File.Exists(identity.PrivateKeyPath) ? "存在" : "缺失",
+            公钥格式 = variant?.Inspection.DisplayName ?? "缺失",
+            公钥文件 = variant?.FileName ?? Path.GetFileName(identity.PublicKeyPath),
+            OpenSSH格式 = variant?.Inspection.IsOpenSsh == true ? "是" : "否",
+            配置路径 = variant?.IsConfiguredPath == true ? "是" : "否",
+            SSH配置 = sshConfigStatus
+        };
+
+    private IdentityRow? SelectedRow()
+        => _grid.CurrentRow?.DataBoundItem as IdentityRow;
+
     private GitHubIdentity? SelectedIdentity()
     {
         if (_grid.CurrentRow?.DataBoundItem is not IdentityRow row)
@@ -368,11 +468,15 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
     private sealed class IdentityRow
     {
         public string Id { get; init; } = string.Empty;
+        public string PublicKeyPath { get; init; } = string.Empty;
         public string 显示名称 { get; init; } = string.Empty;
         public string GitHub用户名 { get; init; } = string.Empty;
         public string HostAlias { get; init; } = string.Empty;
         public string 私钥 { get; init; } = string.Empty;
-        public string 公钥 { get; init; } = string.Empty;
+        public string 公钥格式 { get; init; } = string.Empty;
+        public string 公钥文件 { get; init; } = string.Empty;
+        public string OpenSSH格式 { get; init; } = string.Empty;
+        public string 配置路径 { get; init; } = string.Empty;
         public string SSH配置 { get; init; } = string.Empty;
     }
 }

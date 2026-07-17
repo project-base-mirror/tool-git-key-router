@@ -10,7 +10,7 @@ GitKeyRouter 是一个面向 Windows 10 / Windows 11 的本地桌面工具，用
 
 项目使用 C#、.NET 8 和 WinForms，不使用数据库、WebView、Node.js、Electron、GitHub API、OAuth 或 PAT。
 
-> 当前源码由未安装 .NET SDK 的隔离环境生成，因此仓库内包含完整项目、测试和发布脚本，但尚未执行 `dotnet format`、`dotnet build`、`dotnet test` 或 `dotnet publish`。请先在 Windows 本机验证。
+> 项目目标框架为 .NET 8，并在 Windows 环境通过 Release 构建和自动化测试验证。发布前仍建议在目标机器执行 `dotnet build --configuration Release` 和 `dotnet test --configuration Release`。
 
 ## 安全和操作边界
 
@@ -95,9 +95,29 @@ ssh-keygen.exe -t ed25519 -C <comment> -f <private-key-path> -N ""
 
 生成后会显示完整公钥，并提供复制和导出功能。
 
+GitKeyRouter 会识别同一身份目录中的多种公钥格式，并在“GitHub 身份”列表中为每个格式显示独立行：
+
+- OpenSSH 公钥
+- RFC4716 / SSH2 公钥
+- PEM / PKCS8 公钥
+- 未知或无效的候选公钥文件
+
+格式转换不会覆盖原文件，而是使用明确的文件名并存：
+
+```text
+id_ed25519_account.pub             # 用户配置的原始公钥路径
+id_ed25519_account.openssh.pub     # OpenSSH
+id_ed25519_account.rfc4716.pub     # RFC4716 / SSH2
+id_ed25519_account.pem.pub         # PEM / PKCS8
+```
+
+如果目标格式文件已存在，默认拒绝覆盖；用户明确允许覆盖时，会先创建 `.gitkeyrouter.<timestamp>.bak` 备份。备份和临时转换文件不会显示在公钥变体列表中。
+
+程序不显示私钥正文。选择已配置的 OpenSSH/PEM 私钥时，只会调用 `ssh-keygen -y` 派生新的 `.openssh.pub` 文件。PuTTY PPK 需要先用 PuTTYgen 转换。
+
 ### 4. 添加公钥到 GitHub
 
-在 GitHub 对应账户中打开 SSH Keys 页面，创建新 Key，并粘贴 GitKeyRouter 显示的公钥。
+在 GitHub 对应账户中打开 SSH Keys 页面，创建新 Key，并使用“复制到 GitHub”复制标记为 OpenSSH 格式的公钥。RFC4716、PEM、私钥或结构损坏的文本不会被该按钮复制。
 
 GitKeyRouter V1 不调用 GitHub API，也不会替用户上传公钥。
 

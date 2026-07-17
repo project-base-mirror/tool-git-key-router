@@ -113,10 +113,12 @@ internal sealed class FakeGitUrlRewriteStore : IGitUrlRewriteStore
 internal sealed class FixedToolchainService : IToolchainService
 {
     private readonly string _gitPath;
+    private readonly string? _sshKeygenPath;
 
-    public FixedToolchainService(string gitPath)
+    public FixedToolchainService(string gitPath, string? sshKeygenPath = null)
     {
         _gitPath = gitPath;
+        _sshKeygenPath = sshKeygenPath;
     }
 
     public Task<ToolchainInfo> InspectAsync(CancellationToken cancellationToken = default)
@@ -124,6 +126,29 @@ internal sealed class FixedToolchainService : IToolchainService
         {
             Git = new ExecutableInfo { Name = "git.exe", Exists = true, SelectedPath = _gitPath, Version = "test" },
             Ssh = new ExecutableInfo { Name = "ssh.exe", Exists = false },
-            SshKeygen = new ExecutableInfo { Name = "ssh-keygen.exe", Exists = false }
+            SshKeygen = new ExecutableInfo
+            {
+                Name = "ssh-keygen.exe",
+                Exists = !string.IsNullOrWhiteSpace(_sshKeygenPath),
+                SelectedPath = _sshKeygenPath
+            }
         });
+}
+
+internal sealed class StubProcessRunner : IProcessRunner
+{
+    private readonly Func<ProcessRequest, ProcessResult> _handler;
+
+    public StubProcessRunner(Func<ProcessRequest, ProcessResult> handler)
+    {
+        _handler = handler;
+    }
+
+    public List<ProcessRequest> Requests { get; } = [];
+
+    public Task<ProcessResult> RunAsync(ProcessRequest request, CancellationToken cancellationToken = default)
+    {
+        Requests.Add(request);
+        return Task.FromResult(_handler(request));
+    }
 }

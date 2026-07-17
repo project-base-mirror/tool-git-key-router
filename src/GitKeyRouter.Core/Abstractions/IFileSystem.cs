@@ -17,4 +17,6 @@ public interface IFileSystem
     void DeleteFile(string path);
 
     IEnumerable<string> EnumerateDirectories(string path);
+
+    IEnumerable<string> EnumerateFiles(string path, string searchPattern);
 }

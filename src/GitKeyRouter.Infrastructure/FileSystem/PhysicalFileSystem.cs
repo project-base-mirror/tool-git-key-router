@@ -69,4 +69,7 @@ public sealed class PhysicalFileSystem : IFileSystem
 
     public IEnumerable<string> EnumerateDirectories(string path)
         => Directory.Exists(path) ? Directory.EnumerateDirectories(path) : [];
+
+    public IEnumerable<string> EnumerateFiles(string path, string searchPattern)
+        => Directory.Exists(path) ? Directory.EnumerateFiles(path, searchPattern, SearchOption.TopDirectoryOnly) : [];
 }
