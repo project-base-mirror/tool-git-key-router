@@ -1,0 +1,89 @@
+using GitKeyRouter.Core.Models;
+using GitKeyRouter.Core.Services;
+using GitKeyRouter.Infrastructure.FileSystem;
+using GitKeyRouter.Tests.TestSupport;
+
+namespace GitKeyRouter.Tests;
+
+public sealed class SshConfigServiceTests
+{
+    [Fact]
+    public void Upsert_AddsManagedBlock()
+    {
+        var service = CreateService();
+        var preview = service.PreviewUpsert("Host internal\r\n    HostName internal.example\r\n", Identity("github-camus", @"C:\Users\fgc01\.ssh\id_ed25519_camus"));
+
+        Assert.Contains("# BEGIN GitKeyRouter managed block: github-camus", preview.UpdatedText);
+        Assert.Contains("IdentityFile C:/Users/fgc01/.ssh/id_ed25519_camus", preview.UpdatedText);
+        Assert.Contains("Host internal", preview.UpdatedText);
+    }
+
+    [Fact]
+    public void Upsert_UpdatesOnlyMatchingManagedBlock()
+    {
+        var service = CreateService();
+        var original = service.PreviewUpsert(string.Empty, Identity("github-camus", @"C:\old-key")).UpdatedText
+            + "# user comment\r\n";
+
+        var preview = service.PreviewUpsert(original, Identity("github-camus", @"D:\keys\new-key"));
+
+        Assert.DoesNotContain("C:/old-key", preview.UpdatedText);
+        Assert.Contains("D:/keys/new-key", preview.UpdatedText);
+        Assert.Contains("# user comment", preview.UpdatedText);
+        Assert.Single(service.ParseManagedBlocks(preview.UpdatedText));
+    }
+
+    [Fact]
+    public void Delete_RemovesOnlyManagedBlock()
+    {
+        var service = CreateService();
+        var original = "# keep this\r\nHost internal\r\n    HostName example.test\r\n\r\n"
+            + service.PreviewUpsert(string.Empty, Identity("github-camus", @"C:\key")).UpdatedText;
+
+        var preview = service.PreviewDelete(original, "github-camus");
+
+        Assert.DoesNotContain("GitKeyRouter managed block", preview.UpdatedText);
+        Assert.Contains("# keep this", preview.UpdatedText);
+        Assert.Contains("Host internal", preview.UpdatedText);
+    }
+
+    [Fact]
+    public void Upsert_PreservesCommentsAndCrLf()
+    {
+        var service = CreateService();
+        var original = "# first comment\r\nHost old\r\n    HostName old.example\r\n";
+
+        var preview = service.PreviewUpsert(original, Identity("github-project-base", @"C:\Users\x\.ssh\id_ed25519_project_base"));
+
+        Assert.StartsWith(original, preview.UpdatedText, StringComparison.Ordinal);
+        Assert.DoesNotContain("\nHost github-project-base\n", preview.UpdatedText.Replace("\r\n", "\n\r\n", StringComparison.Ordinal));
+        Assert.Contains("\r\n", preview.UpdatedText);
+    }
+
+    [Fact]
+    public void ParseManagedBlocks_DetectsDuplicates()
+    {
+        var service = CreateService();
+        var block = service.PreviewUpsert(string.Empty, Identity("github-camus", @"C:\key")).UpdatedText;
+        var duplicate = block + block;
+
+        Assert.Equal(2, service.ParseManagedBlocks(duplicate).Count);
+        Assert.Throws<InvalidOperationException>(() => service.PreviewUpsert(duplicate, Identity("github-camus", @"D:\key")));
+    }
+
+    private static SshConfigService CreateService()
+    {
+        var temp = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "GitKeyRouter.Tests", Guid.NewGuid().ToString("N"));
+        return new SshConfigService(new PhysicalFileSystem(), new TestAppPaths(temp), new NoOpBackupService());
+    }
+
+    private static GitHubIdentity Identity(string alias, string privateKey)
+        => new()
+        {
+            DisplayName = alias,
+            GitHubUsername = "owner",
+            HostAlias = alias,
+            PrivateKeyPath = privateKey,
+            PublicKeyPath = privateKey + ".pub"
+        };
+}

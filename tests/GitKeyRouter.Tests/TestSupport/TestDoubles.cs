@@ -1,0 +1,126 @@
+using GitKeyRouter.Core.Abstractions;
+using GitKeyRouter.Core.Models;
+
+namespace GitKeyRouter.Tests.TestSupport;
+
+internal sealed class TestClock : IClock
+{
+    public DateTimeOffset UtcNow { get; set; } = new(2026, 7, 18, 8, 30, 45, TimeSpan.Zero);
+
+    public DateTimeOffset LocalNow { get; set; } = new(2026, 7, 18, 16, 30, 45, TimeSpan.FromHours(8));
+}
+
+internal sealed class TestAppPaths : IAppPaths
+{
+    public TestAppPaths(string root)
+    {
+        AppDataDirectory = System.IO.Path.Combine(root, "appdata");
+        ConfigPath = System.IO.Path.Combine(AppDataDirectory, "config.json");
+        BackupRootDirectory = System.IO.Path.Combine(AppDataDirectory, "backups");
+        UserProfileDirectory = System.IO.Path.Combine(root, "user");
+        SshDirectory = System.IO.Path.Combine(UserProfileDirectory, ".ssh");
+        SshConfigPath = System.IO.Path.Combine(SshDirectory, "config");
+        LegacySshConfigBackupPath = System.IO.Path.Combine(SshDirectory, "config.gitkeyrouter.bak");
+    }
+
+    public string AppDataDirectory { get; }
+    public string ConfigPath { get; }
+    public string BackupRootDirectory { get; }
+    public string UserProfileDirectory { get; }
+    public string SshDirectory { get; }
+    public string SshConfigPath { get; }
+    public string LegacySshConfigBackupPath { get; }
+}
+
+internal sealed class InMemoryAppConfigStore : IAppConfigStore
+{
+    public string ConfigPath => "memory://config.json";
+
+    public AppConfig Config { get; set; } = new();
+
+    public Task<AppConfig> LoadAsync(CancellationToken cancellationToken = default) => Task.FromResult(Config);
+
+    public Task SaveAsync(AppConfig config, CancellationToken cancellationToken = default)
+    {
+        Config = config;
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class NoOpBackupService : IBackupService
+{
+    public int SnapshotCount { get; private set; }
+
+    public Task<BackupManifest> CreateSnapshotAsync(string reason, CancellationToken cancellationToken = default)
+    {
+        SnapshotCount++;
+        return Task.FromResult(new BackupManifest { Reason = reason, CreatedAt = DateTimeOffset.UtcNow, BackupDirectory = "memory://backup" });
+    }
+
+    public Task<IReadOnlyList<BackupManifest>> ListAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<BackupManifest>>([]);
+
+    public Task<BackupSnapshot> ReadAsync(string backupDirectory, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException();
+
+    public Task<OperationResult> RestoreAppConfigAsync(string backupDirectory, CancellationToken cancellationToken = default)
+        => Task.FromResult(OperationResult.Ok());
+
+    public Task<OperationResult> RestoreSshConfigAsync(string backupDirectory, CancellationToken cancellationToken = default)
+        => Task.FromResult(OperationResult.Ok());
+
+    public Task<OperationResult> RestoreGitRewritesAsync(string backupDirectory, CancellationToken cancellationToken = default)
+        => Task.FromResult(OperationResult.Ok());
+}
+
+internal sealed class FakeGitUrlRewriteStore : IGitUrlRewriteStore
+{
+    public List<GitUrlRewriteRule> Rules { get; } = [];
+
+    public string? GitExecutablePath => "git.exe";
+
+    public Task<IReadOnlyList<GitUrlRewriteRule>> GetAllAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<GitUrlRewriteRule>>(Rules.ToList());
+
+    public Task<ProcessResult> AddAsync(GitUrlRewriteRule rule, CancellationToken cancellationToken = default)
+    {
+        Rules.Add(rule);
+        return Task.FromResult(Success("config", "--add", rule.ConfigKey, rule.InsteadOfUrl));
+    }
+
+    public Task<ProcessResult> RemoveAllAsync(GitUrlRewriteRule rule, CancellationToken cancellationToken = default)
+    {
+        Rules.RemoveAll(item => string.Equals(item.BaseUrl, rule.BaseUrl, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(item.InsteadOfUrl, rule.InsteadOfUrl, StringComparison.OrdinalIgnoreCase));
+        return Task.FromResult(Success("config", "--unset-all", rule.ConfigKey, rule.InsteadOfUrl));
+    }
+
+    public Task<ProcessResult> TestRemoteAsync(string originalUrl, CancellationToken cancellationToken = default)
+        => Task.FromResult(Success("ls-remote", originalUrl, "HEAD"));
+
+    private static ProcessResult Success(params string[] args)
+        => new()
+        {
+            ExecutablePath = "git.exe",
+            Arguments = args,
+            ExitCode = 0
+        };
+}
+
+internal sealed class FixedToolchainService : IToolchainService
+{
+    private readonly string _gitPath;
+
+    public FixedToolchainService(string gitPath)
+    {
+        _gitPath = gitPath;
+    }
+
+    public Task<ToolchainInfo> InspectAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult(new ToolchainInfo
+        {
+            Git = new ExecutableInfo { Name = "git.exe", Exists = true, SelectedPath = _gitPath, Version = "test" },
+            Ssh = new ExecutableInfo { Name = "ssh.exe", Exists = false },
+            SshKeygen = new ExecutableInfo { Name = "ssh-keygen.exe", Exists = false }
+        });
+}
