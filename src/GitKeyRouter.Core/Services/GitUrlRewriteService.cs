@@ -69,6 +69,9 @@ public sealed class GitUrlRewriteService
     public Task<IReadOnlyList<GitUrlRewriteRule>> GetActualRulesAsync(CancellationToken cancellationToken = default)
         => _store.GetAllAsync(cancellationToken);
 
+    public Task<OperationResult<IReadOnlyList<string>>> GetGlobalConfigOriginsAsync(CancellationToken cancellationToken = default)
+        => _store.GetGlobalConfigOriginsAsync(cancellationToken);
+
     public async Task<GitRewritePlan> BuildApplyMissingPlanAsync(CancellationToken cancellationToken = default)
     {
         var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);

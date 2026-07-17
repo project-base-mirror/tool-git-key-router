@@ -82,6 +82,9 @@ internal sealed class FakeGitUrlRewriteStore : IGitUrlRewriteStore
     public Task<IReadOnlyList<GitUrlRewriteRule>> GetAllAsync(CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<GitUrlRewriteRule>>(Rules.ToList());
 
+    public Task<OperationResult<IReadOnlyList<string>>> GetGlobalConfigOriginsAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult(OperationResult<IReadOnlyList<string>>.Ok(["C:/Users/test/.gitconfig"]));
+
     public Task<ProcessResult> AddAsync(GitUrlRewriteRule rule, CancellationToken cancellationToken = default)
     {
         Rules.Add(rule);

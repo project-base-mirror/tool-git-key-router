@@ -56,7 +56,7 @@ public sealed partial class DiagnosticService
             return report;
         }
 
-        AddIdentityChecks(report, config);
+        await AddIdentityChecksAsync(report, config, cancellationToken).ConfigureAwait(false);
         await AddSshConfigChecksAsync(report, config, cancellationToken).ConfigureAwait(false);
         await AddGitChecksAsync(report, cancellationToken).ConfigureAwait(false);
         return report;
@@ -70,8 +70,6 @@ public sealed partial class DiagnosticService
             $"{_paths.SshDirectory} (exists: {_fileSystem.DirectoryExists(_paths.SshDirectory)})", DiagnosticSeverity.Normal);
         Add(report, "SSH_CONFIG_PATH", "Environment", "SSH config path",
             $"{_paths.SshConfigPath} (exists: {_fileSystem.FileExists(_paths.SshConfigPath)})", DiagnosticSeverity.Normal);
-        Add(report, "GIT_CONFIG_HINT", "Environment", "Git global configuration",
-            "Resolved by git.exe through --global. GitKeyRouter does not replace the complete .gitconfig file.", DiagnosticSeverity.Normal);
     }
 
     private static void AddTool(DiagnosticReport report, ExecutableInfo tool)
@@ -94,7 +92,7 @@ public sealed partial class DiagnosticService
         }
     }
 
-    private void AddIdentityChecks(DiagnosticReport report, AppConfig config)
+    private async Task AddIdentityChecksAsync(DiagnosticReport report, AppConfig config, CancellationToken cancellationToken)
     {
         foreach (var duplicate in config.Identities.GroupBy(item => item.HostAlias, StringComparer.OrdinalIgnoreCase).Where(group => group.Count() > 1))
         {
@@ -112,6 +110,24 @@ public sealed partial class DiagnosticService
                 $"{identity.PublicKeyPath} (exists: {_fileSystem.FileExists(identity.PublicKeyPath)})",
                 _fileSystem.FileExists(identity.PublicKeyPath) ? DiagnosticSeverity.Normal : DiagnosticSeverity.Error,
                 _fileSystem.FileExists(identity.PublicKeyPath) ? null : "Generate or import the corresponding public key.");
+            if (_fileSystem.FileExists(identity.PublicKeyPath))
+            {
+                try
+                {
+                    var publicKeyText = (await _fileSystem.ReadAllTextAsync(identity.PublicKeyPath, cancellationToken).ConfigureAwait(false)).Trim();
+                    var looksLikePublicKey = publicKeyText.StartsWith("ssh-", StringComparison.Ordinal)
+                        && !publicKeyText.Contains("PRIVATE KEY", StringComparison.OrdinalIgnoreCase);
+                    Add(report, $"PUBLIC_KEY_READ_{identity.Id}", "Keys", $"Public key readable: {identity.DisplayName}",
+                        looksLikePublicKey ? "The file is readable and has an OpenSSH public-key prefix." : "The file is readable but does not look like a normal OpenSSH public key.",
+                        looksLikePublicKey ? DiagnosticSeverity.Normal : DiagnosticSeverity.Warning,
+                        looksLikePublicKey ? null : "Confirm that PublicKeyPath points to the .pub file, not the private key.");
+                }
+                catch (Exception exception)
+                {
+                    Add(report, $"PUBLIC_KEY_READ_{identity.Id}", "Keys", $"Public key unreadable: {identity.DisplayName}",
+                        exception.Message, DiagnosticSeverity.Error, "Check file access and select the correct public key path.");
+                }
+            }
         }
 
         foreach (var group in config.OwnerRoutes.Where(item => item.Enabled)
@@ -137,6 +153,11 @@ public sealed partial class DiagnosticService
     {
         var raw = await _sshConfigService.ReadRawAsync(cancellationToken).ConfigureAwait(false);
         var blocks = _sshConfigService.ParseManagedBlocks(raw);
+        foreach (var orphan in blocks.Where(block => !config.Identities.Any(identity => string.Equals(identity.HostAlias, block.HostAlias, StringComparison.OrdinalIgnoreCase))))
+        {
+            Add(report, "SSH_BLOCK_ORPHAN", "SSH Config", "Managed block has no identity", orphan.HostAlias,
+                DiagnosticSeverity.Warning, "Review the block and remove it through SSH Config if it is no longer needed.");
+        }
         foreach (var duplicate in blocks.GroupBy(item => item.HostAlias, StringComparer.OrdinalIgnoreCase).Where(group => group.Count() > 1))
         {
             Add(report, "SSH_BLOCK_DUPLICATE", "SSH Config", "Duplicate managed block", duplicate.Key,
@@ -164,6 +185,22 @@ public sealed partial class DiagnosticService
     {
         try
         {
+            var originsResult = await _gitUrlRewriteService.GetGlobalConfigOriginsAsync(cancellationToken).ConfigureAwait(false);
+            if (originsResult.Success)
+            {
+                var origins = originsResult.Value ?? [];
+                Add(report, "GIT_GLOBAL_CONFIG_PATH", "Environment", "Git global configuration path",
+                    origins.Count == 0 ? "No populated global Git config origin was reported by git.exe." : string.Join(Environment.NewLine, origins),
+                    origins.Count == 0 ? DiagnosticSeverity.Warning : DiagnosticSeverity.Normal,
+                    origins.Count == 0 ? "This can be normal before the first global Git setting is written." : null);
+            }
+            else
+            {
+                Add(report, "GIT_GLOBAL_CONFIG_PATH_FAILED", "Environment", "Git global configuration path",
+                    string.Join(Environment.NewLine, originsResult.Errors), DiagnosticSeverity.Warning,
+                    "Verify git.exe and run diagnostics again.");
+            }
+
             var comparisons = await _gitUrlRewriteService.CompareAsync(cancellationToken).ConfigureAwait(false);
             foreach (var comparison in comparisons)
             {

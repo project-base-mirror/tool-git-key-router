@@ -39,6 +39,29 @@ public sealed class GitUrlRewriteStore : IGitUrlRewriteStore
         return Parse(result.StandardOutput);
     }
 
+    public async Task<OperationResult<IReadOnlyList<string>>> GetGlobalConfigOriginsAsync(CancellationToken cancellationToken = default)
+    {
+        var git = await RequireGitAsync(cancellationToken).ConfigureAwait(false);
+        var result = await RunGitAsync(git, ["config", "--global", "--show-origin", "--list"], cancellationToken).ConfigureAwait(false);
+        if (!result.Succeeded)
+        {
+            return OperationResult<IReadOnlyList<string>>.Fail(
+                "Unable to resolve the Git global configuration origin.",
+                $"Exit code: {result.ExitCode}",
+                result.StandardOutput,
+                result.StandardError);
+        }
+
+        var origins = result.StandardOutput
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(line => line.Split([' ', '\t'], 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!.StartsWith("file:", StringComparison.OrdinalIgnoreCase) ? value[5..] : value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return OperationResult<IReadOnlyList<string>>.Ok(origins, "Git global configuration origins resolved.");
+    }
+
     public async Task<ProcessResult> AddAsync(GitUrlRewriteRule rule, CancellationToken cancellationToken = default)
     {
         var git = await RequireGitAsync(cancellationToken).ConfigureAwait(false);
