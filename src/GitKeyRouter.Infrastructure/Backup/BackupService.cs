@@ -48,7 +48,17 @@ public sealed class BackupService : IBackupService
             _fileSystem.CopyFile(_paths.SshConfigPath, Path.Combine(directory, SshConfigFileName), true);
         }
 
-        var rewrites = await _gitStore.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<GitUrlRewriteRule> rewrites = [];
+        string? gitCaptureError = null;
+        try
+        {
+            rewrites = await _gitStore.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            gitCaptureError = exception.Message;
+        }
+
         await _fileSystem.WriteAllTextAtomicAsync(
             Path.Combine(directory, GitRewritesFileName),
             JsonSerializer.Serialize(rewrites, JsonOptions) + Environment.NewLine,
@@ -62,7 +72,8 @@ public sealed class BackupService : IBackupService
             ApplicationVersion = typeof(BackupService).Assembly.GetName().Version?.ToString(),
             AppConfigExisted = appExists,
             SshConfigExisted = sshExists,
-            GitRewriteCount = rewrites.Count
+            GitRewriteCount = rewrites.Count,
+            GitRewriteCaptureError = gitCaptureError
         };
         await _fileSystem.WriteAllTextAtomicAsync(
             Path.Combine(directory, ManifestFileName),
@@ -171,6 +182,13 @@ public sealed class BackupService : IBackupService
     public async Task<OperationResult> RestoreGitRewritesAsync(string backupDirectory, CancellationToken cancellationToken = default)
     {
         var snapshot = await ReadAsync(backupDirectory, cancellationToken).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(snapshot.Manifest.GitRewriteCaptureError))
+        {
+            return OperationResult.Fail(
+                "The selected backup does not contain a reliable Git URL rewrite snapshot.",
+                snapshot.Manifest.GitRewriteCaptureError);
+        }
+
         await CreateSnapshotAsync("Before restoring Git URL rewrites", cancellationToken).ConfigureAwait(false);
         var current = await _gitStore.GetAllAsync(cancellationToken).ConfigureAwait(false);
         foreach (var rule in current.Distinct())

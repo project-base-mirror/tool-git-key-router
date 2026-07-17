@@ -17,6 +17,8 @@ public sealed class BackupManifest
     public bool SshConfigExisted { get; set; }
 
     public int GitRewriteCount { get; set; }
+
+    public string? GitRewriteCaptureError { get; set; }
 }
 
 public sealed class BackupSnapshot
