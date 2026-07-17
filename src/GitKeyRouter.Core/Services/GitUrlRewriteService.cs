@@ -66,6 +66,62 @@ public sealed class GitUrlRewriteService
         return comparisons;
     }
 
+    public Task<IReadOnlyList<GitUrlRewriteRule>> GetActualRulesAsync(CancellationToken cancellationToken = default)
+        => _store.GetAllAsync(cancellationToken);
+
+    public async Task<GitRewritePlan> BuildApplyMissingPlanAsync(CancellationToken cancellationToken = default)
+    {
+        var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        var expected = OwnerRouteService.BuildExpectedRules(config);
+        var actual = await _store.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        var plan = new GitRewritePlan();
+        foreach (var rule in expected)
+        {
+            if (!actual.Any(item => RuleEquals(item, rule)))
+            {
+                plan.Adds.Add(rule);
+            }
+        }
+
+        return plan;
+    }
+
+    public async Task<GitRewritePlan> BuildCleanupDuplicatesPlanAsync(CancellationToken cancellationToken = default)
+    {
+        var actual = await _store.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        var plan = new GitRewritePlan();
+        foreach (var group in actual.GroupBy(rule => $"{rule.BaseUrl}\n{rule.InsteadOfUrl}", StringComparer.OrdinalIgnoreCase)
+                     .Where(group => group.Count() > 1))
+        {
+            var rule = group.First();
+            plan.Removes.Add(rule);
+            plan.Adds.Add(rule);
+        }
+
+        return plan;
+    }
+
+    public async Task<GitRewritePlan> BuildDeleteOwnerPlanAsync(string owner, CancellationToken cancellationToken = default)
+    {
+        var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        var expected = OwnerRouteService.BuildExpectedRules(config)
+            .Where(rule => rule.InsteadOfUrl.Contains($"/{owner}/", StringComparison.OrdinalIgnoreCase)
+                || rule.InsteadOfUrl.Contains($":{owner}/", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var actual = await _store.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        var plan = new GitRewritePlan();
+        foreach (var rule in expected)
+        {
+            if (actual.Any(item => RuleEquals(item, rule))
+                && !plan.Removes.Any(item => RuleEquals(item, rule)))
+            {
+                plan.Removes.Add(rule);
+            }
+        }
+
+        return plan;
+    }
+
     public async Task<GitRewritePlan> BuildReconcilePlanAsync(CancellationToken cancellationToken = default)
     {
         var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
