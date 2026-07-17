@@ -1,0 +1,11 @@
+.vs/
+.idea/
+**/bin/
+**/obj/
+artifacts/
+publish/
+*.user
+*.suo
+*.cache
+TestResults/
+*.trx

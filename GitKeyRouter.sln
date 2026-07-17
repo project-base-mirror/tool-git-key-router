@@ -1,0 +1,36 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GitKeyRouter.Core", "src\GitKeyRouter.Core\GitKeyRouter.Core.csproj", "{8F0C14A8-1A5A-4D70-A1A1-E4A7CE9D9311}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GitKeyRouter.Infrastructure", "src\GitKeyRouter.Infrastructure\GitKeyRouter.Infrastructure.csproj", "{4B3AD176-C3D5-47A4-B0BF-ED718990B97B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GitKeyRouter.App", "src\GitKeyRouter.App\GitKeyRouter.App.csproj", "{CC80789E-47B3-4874-9B7E-16F6F71D15AD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GitKeyRouter.Tests", "tests\GitKeyRouter.Tests\GitKeyRouter.Tests.csproj", "{18345630-3F03-4D90-B812-D774315BFA51}"
+EndProject
+Global
+    GlobalSection(SolutionConfigurationPlatforms) = preSolution
+        Debug|Any CPU = Debug|Any CPU
+        Release|Any CPU = Release|Any CPU
+    EndGlobalSection
+    GlobalSection(ProjectConfigurationPlatforms) = postSolution
+        {8F0C14A8-1A5A-4D70-A1A1-E4A7CE9D9311}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {8F0C14A8-1A5A-4D70-A1A1-E4A7CE9D9311}.Debug|Any CPU.Build.0 = Debug|Any CPU
+        {8F0C14A8-1A5A-4D70-A1A1-E4A7CE9D9311}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {8F0C14A8-1A5A-4D70-A1A1-E4A7CE9D9311}.Release|Any CPU.Build.0 = Release|Any CPU
+        {4B3AD176-C3D5-47A4-B0BF-ED718990B97B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {4B3AD176-C3D5-47A4-B0BF-ED718990B97B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+        {4B3AD176-C3D5-47A4-B0BF-ED718990B97B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {4B3AD176-C3D5-47A4-B0BF-ED718990B97B}.Release|Any CPU.Build.0 = Release|Any CPU
+        {CC80789E-47B3-4874-9B7E-16F6F71D15AD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {CC80789E-47B3-4874-9B7E-16F6F71D15AD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+        {CC80789E-47B3-4874-9B7E-16F6F71D15AD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {CC80789E-47B3-4874-9B7E-16F6F71D15AD}.Release|Any CPU.Build.0 = Release|Any CPU
+        {18345630-3F03-4D90-B812-D774315BFA51}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {18345630-3F03-4D90-B812-D774315BFA51}.Debug|Any CPU.Build.0 = Debug|Any CPU
+        {18345630-3F03-4D90-B812-D774315BFA51}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {18345630-3F03-4D90-B812-D774315BFA51}.Release|Any CPU.Build.0 = Release|Any CPU
+    EndGlobalSection
+EndGlobal
