@@ -1,4 +1,5 @@
 using GitKeyRouter.Core.Models;
+using GitKeyRouter.App.Presentation;
 
 namespace GitKeyRouter.App.Forms;
 
@@ -6,63 +7,44 @@ public sealed class KeyFormatConversionForm : Form
 {
     private readonly ComboBox _targetFormat = new()
     {
-        DropDownStyle = ComboBoxStyle.DropDownList,
-        Dock = DockStyle.Top
+        DropDownStyle = ComboBoxStyle.DropDownList
     };
     private readonly CheckBox _overwrite = new()
     {
         Text = "目标格式文件存在时先备份并覆盖",
-        AutoSize = true,
-        Dock = DockStyle.Top
+        AutoSize = true
     };
 
     public KeyFormatConversionForm(string sourceFormat, string sourcePath)
     {
         Text = "转换公钥格式";
-        StartPosition = FormStartPosition.CenterParent;
-        Width = 620;
-        Height = 260;
-        MinimizeBox = false;
-        MaximizeBox = false;
+        UiHelpers.ConfigureDialog(this, 620, 250);
 
         var source = new Label
         {
             Text = $"源格式：{sourceFormat}\r\n源文件：{sourcePath}\r\n\r\n转换结果会以格式后缀写入新文件，原文件保持不变。",
-            Dock = DockStyle.Top,
-            Height = 92,
-            AutoEllipsis = true
+            AutoSize = true,
+            AutoEllipsis = true,
+            MaximumSize = new Size(560, 0)
         };
         _targetFormat.Items.AddRange(
         [
-            new FormatChoice("OpenSSH 公钥（GitHub 可直接使用）", SshPublicKeyExportFormat.OpenSsh),
+            new FormatChoice("OpenSSH 公钥（Git 服务可直接使用）", SshPublicKeyExportFormat.OpenSsh),
             new FormatChoice("RFC4716 / SSH2 公钥", SshPublicKeyExportFormat.Rfc4716),
             new FormatChoice("PEM / PKCS8 公钥", SshPublicKeyExportFormat.Pem)
         ]);
         _targetFormat.SelectedIndex = 0;
 
-        var formatLabel = new Label
-        {
-            Text = "目标格式",
-            Dock = DockStyle.Top,
-            Height = 24
-        };
-        var buttons = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Bottom,
-            Height = 48,
-            FlowDirection = FlowDirection.RightToLeft,
-            Padding = new Padding(8)
-        };
-        var convert = new Button { Text = "转换", DialogResult = DialogResult.OK, AutoSize = true };
-        var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, AutoSize = true };
-        buttons.Controls.Add(convert);
-        buttons.Controls.Add(cancel);
+        var table = UiHelpers.CreateCompactDialogTable(2, 100);
+        UiHelpers.AddCompactDialogContent(table, 0, source, 0, 2);
+        UiHelpers.AddCompactDialogRow(table, 1, "目标格式", _targetFormat);
+        UiHelpers.AddCompactDialogContent(table, 2, _overwrite, 1);
 
-        var body = new Panel { Dock = DockStyle.Fill, Padding = new Padding(12) };
-        body.Controls.Add(_overwrite);
-        body.Controls.Add(_targetFormat);
-        body.Controls.Add(formatLabel);
-        body.Controls.Add(source);
+        var convert = UiHelpers.CreateDialogButton("转换", DialogResult.OK, primary: true);
+        var cancel = UiHelpers.CreateDialogButton("取消", DialogResult.Cancel);
+        var buttons = UiHelpers.CreateDialogButtonBar(convert, cancel);
+        var body = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = UiHelpers.Surface };
+        body.Controls.Add(table);
         Controls.Add(body);
         Controls.Add(buttons);
         AcceptButton = convert;

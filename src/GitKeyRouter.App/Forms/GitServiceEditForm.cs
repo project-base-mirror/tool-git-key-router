@@ -1,5 +1,6 @@
 using GitKeyRouter.Core.Models;
 using GitKeyRouter.Core.Services;
+using GitKeyRouter.App.Presentation;
 
 namespace GitKeyRouter.App.Forms;
 
@@ -18,52 +19,28 @@ public sealed class GitServiceEditForm : Form
     {
         _original = service;
         Text = service is null ? "新建 Git 服务" : "编辑 Git 服务";
-        StartPosition = FormStartPosition.CenterParent;
-        Width = 680;
-        Height = 420;
-        MinimizeBox = false;
-        MaximizeBox = false;
+        UiHelpers.ConfigureDialog(this, 680, 360);
 
         _template.Items.AddRange(["GitLab.com", "自建 GitLab", "自建 Gitea", "通用 Git 服务"]);
         _provider.DataSource = Enum.GetValues<GitProviderKind>();
         _template.SelectedIndexChanged += (_, _) => ApplyTemplate();
 
-        var table = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            RowCount = 7,
-            Padding = new Padding(16),
-            GrowStyle = TableLayoutPanelGrowStyle.FixedSize
-        };
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        for (var row = 0; row < table.RowCount; row++)
-        {
-            table.RowStyles.Add(new RowStyle(SizeType.Percent, 100F / table.RowCount));
-        }
+        var table = UiHelpers.CreateCompactDialogTable(2, 140);
+        UiHelpers.AddCompactDialogRow(table, 0, "快速模板", _template);
+        UiHelpers.AddCompactDialogRow(table, 1, "显示名称", _displayName);
+        UiHelpers.AddCompactDialogRow(table, 2, "服务类型", _provider);
+        UiHelpers.AddCompactDialogRow(table, 3, "域名 / 主机名", _hostName);
+        UiHelpers.AddCompactDialogRow(table, 4, "SSH 端口（0=默认）", _sshPort);
+        UiHelpers.AddCompactDialogRow(table, 5, "SSH 用户", _sshUser);
+        UiHelpers.AddCompactDialogRow(table, 6, "Web Base URL", _webBaseUrl);
 
-        AddRow(table, 0, "快速模板", _template);
-        AddRow(table, 1, "显示名称", _displayName);
-        AddRow(table, 2, "服务类型", _provider);
-        AddRow(table, 3, "域名 / 主机名", _hostName);
-        AddRow(table, 4, "SSH 端口（0=默认）", _sshPort);
-        AddRow(table, 5, "SSH 用户", _sshUser);
-        AddRow(table, 6, "Web Base URL", _webBaseUrl);
-
-        var buttons = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Bottom,
-            Height = 54,
-            FlowDirection = FlowDirection.RightToLeft,
-            Padding = new Padding(8)
-        };
-        var save = new Button { Text = "保存", AutoSize = true, DialogResult = DialogResult.OK };
-        var cancel = new Button { Text = "取消", AutoSize = true, DialogResult = DialogResult.Cancel };
+        var save = UiHelpers.CreateDialogButton("保存", DialogResult.OK, primary: true);
+        var cancel = UiHelpers.CreateDialogButton("取消", DialogResult.Cancel);
         save.Click += SaveClicked;
-        buttons.Controls.Add(save);
-        buttons.Controls.Add(cancel);
-        Controls.Add(table);
+        var buttons = UiHelpers.CreateDialogButtonBar(save, cancel);
+        var body = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = UiHelpers.Surface };
+        body.Controls.Add(table);
+        Controls.Add(body);
         Controls.Add(buttons);
         AcceptButton = save;
         CancelButton = cancel;
@@ -89,19 +66,6 @@ public sealed class GitServiceEditForm : Form
 
     public GitServiceInstance? ResultService { get; private set; }
 
-    private static void AddRow(TableLayoutPanel table, int row, string label, Control editor)
-    {
-        editor.Anchor = AnchorStyles.Left | AnchorStyles.Right;
-        editor.Margin = new Padding(3, 4, 3, 4);
-        table.Controls.Add(new Label
-        {
-            Text = label,
-            AutoSize = true,
-            Anchor = AnchorStyles.Left,
-            Margin = new Padding(3, 4, 3, 4)
-        }, 0, row);
-        table.Controls.Add(editor, 1, row);
-    }
 
     private void ApplyTemplate()
     {

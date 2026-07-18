@@ -1,4 +1,5 @@
 using GitKeyRouter.Core.Models;
+using GitKeyRouter.App.Presentation;
 
 namespace GitKeyRouter.App.Forms;
 
@@ -19,11 +20,7 @@ public sealed class OwnerRouteEditForm : Form
         _original = route;
         _identities = identities;
         Text = route is null ? "新建仓库路由" : "编辑仓库路由";
-        StartPosition = FormStartPosition.CenterParent;
-        Width = 620;
-        Height = 310;
-        MinimizeBox = false;
-        MaximizeBox = false;
+        UiHelpers.ConfigureDialog(this, 620, 260);
 
         var serviceChoices = services
             .Select(item => new ServiceChoice(item.Id, $"{item.DisplayName} ({item.HostName})"))
@@ -34,28 +31,19 @@ public sealed class OwnerRouteEditForm : Form
         _service.SelectedIndexChanged += (_, _) => RefreshIdentityChoices();
         _service.SelectedIndex = serviceChoices.Count == 1 ? 0 : -1;
 
-        var table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 4, Padding = new Padding(14) };
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        table.Controls.Add(new Label { Text = "Git 服务", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
-        table.Controls.Add(_service, 1, 0);
-        table.Controls.Add(new Label { Text = "Owner / Namespace", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 1);
-        table.Controls.Add(_namespace, 1, 1);
-        table.Controls.Add(new Label { Text = "目标身份", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 2);
-        table.Controls.Add(_identity, 1, 2);
-        table.Controls.Add(new Label { Text = "状态", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 3);
-        table.Controls.Add(_enabled, 1, 3);
-        _service.Dock = DockStyle.Fill;
-        _namespace.Dock = DockStyle.Fill;
-        _identity.Dock = DockStyle.Fill;
+        var table = UiHelpers.CreateCompactDialogTable(2, 130);
+        UiHelpers.AddCompactDialogRow(table, 0, "Git 服务", _service);
+        UiHelpers.AddCompactDialogRow(table, 1, "Owner / Namespace", _namespace);
+        UiHelpers.AddCompactDialogRow(table, 2, "目标身份", _identity);
+        UiHelpers.AddCompactDialogRow(table, 3, "状态", _enabled);
 
-        var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 52, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(8) };
-        var save = new Button { Text = "保存", DialogResult = DialogResult.OK, AutoSize = true };
-        var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, AutoSize = true };
+        var save = UiHelpers.CreateDialogButton("保存", DialogResult.OK, primary: true);
+        var cancel = UiHelpers.CreateDialogButton("取消", DialogResult.Cancel);
         save.Click += SaveClicked;
-        buttons.Controls.Add(save);
-        buttons.Controls.Add(cancel);
-        Controls.Add(table);
+        var buttons = UiHelpers.CreateDialogButtonBar(save, cancel);
+        var body = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = UiHelpers.Surface };
+        body.Controls.Add(table);
+        Controls.Add(body);
         Controls.Add(buttons);
         AcceptButton = save;
         CancelButton = cancel;

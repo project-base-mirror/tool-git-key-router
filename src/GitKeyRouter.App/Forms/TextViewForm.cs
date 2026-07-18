@@ -1,3 +1,5 @@
+using GitKeyRouter.App.Presentation;
+
 namespace GitKeyRouter.App.Forms;
 
 public sealed class TextViewForm : Form
@@ -5,35 +7,21 @@ public sealed class TextViewForm : Form
     public TextViewForm(string title, string content, bool editable = false)
     {
         Text = title;
-        StartPosition = FormStartPosition.CenterParent;
-        Width = 860;
-        Height = 600;
+        UiHelpers.ConfigureDialog(this, 860, 600, resizable: true);
 
-        ContentTextBox = new TextBox
-        {
-            Dock = DockStyle.Fill,
-            Multiline = true,
-            ReadOnly = !editable,
-            ScrollBars = ScrollBars.Both,
-            WordWrap = false,
-            Font = new Font(FontFamily.GenericMonospace, 9F),
-            Text = content
-        };
-        var buttons = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Bottom,
-            Height = 46,
-            FlowDirection = FlowDirection.RightToLeft,
-            Padding = new Padding(8)
-        };
-        var close = new Button { Text = editable ? "保存" : "关闭", DialogResult = DialogResult.OK, AutoSize = true };
-        var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, AutoSize = true, Visible = editable };
-        var copy = new Button { Text = "复制", AutoSize = true };
+        ContentTextBox = UiHelpers.CreateOutputTextBox(wordWrap: false, scrollBars: ScrollBars.Both);
+        ContentTextBox.ReadOnly = !editable;
+        ContentTextBox.BackColor = editable ? UiHelpers.Surface : UiHelpers.OutputBackground;
+        ContentTextBox.Text = content;
+        var close = UiHelpers.CreateDialogButton(editable ? "保存" : "关闭", DialogResult.OK, primary: true);
+        var cancel = UiHelpers.CreateDialogButton("取消", DialogResult.Cancel);
+        cancel.Visible = editable;
+        var copy = UiHelpers.CreateDialogButton("复制");
         copy.Click += (_, _) => Clipboard.SetText(ContentTextBox.Text);
-        buttons.Controls.Add(close);
-        buttons.Controls.Add(cancel);
-        buttons.Controls.Add(copy);
-        Controls.Add(ContentTextBox);
+        var buttons = UiHelpers.CreateDialogButtonBar(close, cancel, copy);
+        var body = new Panel { Dock = DockStyle.Fill, Padding = new Padding(12), BackColor = UiHelpers.AppBackground };
+        body.Controls.Add(UiHelpers.CreateOutputPanel(ContentTextBox));
+        Controls.Add(body);
         Controls.Add(buttons);
         AcceptButton = close;
         CancelButton = cancel;

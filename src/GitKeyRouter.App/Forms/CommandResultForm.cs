@@ -8,33 +8,17 @@ public sealed class CommandResultForm : Form
     public CommandResultForm(string title, string content)
     {
         Text = title;
-        StartPosition = FormStartPosition.CenterParent;
-        Width = 920;
-        Height = 650;
+        UiHelpers.ConfigureDialog(this, 920, 650, resizable: true);
 
-        var textBox = new TextBox
-        {
-            Dock = DockStyle.Fill,
-            Multiline = true,
-            ReadOnly = true,
-            ScrollBars = ScrollBars.Both,
-            WordWrap = false,
-            Font = new Font(FontFamily.GenericMonospace, 9F),
-            Text = content
-        };
-        var buttons = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Bottom,
-            Height = 46,
-            FlowDirection = FlowDirection.RightToLeft,
-            Padding = new Padding(8)
-        };
-        var close = new Button { Text = "关闭", DialogResult = DialogResult.OK, AutoSize = true };
-        var copy = new Button { Text = "复制", AutoSize = true };
+        var textBox = UiHelpers.CreateOutputTextBox(wordWrap: false, scrollBars: ScrollBars.Both);
+        textBox.Text = content;
+        var close = UiHelpers.CreateDialogButton("关闭", DialogResult.OK, primary: true);
+        var copy = UiHelpers.CreateDialogButton("复制");
         copy.Click += (_, _) => Clipboard.SetText(textBox.Text);
-        buttons.Controls.Add(close);
-        buttons.Controls.Add(copy);
-        Controls.Add(textBox);
+        var buttons = UiHelpers.CreateDialogButtonBar(close, copy);
+        var body = new Panel { Dock = DockStyle.Fill, Padding = new Padding(12), BackColor = UiHelpers.AppBackground };
+        body.Controls.Add(UiHelpers.CreateOutputPanel(textBox));
+        Controls.Add(body);
         Controls.Add(buttons);
         AcceptButton = close;
     }

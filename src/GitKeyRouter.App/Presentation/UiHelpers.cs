@@ -125,6 +125,159 @@ public static class UiHelpers
         return button;
     }
 
+    public static void ConfigureDialog(
+        Form form,
+        int clientWidth,
+        int clientHeight,
+        bool resizable = false)
+    {
+        form.StartPosition = FormStartPosition.CenterParent;
+        form.ClientSize = new Size(clientWidth, clientHeight);
+        form.MinimumSize = resizable ? new Size(640, 420) : Size.Empty;
+        form.Font = new Font("Segoe UI", 9F);
+        form.BackColor = AppBackground;
+        form.ForeColor = TextPrimary;
+        form.AutoScaleMode = AutoScaleMode.Dpi;
+        form.MinimizeBox = false;
+        form.MaximizeBox = resizable;
+        form.ShowIcon = false;
+        form.FormBorderStyle = resizable ? FormBorderStyle.Sizable : FormBorderStyle.FixedDialog;
+    }
+
+    public static TableLayoutPanel CreateCompactDialogTable(
+        int columnCount,
+        int labelWidth,
+        int? actionWidth = null)
+    {
+        var table = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = columnCount,
+            RowCount = 0,
+            GrowStyle = TableLayoutPanelGrowStyle.AddRows,
+            Padding = new Padding(16),
+            BackColor = Surface,
+            Margin = Padding.Empty
+        };
+        table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, labelWidth));
+        table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        if (columnCount > 2)
+        {
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, actionWidth ?? 92));
+        }
+
+        return table;
+    }
+
+    public static void AddCompactDialogRow(
+        TableLayoutPanel table,
+        int row,
+        string labelText,
+        Control editor,
+        int editorColumnSpan = 1)
+    {
+        EnsureCompactDialogRow(table, row);
+        editor.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        editor.Margin = new Padding(3, 4, 3, 4);
+        var label = new Label
+        {
+            Text = labelText,
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
+            ForeColor = TextPrimary,
+            Margin = new Padding(3, 4, 8, 4)
+        };
+        table.Controls.Add(label, 0, row);
+        table.Controls.Add(editor, 1, row);
+        if (editorColumnSpan > 1)
+        {
+            table.SetColumnSpan(editor, editorColumnSpan);
+        }
+    }
+
+    public static void AddCompactDialogRow(
+        TableLayoutPanel table,
+        int row,
+        string labelText,
+        Control editor,
+        Control action)
+    {
+        AddCompactDialogRow(table, row, labelText, editor);
+        action.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        action.Margin = new Padding(5, 3, 3, 3);
+        table.Controls.Add(action, 2, row);
+    }
+
+    public static void AddCompactDialogContent(
+        TableLayoutPanel table,
+        int row,
+        Control content,
+        int column,
+        int columnSpan = 1)
+    {
+        EnsureCompactDialogRow(table, row);
+        content.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        content.Margin = new Padding(3, 4, 3, 4);
+        table.Controls.Add(content, column, row);
+        if (columnSpan > 1)
+        {
+            table.SetColumnSpan(content, columnSpan);
+        }
+    }
+
+    public static Button CreateDialogButton(
+        string text,
+        DialogResult dialogResult = DialogResult.None,
+        bool primary = false)
+    {
+        var button = new Button
+        {
+            Text = text,
+            DialogResult = dialogResult,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            MinimumSize = new Size(76, 32),
+            Padding = new Padding(12, 0, 12, 0),
+            Margin = new Padding(6, 2, 0, 2),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = primary ? Accent : Surface,
+            ForeColor = primary ? Color.White : TextPrimary,
+            Cursor = Cursors.Hand,
+            UseVisualStyleBackColor = false
+        };
+        button.FlatAppearance.BorderColor = primary ? Accent : Border;
+        button.FlatAppearance.MouseOverBackColor = primary ? Color.FromArgb(36, 77, 153) : AccentSoft;
+        button.FlatAppearance.MouseDownBackColor = primary ? Color.FromArgb(31, 66, 132) : Color.FromArgb(214, 226, 247);
+        return button;
+    }
+
+    public static FlowLayoutPanel CreateDialogButtonBar(params Button[] buttons)
+    {
+        var bar = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 52,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false,
+            Padding = new Padding(12, 8, 16, 8),
+            BackColor = Surface,
+            Margin = Padding.Empty
+        };
+        bar.Controls.AddRange(buttons);
+        return bar;
+    }
+
+    private static void EnsureCompactDialogRow(TableLayoutPanel table, int row)
+    {
+        while (table.RowCount <= row)
+        {
+            table.RowCount++;
+            table.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        }
+    }
+
     public static Control CreatePageHeader(string title, string subtitle)
     {
         var header = new Panel

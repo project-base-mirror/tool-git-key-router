@@ -1,3 +1,5 @@
+using GitKeyRouter.App.Presentation;
+
 namespace GitKeyRouter.App.Forms;
 
 public sealed class DiffPreviewForm : Form
@@ -7,39 +9,20 @@ public sealed class DiffPreviewForm : Form
     public DiffPreviewForm(string title, string diffText, string executeButtonText = "执行修改")
     {
         Text = title;
-        StartPosition = FormStartPosition.CenterParent;
-        Width = 920;
-        Height = 680;
-        MinimizeBox = false;
-        MaximizeBox = true;
+        UiHelpers.ConfigureDialog(this, 920, 680, resizable: true);
 
-        _textBox = new TextBox
-        {
-            Dock = DockStyle.Fill,
-            Multiline = true,
-            ReadOnly = true,
-            ScrollBars = ScrollBars.Both,
-            WordWrap = false,
-            Font = new Font(FontFamily.GenericMonospace, 9F),
-            Text = diffText
-        };
+        _textBox = UiHelpers.CreateOutputTextBox(wordWrap: false, scrollBars: ScrollBars.Both);
+        _textBox.Text = diffText;
 
-        var buttons = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Bottom,
-            Height = 48,
-            FlowDirection = FlowDirection.RightToLeft,
-            Padding = new Padding(8)
-        };
-        var execute = new Button { Text = executeButtonText, DialogResult = DialogResult.OK, AutoSize = true };
-        var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, AutoSize = true };
-        var copy = new Button { Text = "复制变更", AutoSize = true };
+        var execute = UiHelpers.CreateDialogButton(executeButtonText, DialogResult.OK, primary: true);
+        var cancel = UiHelpers.CreateDialogButton("取消", DialogResult.Cancel);
+        var copy = UiHelpers.CreateDialogButton("复制变更");
         copy.Click += (_, _) => Clipboard.SetText(_textBox.Text);
-        buttons.Controls.Add(execute);
-        buttons.Controls.Add(cancel);
-        buttons.Controls.Add(copy);
+        var buttons = UiHelpers.CreateDialogButtonBar(execute, cancel, copy);
 
-        Controls.Add(_textBox);
+        var body = new Panel { Dock = DockStyle.Fill, Padding = new Padding(12), BackColor = UiHelpers.AppBackground };
+        body.Controls.Add(UiHelpers.CreateOutputPanel(_textBox));
+        Controls.Add(body);
         Controls.Add(buttons);
         AcceptButton = execute;
         CancelButton = cancel;

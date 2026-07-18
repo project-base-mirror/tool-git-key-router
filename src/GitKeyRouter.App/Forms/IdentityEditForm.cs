@@ -1,5 +1,6 @@
 using GitKeyRouter.Core.Models;
 using GitKeyRouter.Core.Services;
+using GitKeyRouter.App.Presentation;
 using System.Runtime.InteropServices;
 
 namespace GitKeyRouter.App.Forms;
@@ -33,23 +34,9 @@ public sealed class IdentityEditForm : Form
         _sshDirectory = sshDirectory;
         _original = identity ?? new GitIdentity();
         Text = identity is null ? "新建 Git 身份" : "编辑 Git 身份";
-        StartPosition = FormStartPosition.CenterParent;
-        Width = 760;
-        Height = 470;
-        MinimizeBox = false;
-        MaximizeBox = false;
+        UiHelpers.ConfigureDialog(this, 760, 430);
 
-        var table = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 3,
-            RowCount = 8,
-            Padding = new Padding(14),
-            AutoSize = true
-        };
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90));
+        var table = UiHelpers.CreateCompactDialogTable(3, 130, 90);
 
         var serviceChoices = services
             .Select(item => new ServiceChoice(item.Id, $"{item.DisplayName} ({item.HostName})"))
@@ -67,26 +54,19 @@ public sealed class IdentityEditForm : Form
         AddPathRow(table, 5, "公钥路径", _publicKeyPath, true);
         AddRow(table, 6, "注释 / Email", _comment);
 
-        _keyDiscoveryNote.Dock = DockStyle.Fill;
         _keyDiscoveryNote.AutoSize = true;
         _keyDiscoveryNote.ForeColor = SystemColors.GrayText;
-        table.Controls.Add(_keyDiscoveryNote, 1, 7);
-        table.SetColumnSpan(_keyDiscoveryNote, 2);
+        _keyDiscoveryNote.MaximumSize = new Size(560, 0);
+        UiHelpers.AddCompactDialogContent(table, 7, _keyDiscoveryNote, 1, 2);
 
-        var buttons = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Bottom,
-            Height = 52,
-            FlowDirection = FlowDirection.RightToLeft,
-            Padding = new Padding(8)
-        };
-        var save = new Button { Text = "保存", DialogResult = DialogResult.OK, AutoSize = true };
-        var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, AutoSize = true };
+        var save = UiHelpers.CreateDialogButton("保存", DialogResult.OK, primary: true);
+        var cancel = UiHelpers.CreateDialogButton("取消", DialogResult.Cancel);
         save.Click += SaveClicked;
-        buttons.Controls.Add(save);
-        buttons.Controls.Add(cancel);
+        var buttons = UiHelpers.CreateDialogButtonBar(save, cancel);
 
-        Controls.Add(table);
+        var body = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = UiHelpers.Surface };
+        body.Controls.Add(table);
+        Controls.Add(body);
         Controls.Add(buttons);
         AcceptButton = save;
         CancelButton = cancel;
@@ -100,21 +80,14 @@ public sealed class IdentityEditForm : Form
     public GitIdentity? ResultIdentity { get; private set; }
 
     private static void AddRow(TableLayoutPanel table, int row, string label, Control control)
-    {
-        control.Dock = DockStyle.Fill;
-        table.Controls.Add(new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left }, 0, row);
-        table.Controls.Add(control, 1, row);
-        table.SetColumnSpan(control, 2);
-    }
+        => UiHelpers.AddCompactDialogRow(table, row, label, control, 2);
 
     private void AddPathRow(TableLayoutPanel table, int row, string label, Control editor, bool publicKey)
     {
-        editor.Dock = DockStyle.Fill;
-        var browse = new Button { Text = "浏览...", Dock = DockStyle.Fill };
+        var browse = UiHelpers.CreateDialogButton("浏览...");
+        browse.MinimumSize = new Size(82, 30);
         browse.Click += (_, _) => BrowsePath(editor, publicKey);
-        table.Controls.Add(new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left }, 0, row);
-        table.Controls.Add(editor, 1, row);
-        table.Controls.Add(browse, 2, row);
+        UiHelpers.AddCompactDialogRow(table, row, label, editor, browse);
     }
 
     private void LoadDiscoveredKeys(IReadOnlyList<SshPrivateKeyCandidate> discoveredKeys)
