@@ -41,7 +41,9 @@ public sealed class BackupControl : UserControl, IAsyncRefreshable
             时间 = item.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"),
             原因 = item.Reason,
             SSH配置 = item.SshConfigExisted ? "有" : "原文件不存在",
-            程序配置 = item.AppConfigExisted ? "有" : "原文件不存在",
+            程序配置 = item.AppConfigExisted
+                ? $"有（Schema {item.AppConfigSchemaVersion?.ToString() ?? "未知"}）"
+                : "原文件不存在",
             Git规则数 = item.GitRewriteCount,
             Git快照 = string.IsNullOrWhiteSpace(item.GitRewriteCaptureError) ? "正常" : "读取失败"
         }).ToList();

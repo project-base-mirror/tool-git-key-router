@@ -11,17 +11,20 @@ public sealed partial class SshKeyService
     private readonly IProcessRunner _processRunner;
     private readonly IToolchainService _toolchainService;
     private readonly IClock _clock;
+    private readonly GitProviderAdapterRegistry _providers;
 
     public SshKeyService(
         IFileSystem fileSystem,
         IProcessRunner processRunner,
         IToolchainService toolchainService,
-        IClock clock)
+        IClock clock,
+        GitProviderAdapterRegistry? providers = null)
     {
         _fileSystem = fileSystem;
         _processRunner = processRunner;
         _toolchainService = toolchainService;
         _clock = clock;
+        _providers = providers ?? GitProviderAdapterRegistry.CreateDefault();
     }
 
     public static string CreateDefaultPrivateKeyPath(string sshDirectory, string hostAlias)
@@ -284,7 +287,7 @@ public sealed partial class SshKeyService
         }
 
         var comment = string.IsNullOrWhiteSpace(identity.EmailOrComment)
-            ? identity.GitHubUsername
+            ? identity.AccountName
             : identity.EmailOrComment;
         var process = await _processRunner.RunAsync(new ProcessRequest
         {
@@ -464,11 +467,33 @@ public sealed partial class SshKeyService
     }
 
     public async Task<SshTestResult> TestAsync(string hostAlias, bool verbose, CancellationToken cancellationToken = default)
+        => await TestAsync(
+            GitServiceInstance.CreateGitHubCom(),
+            new GitIdentity
+            {
+                ServiceInstanceId = GitServiceInstance.GitHubComId,
+                HostAlias = hostAlias
+            },
+            verbose,
+            cancellationToken).ConfigureAwait(false);
+
+    public async Task<SshTestResult> TestAsync(
+        GitServiceInstance service,
+        GitIdentity identity,
+        bool verbose,
+        CancellationToken cancellationToken = default)
     {
-        var validation = HostAliasValidator.Validate(hostAlias);
+        ArgumentNullException.ThrowIfNull(service);
+        ArgumentNullException.ThrowIfNull(identity);
+        if (!string.Equals(identity.ServiceInstanceId, service.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("The identity belongs to a different Git service.", nameof(identity));
+        }
+
+        var validation = HostAliasValidator.Validate(identity.HostAlias);
         if (!validation.IsValid)
         {
-            throw new ArgumentException(string.Join(Environment.NewLine, validation.Errors), nameof(hostAlias));
+            throw new ArgumentException(string.Join(Environment.NewLine, validation.Errors), nameof(identity));
         }
 
         var tools = await _toolchainService.InspectAsync(cancellationToken).ConfigureAwait(false);
@@ -481,15 +506,15 @@ public sealed partial class SshKeyService
             };
             return new SshTestResult
             {
-                HostAlias = hostAlias,
+                HostAlias = identity.HostAlias,
                 Process = missing,
                 Classification = "ssh.exe missing"
             };
         }
 
         var arguments = verbose
-            ? new[] { "-vT", $"git@{hostAlias}" }
-            : new[] { "-T", $"git@{hostAlias}" };
+            ? new[] { "-vT", $"{service.SshUser}@{identity.HostAlias}" }
+            : new[] { "-T", $"{service.SshUser}@{identity.HostAlias}" };
         var process = await _processRunner.RunAsync(new ProcessRequest
         {
             ExecutablePath = tools.Ssh.SelectedPath,
@@ -497,13 +522,13 @@ public sealed partial class SshKeyService
             Timeout = TimeSpan.FromSeconds(30)
         }, cancellationToken).ConfigureAwait(false);
         var combined = process.StandardOutput + Environment.NewLine + process.StandardError;
-        var authenticated = combined.Contains("successfully authenticated", StringComparison.OrdinalIgnoreCase);
+        var authenticated = _providers.Get(service.ProviderKind).IsAuthenticationSuccess(process);
         return new SshTestResult
         {
-            HostAlias = hostAlias,
+            HostAlias = identity.HostAlias,
             Process = process,
             Authenticated = authenticated,
-            Classification = Classify(combined, authenticated, process)
+            Classification = Classify(service, combined, authenticated, process)
         };
     }
 
@@ -654,11 +679,15 @@ public sealed partial class SshKeyService
             || fileName.Equals("rc", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string Classify(string output, bool authenticated, ProcessResult process)
+    private static string Classify(
+        GitServiceInstance service,
+        string output,
+        bool authenticated,
+        ProcessResult process)
     {
         if (authenticated)
         {
-            return "GitHub authentication succeeded";
+            return $"{service.DisplayName} authentication succeeded";
         }
 
         if (process.TimedOut)

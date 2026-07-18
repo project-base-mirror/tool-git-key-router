@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using GitKeyRouter.Core.Abstractions;
 using GitKeyRouter.Core.Models;
 
@@ -14,7 +15,8 @@ public sealed class BackupService : IBackupService
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
-        PropertyNameCaseInsensitive = true
+        PropertyNameCaseInsensitive = true,
+        Converters = { new JsonStringEnumConverter() }
     };
 
     private readonly IAppPaths _paths;
@@ -38,9 +40,12 @@ public sealed class BackupService : IBackupService
 
         var appExists = _fileSystem.FileExists(_paths.ConfigPath);
         var sshExists = _fileSystem.FileExists(_paths.SshConfigPath);
+        int? appConfigSchemaVersion = null;
         if (appExists)
         {
             _fileSystem.CopyFile(_paths.ConfigPath, Path.Combine(directory, AppConfigFileName), true);
+            var appConfigText = await _fileSystem.ReadAllTextAsync(_paths.ConfigPath, cancellationToken).ConfigureAwait(false);
+            appConfigSchemaVersion = TryReadAppConfigSchemaVersion(appConfigText);
         }
 
         if (sshExists)
@@ -71,6 +76,7 @@ public sealed class BackupService : IBackupService
             BackupDirectory = directory,
             ApplicationVersion = typeof(BackupService).Assembly.GetName().Version?.ToString(),
             AppConfigExisted = appExists,
+            AppConfigSchemaVersion = appConfigSchemaVersion,
             SshConfigExisted = sshExists,
             GitRewriteCount = rewrites.Count,
             GitRewriteCaptureError = gitCaptureError
@@ -150,6 +156,20 @@ public sealed class BackupService : IBackupService
     public async Task<OperationResult> RestoreAppConfigAsync(string backupDirectory, CancellationToken cancellationToken = default)
     {
         var snapshot = await ReadAsync(backupDirectory, cancellationToken).ConfigureAwait(false);
+        if (snapshot.Manifest.AppConfigExisted)
+        {
+            if (snapshot.AppConfigText is null)
+            {
+                return OperationResult.Fail("The selected backup is missing its application configuration file.");
+            }
+
+            var validation = ValidateAppConfigForRestore(snapshot.AppConfigText);
+            if (!validation.Success)
+            {
+                return validation;
+            }
+        }
+
         await CreateSnapshotAsync("Before restoring application configuration", cancellationToken).ConfigureAwait(false);
         if (!snapshot.Manifest.AppConfigExisted)
         {
@@ -210,6 +230,64 @@ public sealed class BackupService : IBackupService
         }
 
         return OperationResult.Ok("Git URL rewrites restored from the selected snapshot.");
+    }
+
+    private static int? TryReadAppConfigSchemaVersion(string text)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(text);
+            return document.RootElement.TryGetProperty("SchemaVersion", out var schemaVersion)
+                ? schemaVersion.GetInt32()
+                : 1;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static OperationResult ValidateAppConfigForRestore(string text)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(text);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return OperationResult.Fail("The backup application configuration is not a JSON object.");
+            }
+
+            var schemaVersion = document.RootElement.TryGetProperty("SchemaVersion", out var schemaElement)
+                ? schemaElement.GetInt32()
+                : 1;
+            if (schemaVersion < 1)
+            {
+                return OperationResult.Fail($"The backup application configuration has invalid schema version {schemaVersion}.");
+            }
+
+            if (schemaVersion > AppConfig.CurrentSchemaVersion)
+            {
+                return OperationResult.Fail(
+                    $"The backup uses application configuration schema {schemaVersion}, but this version supports up to schema {AppConfig.CurrentSchemaVersion}.");
+            }
+
+            if (schemaVersion == AppConfig.CurrentSchemaVersion)
+            {
+                var config = JsonSerializer.Deserialize<AppConfig>(text, JsonOptions);
+                if (config is null)
+                {
+                    return OperationResult.Fail("The backup application configuration is empty.");
+                }
+
+                config.Normalize();
+            }
+
+            return OperationResult.Ok("Application configuration is compatible.");
+        }
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException or FormatException)
+        {
+            return OperationResult.Fail("The backup application configuration is invalid.", exception.Message);
+        }
     }
 
     private string CreateUniqueDirectoryName()

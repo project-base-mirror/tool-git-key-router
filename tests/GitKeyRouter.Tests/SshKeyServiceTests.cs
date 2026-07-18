@@ -248,6 +248,46 @@ public sealed class SshKeyServiceTests
         Assert.False(File.Exists(Path.Combine(directory.Path, "id_demo.openssh.pub")));
     }
 
+    [Fact]
+    public async Task TestAsync_RecognizesGitLabAuthenticationGreeting()
+    {
+        var runner = new StubProcessRunner(_ => new ProcessResult
+        {
+            ExecutablePath = "ssh.exe",
+            ExitCode = 1,
+            StandardError = "Welcome to GitLab, @camus!"
+        });
+        var service = new SshKeyService(
+            new PhysicalFileSystem(),
+            runner,
+            new FixedToolchainService("git.exe", "ssh-keygen.exe", "ssh.exe"),
+            new TestClock(),
+            GitProviderAdapterRegistry.CreateDefault());
+        var gitLab = new GitServiceInstance
+        {
+            Id = "gitlab-office",
+            DisplayName = "Office GitLab",
+            ProviderKind = GitProviderKind.GitLab,
+            HostName = "gitlab.office.example",
+            SshUser = "git",
+            WebBaseUrl = "https://gitlab.office.example"
+        };
+        var identity = new GitIdentity
+        {
+            ServiceInstanceId = gitLab.Id,
+            DisplayName = "Work",
+            AccountName = "camus",
+            HostAlias = "gitlab-camus"
+        };
+
+        var result = await service.TestAsync(gitLab, identity, verbose: false);
+
+        Assert.True(result.Authenticated);
+        Assert.Equal("Office GitLab authentication succeeded", result.Classification);
+        var request = Assert.Single(runner.Requests);
+        Assert.Contains("git@gitlab-camus", request.Arguments);
+    }
+
     private static GitHubIdentity CreateIdentity(string directory)
         => new()
         {

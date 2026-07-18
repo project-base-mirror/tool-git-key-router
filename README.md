@@ -2,9 +2,10 @@
 
 GitKeyRouter 是一个面向 Windows 10 / Windows 11 的本地桌面工具，用于统一管理：
 
-- 多个 GitHub 账户对应的 SSH 身份和密钥路径
-- `%USERPROFILE%\.ssh\config` 中的 GitHub HostAlias
-- 按 GitHub Owner 路由的 `url.*.insteadOf` 全局 Git 配置
+- GitHub.com、GitLab.com、自建 GitLab、Gitea 和通用 Git 服务实例
+- 每个服务下的多个 SSH 身份、账号和密钥路径
+- `%USERPROFILE%\.ssh\config` 中按服务生成的 HostAlias
+- 按“Git 服务 + Owner / Namespace”路由的 `url.*.insteadOf` 全局 Git 配置
 - 配置修改前的 diff、命令输出、备份和选择性恢复
 - GUI 与 DevRunner 可调用的简单 CLI
 
@@ -56,13 +57,16 @@ GitKeyRouter 以“管理方便、状态透明、操作可恢复”为目标：
 GitKeyRouter.exe
 ```
 
-### 2. 创建 GitHub 身份
+### 2. 配置 Git 服务和身份
 
-打开“GitHub 身份”，创建例如：
+GitHub.com 是不可删除的内置服务。使用 GitLab、Gitea 或其他自建服务时，先在“Git 服务”页面创建实例并填写域名、SSH 用户、端口和 Web Base URL。
+
+然后打开“Git 身份”，创建例如：
 
 ```text
+Git 服务: GitHub.com
 显示名称: Camus GitHub
-GitHub 用户名: camus0109
+账号: camus0109
 HostAlias: github-camus
 私钥路径: C:\Users\fgc01\.ssh\id_ed25519_github_camus
 公钥路径: C:\Users\fgc01\.ssh\id_ed25519_github_camus.pub
@@ -95,7 +99,7 @@ ssh-keygen.exe -t ed25519 -C <comment> -f <private-key-path> -N ""
 
 生成后会显示完整公钥，并提供复制和导出功能。
 
-GitKeyRouter 会识别同一身份目录中的多种公钥格式，并在“GitHub 身份”列表中为每个格式显示独立行：
+GitKeyRouter 会识别同一身份目录中的多种公钥格式，并在“Git 身份”列表中为每个格式显示独立行：
 
 - OpenSSH 公钥
 - RFC4716 / SSH2 公钥
@@ -115,11 +119,11 @@ id_ed25519_account.pem.pub         # PEM / PKCS8
 
 程序不显示私钥正文。选择已配置的 OpenSSH/PEM 私钥时，只会调用 `ssh-keygen -y` 派生新的 `.openssh.pub` 文件。PuTTY PPK 需要先用 PuTTYgen 转换。
 
-### 4. 添加公钥到 GitHub
+### 4. 添加公钥到 Git 服务
 
-在 GitHub 对应账户中打开 SSH Keys 页面，创建新 Key，并使用“复制到 GitHub”复制标记为 OpenSSH 格式的公钥。RFC4716、PEM、私钥或结构损坏的文本不会被该按钮复制。
+在对应 Git 服务账户中打开 SSH Keys 页面，创建新 Key，并使用“复制公钥”复制标记为 OpenSSH 格式的公钥。RFC4716、PEM、私钥或结构损坏的文本不会被该按钮复制。
 
-GitKeyRouter V1 不调用 GitHub API，也不会替用户上传公钥。
+GitKeyRouter 0.2 不调用 GitHub、GitLab 或 Gitea API，也不会替用户上传公钥。
 
 ### 5. 同步 SSH Config
 
@@ -144,7 +148,7 @@ Host github-camus
 
 普通同步不会重写完整 SSH Config。只有用户主动进入“编辑原始文本”并确认完整 diff 时，才会执行完整文本替换。
 
-### 6. 创建 Owner 路由
+### 6. 创建仓库路由
 
 示例：
 
@@ -172,7 +176,7 @@ git config --global --add "url.git@github-camus:camus0109/.insteadOf" "git@githu
 
 显示给用户的命令只用于复制和审阅；程序执行时不会把整条命令交给 shell。
 
-## Owner 路由原理
+## 仓库路由原理
 
 输入：
 
@@ -190,7 +194,7 @@ OpenSSH 再根据 `Host github-camus` 选择对应私钥。
 
 因此：
 
-- Owner 决定使用哪个 HostAlias
+- Git 服务和 Owner / Namespace 决定使用哪个 HostAlias
 - HostAlias 决定使用哪个 IdentityFile
 - 仓库本身不需要逐个修改 SSH key 配置
 
@@ -202,7 +206,7 @@ OpenSSH 再根据 `Host github-camus` 选择对应私钥。
 - `Missing`：没有任何对应前缀规则
 - `Duplicate`：相同 Base URL 和 insteadOf 重复
 - `Conflict`：同一个 insteadOf 前缀指向其他 Base URL
-- `Extra`：当前 Git 中存在，但不属于启用 Owner 路由
+- `Extra`：当前 Git 中存在，但不属于启用仓库路由
 
 支持：
 
@@ -259,7 +263,7 @@ ssh -T git@github-camus
 ssh -vT git@github-camus
 ```
 
-GitHub 成功认证时通常仍返回非零 exit code，因此程序还会检查 stdout 和 stderr 中是否包含：
+GitHub、GitLab 和 Gitea 的 SSH 测试可能在认证成功时仍返回非零 exit code，因此程序会由对应平台适配器检查 stdout 和 stderr 中的服务特定成功提示。
 
 ```text
 successfully authenticated
@@ -286,10 +290,10 @@ git_url_rewrites.json
 
 其中：
 
-- `app_config.json`：程序身份和 Owner 路由配置
+- `app_config.json`：Git 服务、身份和仓库路由配置
 - `ssh_config.txt`：修改前 SSH Config
 - `git_url_rewrites.json`：修改前所有 `url.*.insteadOf` 规则
-- `manifest.json`：时间、原因、原文件是否存在、Git 快照是否成功等元数据
+- `manifest.json`：时间、原因、配置 Schema、原文件是否存在、Git 快照是否成功等元数据
 
 如果 Git 不可用，身份配置仍允许保存；快照会明确记录 Git rewrite 捕获失败，而不是伪造空快照。此类快照不能用于恢复 Git rewrite。
 
@@ -307,11 +311,14 @@ GUI 与 CLI 使用同一个服务图和同一套业务逻辑。
 
 ```powershell
 GitKeyRouter.exe diagnose
+GitKeyRouter.exe list-services
 GitKeyRouter.exe list-identities
 GitKeyRouter.exe list-routes
 GitKeyRouter.exe apply
 GitKeyRouter.exe apply --yes
+GitKeyRouter.exe test-service gitlab-office
 GitKeyRouter.exe test-route camus0109
+GitKeyRouter.exe test-route company/platform --service gitlab-office
 GitKeyRouter.exe test-route camus0109 --url https://github.com/camus0109/panel-terraria.git
 GitKeyRouter.exe test-route camus0109 --url https://github.com/camus0109/panel-terraria.git --connect
 GitKeyRouter.exe test-ssh github-camus
@@ -335,12 +342,25 @@ CLI 诊断退出码：
 
 ```json
 {
-  "SchemaVersion": 1,
+  "SchemaVersion": 2,
+  "GitServices": [
+    {
+      "Id": "github.com",
+      "DisplayName": "GitHub.com",
+      "ProviderKind": "GitHub",
+      "HostName": "github.com",
+      "SshPort": null,
+      "SshUser": "git",
+      "WebBaseUrl": "https://github.com",
+      "IsBuiltIn": true
+    }
+  ],
   "Identities": [
     {
       "Id": "7b90999f7ce643fbb07eb4b94f802579",
+      "ServiceInstanceId": "github.com",
       "DisplayName": "Camus GitHub",
-      "GitHubUsername": "camus0109",
+      "AccountName": "camus0109",
       "HostAlias": "github-camus",
       "PrivateKeyPath": "C:\\Users\\fgc01\\.ssh\\id_ed25519_github_camus",
       "PublicKeyPath": "C:\\Users\\fgc01\\.ssh\\id_ed25519_github_camus.pub",
@@ -348,9 +368,10 @@ CLI 诊断退出码：
       "CreatedAt": "2026-07-18T08:30:45+00:00"
     }
   ],
-  "OwnerRoutes": [
+  "RepositoryRoutes": [
     {
-      "GitHubOwner": "camus0109",
+      "ServiceInstanceId": "github.com",
+      "NamespacePath": "camus0109",
       "IdentityId": "7b90999f7ce643fbb07eb4b94f802579",
       "Enabled": true
     }
@@ -358,9 +379,13 @@ CLI 诊断退出码：
 }
 ```
 
+## 从 0.1 升级
+
+0.2 使用 Schema 2。读取 Schema 1 配置时会在内存中自动映射到内置 GitHub.com 服务，身份、HostAlias、SSH managed block 和 Git rewrite 输出保持不变；下次保存时写为 Schema 2。修改配置前仍会创建快照。
+
 ## 输入校验
 
-GitHubOwner 和 HostAlias 使用：
+GitHub Owner 和 HostAlias 使用：
 
 ```regex
 ^[A-Za-z0-9_.-]+$
@@ -368,10 +393,12 @@ GitHubOwner 和 HostAlias 使用：
 
 额外限制：
 
-- 不允许空格、斜杠、冒号、通配符或控制字符
-- HostAlias 不允许直接使用 `github.com`
+- GitHub Owner 不允许斜杠；GitLab、Gitea 和通用服务允许以 `/` 分隔的多级 Namespace
+- HostAlias 不允许空格、斜杠、冒号、通配符或控制字符
+- HostAlias 不能直接使用已配置服务的真实主机名
 - 每个身份的 HostAlias 必须唯一
-- 一个启用 Owner 只能指向一个身份
+- 同一 Git 服务中的一个启用 Namespace 只能指向一个身份
+- 路由身份必须属于同一个 Git 服务
 - 私钥和公钥路径必须为不同的绝对路径
 
 ## 本地构建和验证
@@ -436,9 +463,9 @@ GIT_CONFIG_GLOBAL=<temporary-file>
 
 检查：
 
-1. 公钥是否添加到正确 GitHub 账户
+1. 公钥是否添加到正确 Git 服务账户
 2. SSH Config 的 IdentityFile 是否指向正确私钥
-3. HostAlias 是否与 Owner rewrite 的 Base URL 一致
+3. HostAlias 是否与仓库路由 rewrite 的 Base URL 一致
 4. 私钥文件是否存在
 
 ### Could not resolve hostname github-camus
@@ -453,10 +480,10 @@ GIT_CONFIG_GLOBAL=<temporary-file>
 
 在“Git 重写配置”检查：
 
-- Owner 是否启用
+- 对应 Git 服务和 Namespace 路由是否启用
 - HTTPS / SSH insteadOf 是否为 `Correct`
 - 是否存在更长或冲突的前缀
-- 输入 URL 是否包含尾部 `/owner/` 结构
+- 输入 URL 是否包含与 Namespace 对应的完整路径前缀
 
 ### config.json 损坏
 

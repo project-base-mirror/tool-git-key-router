@@ -541,8 +541,16 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
             return;
         }
 
+        var service = _gitServices.FirstOrDefault(item =>
+            string.Equals(item.Id, identity.ServiceInstanceId, StringComparison.OrdinalIgnoreCase));
+        if (service is null)
+        {
+            MessageBox.Show(this, "该身份关联的 Git 服务不存在。", "GitKeyRouter", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
         _status($"正在测试 SSH：{identity.HostAlias}");
-        var result = await _services.SshKeyService.TestAsync(identity.HostAlias, verbose);
+        var result = await _services.SshKeyService.TestAsync(service, identity, verbose);
         var text = $"Classification: {result.Classification}\r\nAuthenticated: {result.Authenticated}\r\n\r\n{UiHelpers.FormatProcess(result.Process)}";
         using var form = new CommandResultForm("SSH 测试结果", text);
         form.ShowDialog(this);

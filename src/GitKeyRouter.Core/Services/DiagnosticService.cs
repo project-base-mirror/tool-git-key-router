@@ -13,6 +13,7 @@ public sealed partial class DiagnosticService
     private readonly SshConfigService _sshConfigService;
     private readonly GitUrlRewriteService _gitUrlRewriteService;
     private readonly IClock _clock;
+    private readonly GitProviderAdapterRegistry _providers;
 
     public DiagnosticService(
         IAppConfigStore configStore,
@@ -21,7 +22,8 @@ public sealed partial class DiagnosticService
         IToolchainService toolchainService,
         SshConfigService sshConfigService,
         GitUrlRewriteService gitUrlRewriteService,
-        IClock clock)
+        IClock clock,
+        GitProviderAdapterRegistry? providers = null)
     {
         _configStore = configStore;
         _paths = paths;
@@ -30,6 +32,7 @@ public sealed partial class DiagnosticService
         _sshConfigService = sshConfigService;
         _gitUrlRewriteService = gitUrlRewriteService;
         _clock = clock;
+        _providers = providers ?? GitProviderAdapterRegistry.CreateDefault();
     }
 
     public async Task<DiagnosticReport> RunAsync(CancellationToken cancellationToken = default)
@@ -179,21 +182,52 @@ public sealed partial class DiagnosticService
                 "These accounts use copies of the same key pair. Generate separate keys unless this is intentional.");
         }
 
-        foreach (var group in config.OwnerRoutes.Where(item => item.Enabled)
-                     .GroupBy(item => item.GitHubOwner, StringComparer.OrdinalIgnoreCase)
+        foreach (var group in config.RepositoryRoutes.Where(item => item.Enabled)
+                     .GroupBy(
+                         item => $"{item.ServiceInstanceId}\n{item.NamespacePath}",
+                         StringComparer.OrdinalIgnoreCase)
                      .Where(group => group.Select(item => item.IdentityId).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1))
         {
-            Add(report, "OWNER_MULTIPLE_IDENTITIES", "Routes", "Owner points to multiple identities", group.Key,
-                DiagnosticSeverity.Error, "Keep only one enabled identity route for each GitHub Owner.");
+            var route = group.First();
+            Add(report, "NAMESPACE_MULTIPLE_IDENTITIES", "Routes", "Namespace points to multiple identities",
+                $"{route.ServiceInstanceId}/{route.NamespacePath}", DiagnosticSeverity.Error,
+                "Keep only one enabled identity route for each service namespace.");
         }
 
-        foreach (var route in config.OwnerRoutes.Where(item => item.Enabled))
+        foreach (var identity in config.Identities)
         {
-            if (!config.Identities.Any(item => string.Equals(item.Id, route.IdentityId, StringComparison.OrdinalIgnoreCase)))
+            if (config.FindService(identity.ServiceInstanceId) is null)
             {
-                Add(report, "ROUTE_IDENTITY_MISSING", "Routes", $"Owner route: {route.GitHubOwner}",
+                Add(report, "IDENTITY_SERVICE_MISSING", "Identities", $"Identity: {identity.DisplayName}",
+                    $"Git service '{identity.ServiceInstanceId}' does not exist.", DiagnosticSeverity.Error,
+                    "Select an existing Git service for the identity.");
+            }
+        }
+
+        foreach (var route in config.RepositoryRoutes.Where(item => item.Enabled))
+        {
+            var service = config.FindService(route.ServiceInstanceId);
+            if (service is null)
+            {
+                Add(report, "ROUTE_SERVICE_MISSING", "Routes", $"Repository route: {route.NamespacePath}",
+                    $"Git service '{route.ServiceInstanceId}' does not exist.", DiagnosticSeverity.Error,
+                    "Select an existing Git service or disable the route.");
+                continue;
+            }
+
+            var identity = config.Identities.FirstOrDefault(item =>
+                string.Equals(item.Id, route.IdentityId, StringComparison.OrdinalIgnoreCase));
+            if (identity is null)
+            {
+                Add(report, "ROUTE_IDENTITY_MISSING", "Routes", $"Repository route: {route.NamespacePath}",
                     "The referenced identity does not exist.", DiagnosticSeverity.Error,
                     "Select an existing identity or disable the route.");
+            }
+            else if (!string.Equals(identity.ServiceInstanceId, service.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                Add(report, "ROUTE_IDENTITY_SERVICE_MISMATCH", "Routes", $"Repository route: {route.NamespacePath}",
+                    $"Identity '{identity.DisplayName}' belongs to '{identity.ServiceInstanceId}', not '{service.Id}'.",
+                    DiagnosticSeverity.Error, "Select an identity from the same Git service.");
             }
         }
     }
@@ -220,6 +254,21 @@ public sealed partial class DiagnosticService
             Add(report, $"SSH_BLOCK_{identity.Id}", "SSH Config", $"Managed Host: {identity.HostAlias}",
                 $"Matching managed blocks: {managedCount}", managedCount == 1 ? DiagnosticSeverity.Normal : DiagnosticSeverity.Error,
                 managedCount == 1 ? null : "Use SSH Config > Sync identity after reviewing the diff.");
+
+            var service = config.FindService(identity.ServiceInstanceId);
+            var managedBlock = blocks.FirstOrDefault(item =>
+                string.Equals(item.HostAlias, identity.HostAlias, StringComparison.OrdinalIgnoreCase));
+            if (service is not null && managedCount == 1 && managedBlock is not null)
+            {
+                var expected = _providers.Get(service.ProviderKind)
+                    .BuildSshManagedBlock(service, identity, DetectNewline(managedBlock.RawText));
+                if (!NormalizeNewlines(managedBlock.RawText).Equals(NormalizeNewlines(expected), StringComparison.Ordinal))
+                {
+                    Add(report, "SSH_BLOCK_SERVICE_MISMATCH", "SSH Config", $"Managed Host differs: {identity.HostAlias}",
+                        $"Expected service endpoint: {service.SshUser}@{service.HostName}:{service.SshPort ?? 22}",
+                        DiagnosticSeverity.Error, "Synchronize the identity SSH block after reviewing the diff.");
+                }
+            }
 
             if (ContainsHost(unmanaged, identity.HostAlias))
             {
@@ -263,7 +312,9 @@ public sealed partial class DiagnosticService
                     _ => DiagnosticSeverity.Warning
                 };
                 Add(report, $"GIT_REWRITE_{comparison.Status}", "Git URL rewrite",
-                    comparison.GitHubOwner ?? comparison.InsteadOfUrl,
+                    comparison.NamespacePath is null
+                        ? comparison.InsteadOfUrl
+                        : $"{comparison.ServiceInstanceId}/{comparison.NamespacePath}",
                     $"Status: {comparison.Status}{Environment.NewLine}Base: {comparison.ExpectedBaseUrl}{Environment.NewLine}insteadOf: {comparison.InsteadOfUrl}{Environment.NewLine}Matches: {comparison.ActualMatchCount}",
                     severity,
                     severity == DiagnosticSeverity.Normal ? null : "Review the Git rewrite diff before applying a repair.");
@@ -301,6 +352,12 @@ public sealed partial class DiagnosticService
             return path.Trim();
         }
     }
+
+    private static string DetectNewline(string text)
+        => text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+
+    private static string NormalizeNewlines(string text)
+        => text.Replace("\r\n", "\n", StringComparison.Ordinal).TrimEnd('\n');
 
     private static void Add(
         DiagnosticReport report,

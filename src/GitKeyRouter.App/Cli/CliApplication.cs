@@ -18,9 +18,11 @@ public sealed class CliApplication
         return command switch
         {
             "diagnose" => await DiagnoseAsync(cancellationToken).ConfigureAwait(false),
+            "list-services" => await ListServicesAsync(cancellationToken).ConfigureAwait(false),
             "list-identities" => await ListIdentitiesAsync(cancellationToken).ConfigureAwait(false),
             "list-routes" => await ListRoutesAsync(cancellationToken).ConfigureAwait(false),
             "apply" => await ApplyAsync(args[1..], cancellationToken).ConfigureAwait(false),
+            "test-service" => await TestServiceAsync(args[1..], cancellationToken).ConfigureAwait(false),
             "test-route" => await TestRouteAsync(args[1..], cancellationToken).ConfigureAwait(false),
             "test-ssh" => await TestSshAsync(args[1..], cancellationToken).ConfigureAwait(false),
             "version" or "--version" or "-v" => PrintVersion(),
@@ -36,12 +38,24 @@ public sealed class CliApplication
         return report.ErrorCount > 0 ? 2 : report.WarningCount > 0 ? 1 : 0;
     }
 
+    private async Task<int> ListServicesAsync(CancellationToken cancellationToken)
+    {
+        var services = await _services.GitServiceService.ListAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var service in services)
+        {
+            Console.WriteLine($"{service.Id}\t{service.DisplayName}\t{service.ProviderKind}\t{service.SshUser}@{service.HostName}:{service.SshPort ?? 22}\t{service.WebBaseUrl}\tBuiltIn={service.IsBuiltIn}");
+        }
+
+        return 0;
+    }
+
     private async Task<int> ListIdentitiesAsync(CancellationToken cancellationToken)
     {
-        var identities = await _services.IdentityService.ListAsync(cancellationToken).ConfigureAwait(false);
-        foreach (var identity in identities)
+        var config = await _services.ConfigStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var identity in config.Identities.OrderBy(item => item.DisplayName, StringComparer.CurrentCultureIgnoreCase))
         {
-            Console.WriteLine($"{identity.Id}\t{identity.DisplayName}\t{identity.GitHubUsername}\t{identity.HostAlias}\t{identity.PrivateKeyPath}");
+            var service = config.FindService(identity.ServiceInstanceId);
+            Console.WriteLine($"{identity.Id}\t{service?.DisplayName ?? identity.ServiceInstanceId}\t{identity.DisplayName}\t{identity.AccountName}\t{identity.HostAlias}\t{identity.PrivateKeyPath}");
         }
 
         return 0;
@@ -50,10 +64,13 @@ public sealed class CliApplication
     private async Task<int> ListRoutesAsync(CancellationToken cancellationToken)
     {
         var config = await _services.ConfigStore.LoadAsync(cancellationToken).ConfigureAwait(false);
-        foreach (var route in config.OwnerRoutes.OrderBy(item => item.GitHubOwner, StringComparer.OrdinalIgnoreCase))
+        foreach (var route in config.RepositoryRoutes
+                     .OrderBy(item => item.ServiceInstanceId, StringComparer.OrdinalIgnoreCase)
+                     .ThenBy(item => item.NamespacePath, StringComparer.OrdinalIgnoreCase))
         {
             var identity = config.Identities.FirstOrDefault(item => string.Equals(item.Id, route.IdentityId, StringComparison.OrdinalIgnoreCase));
-            Console.WriteLine($"{route.GitHubOwner}\t{identity?.HostAlias ?? "<missing identity>"}\tEnabled={route.Enabled}");
+            var service = config.FindService(route.ServiceInstanceId);
+            Console.WriteLine($"{service?.DisplayName ?? route.ServiceInstanceId}\t{route.NamespacePath}\t{identity?.HostAlias ?? "<missing identity>"}\tEnabled={route.Enabled}");
         }
 
         return 0;
@@ -103,12 +120,21 @@ public sealed class CliApplication
     {
         if (args.Length == 0)
         {
-            Console.Error.WriteLine("Usage: GitKeyRouter.exe test-route <owner> [--url <repository-url>] [--connect]");
+            Console.Error.WriteLine("Usage: GitKeyRouter.exe test-route <namespace> [--service <id-or-host>] [--url <repository-url>] [--connect]");
             return 3;
         }
 
-        var owner = args[0];
-        var url = GetOption(args, "--url") ?? $"https://github.com/{owner}/__route_preview__.git";
+        var namespacePath = args[0].Trim('/');
+        var config = await _services.ConfigStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        var service = ResolveService(config, GetOption(args, "--service"));
+        if (service is null)
+        {
+            Console.Error.WriteLine("The selected Git service was not found.");
+            return 3;
+        }
+
+        var url = GetOption(args, "--url")
+            ?? $"{service.WebBaseUrl.TrimEnd('/')}/{namespacePath}/__route_preview__.git";
         var preview = await _services.GitUrlRewriteService.PreviewAsync(url, cancellationToken).ConfigureAwait(false);
         Console.WriteLine($"Original:  {preview.OriginalUrl}");
         Console.WriteLine($"Matched:   {preview.MatchedPrefix ?? "<none>"}");
@@ -139,13 +165,59 @@ public sealed class CliApplication
             return 3;
         }
 
-        var result = await _services.SshKeyService.TestAsync(
-            args[0],
-            args.Contains("--verbose", StringComparer.OrdinalIgnoreCase),
-            cancellationToken).ConfigureAwait(false);
+        var config = await _services.ConfigStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        var identity = config.Identities.FirstOrDefault(item =>
+            string.Equals(item.HostAlias, args[0], StringComparison.OrdinalIgnoreCase)
+            || string.Equals(item.Id, args[0], StringComparison.OrdinalIgnoreCase));
+        var verbose = args.Contains("--verbose", StringComparer.OrdinalIgnoreCase);
+        SshTestResult result;
+        if (identity is null)
+        {
+            result = await _services.SshKeyService.TestAsync(args[0], verbose, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            var service = config.FindService(identity.ServiceInstanceId);
+            if (service is null)
+            {
+                Console.Error.WriteLine($"Git service '{identity.ServiceInstanceId}' was not found.");
+                return 2;
+            }
+
+            result = await _services.SshKeyService.TestAsync(service, identity, verbose, cancellationToken).ConfigureAwait(false);
+        }
+
         Console.WriteLine($"Classification: {result.Classification}");
         PrintProcess(result.Process);
         return result.Authenticated ? 0 : 2;
+    }
+
+    private async Task<int> TestServiceAsync(string[] args, CancellationToken cancellationToken)
+    {
+        if (args.Length == 0)
+        {
+            Console.Error.WriteLine("Usage: GitKeyRouter.exe test-service <id-or-host>");
+            return 3;
+        }
+
+        var config = await _services.ConfigStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        var service = ResolveService(config, args[0]);
+        if (service is null)
+        {
+            Console.Error.WriteLine("The selected Git service was not found.");
+            return 3;
+        }
+
+        var result = await _services.GitServiceService.TestConnectionAsync(service, cancellationToken).ConfigureAwait(false);
+        if (!result.Success || result.Value is null)
+        {
+            PrintErrors(result);
+            return 2;
+        }
+
+        Console.WriteLine($"Classification: {result.Value.Classification}");
+        PrintProcess(result.Value.Process);
+        return result.Value.Authenticated ? 0 : 2;
     }
 
     private static int PrintVersion()
@@ -158,11 +230,13 @@ public sealed class CliApplication
     {
         Console.WriteLine("GitKeyRouter commands:");
         Console.WriteLine("  diagnose");
+        Console.WriteLine("  list-services");
         Console.WriteLine("  list-identities");
         Console.WriteLine("  list-routes");
         Console.WriteLine("  apply [--yes]");
-        Console.WriteLine("  test-route <owner> [--url <repository-url>] [--connect]");
-        Console.WriteLine("  test-ssh <host-alias> [--verbose]");
+        Console.WriteLine("  test-service <id-or-host>");
+        Console.WriteLine("  test-route <namespace> [--service <id-or-host>] [--url <repository-url>] [--connect]");
+        Console.WriteLine("  test-ssh <host-alias-or-identity-id> [--verbose]");
         Console.WriteLine("  version");
         return 0;
     }
@@ -178,6 +252,20 @@ public sealed class CliApplication
     {
         var index = Array.FindIndex(args, item => string.Equals(item, option, StringComparison.OrdinalIgnoreCase));
         return index >= 0 && index + 1 < args.Length ? args[index + 1] : null;
+    }
+
+    private static GitServiceInstance? ResolveService(AppConfig config, string? selector)
+    {
+        if (string.IsNullOrWhiteSpace(selector))
+        {
+            return config.FindService(GitServiceInstance.GitHubComId)
+                ?? config.GitServices.FirstOrDefault();
+        }
+
+        return config.GitServices.FirstOrDefault(item =>
+            string.Equals(item.Id, selector, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(item.HostName, selector, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(item.DisplayName, selector, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string FormatGitPlan(GitRewritePlan plan)

@@ -53,6 +53,76 @@ public sealed class DiagnosticServiceTests
         Assert.DoesNotContain("AAAAC3", copiedKeyWarning.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task ReportsManagedSshBlockThatTargetsTheWrongServiceEndpoint()
+    {
+        using var directory = new TemporaryDirectory();
+        var paths = new TestAppPaths(directory.Path);
+        Directory.CreateDirectory(paths.SshDirectory);
+        var privateKey = Path.Combine(paths.SshDirectory, "id_gitea");
+        var publicKey = privateKey + ".pub";
+        await File.WriteAllTextAsync(privateKey, "-----BEGIN OPENSSH PRIVATE KEY-----\nsecret");
+        await File.WriteAllTextAsync(publicKey, OpenSsh);
+        await File.WriteAllTextAsync(paths.SshConfigPath, """
+        # BEGIN GitKeyRouter managed block: gitea-camus
+        Host gitea-camus
+            HostName github.com
+            User git
+            IdentityFile C:/wrong/key
+            IdentitiesOnly yes
+        # END GitKeyRouter managed block: gitea-camus
+        """);
+        var gitea = new GitServiceInstance
+        {
+            Id = "gitea-home",
+            DisplayName = "Home Gitea",
+            ProviderKind = GitProviderKind.Gitea,
+            HostName = "git.home.example",
+            SshPort = 2222,
+            SshUser = "git",
+            WebBaseUrl = "https://git.home.example"
+        };
+        var configStore = new InMemoryAppConfigStore
+        {
+            Config = new AppConfig
+            {
+                GitServices = [GitServiceInstance.CreateGitHubCom(), gitea],
+                Identities =
+                [
+                    new GitIdentity
+                    {
+                        Id = "gitea-camus",
+                        ServiceInstanceId = gitea.Id,
+                        DisplayName = "Gitea Camus",
+                        AccountName = "camus",
+                        HostAlias = "gitea-camus",
+                        PrivateKeyPath = privateKey,
+                        PublicKeyPath = publicKey
+                    }
+                ]
+            }
+        };
+        var fileSystem = new PhysicalFileSystem();
+        var backup = new NoOpBackupService();
+        var providers = GitProviderAdapterRegistry.CreateDefault();
+        var sshConfig = new SshConfigService(fileSystem, paths, backup, providers);
+        var rewrites = new GitUrlRewriteService(configStore, new FakeGitUrlRewriteStore(), backup, providers);
+        var diagnostics = new DiagnosticService(
+            configStore,
+            paths,
+            fileSystem,
+            new FixedToolchainService("git.exe", "ssh-keygen.exe", "ssh.exe"),
+            sshConfig,
+            rewrites,
+            new TestClock(),
+            providers);
+
+        var report = await diagnostics.RunAsync();
+
+        var mismatch = Assert.Single(report.Items, item => item.Code == "SSH_BLOCK_SERVICE_MISMATCH");
+        Assert.Contains("git.home.example:2222", mismatch.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static GitHubIdentity Identity(
         string id,
         string displayName,

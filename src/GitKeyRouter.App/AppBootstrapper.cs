@@ -41,7 +41,12 @@ public static class AppBootstrapper
             gitStore,
             backupService,
             gitProviderAdapters);
-        var sshKeyService = new SshKeyService(fileSystem, processRunner, toolchainService, clock);
+        var sshKeyService = new SshKeyService(
+            fileSystem,
+            processRunner,
+            toolchainService,
+            clock,
+            gitProviderAdapters);
         var sshKeyRenameService = new SshKeyRenameService(
             fileSystem,
             configStore,
@@ -56,7 +61,8 @@ public static class AppBootstrapper
             toolchainService,
             sshConfigService,
             gitUrlRewriteService,
-            clock);
+            clock,
+            gitProviderAdapters);
 
         return new ApplicationServices
         {

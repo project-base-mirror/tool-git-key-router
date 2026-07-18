@@ -14,6 +14,8 @@ public sealed class BackupManifest
 
     public bool AppConfigExisted { get; set; }
 
+    public int? AppConfigSchemaVersion { get; set; }
+
     public bool SshConfigExisted { get; set; }
 
     public int GitRewriteCount { get; set; }

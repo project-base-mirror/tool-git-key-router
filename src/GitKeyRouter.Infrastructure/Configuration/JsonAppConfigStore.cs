@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using GitKeyRouter.Core.Abstractions;
 using GitKeyRouter.Core.Models;
 using GitKeyRouter.Core.Services;
@@ -10,7 +11,8 @@ public sealed class JsonAppConfigStore : IAppConfigStore
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
-        PropertyNameCaseInsensitive = true
+        PropertyNameCaseInsensitive = true,
+        Converters = { new JsonStringEnumConverter() }
     };
 
     private readonly IFileSystem _fileSystem;

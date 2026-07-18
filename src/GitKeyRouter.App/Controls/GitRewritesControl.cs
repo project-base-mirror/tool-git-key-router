@@ -9,9 +9,10 @@ public sealed class GitRewritesControl : UserControl, IAsyncRefreshable
     private readonly ApplicationServices _services;
     private readonly Action<string> _status;
     private readonly DataGridView _grid = UiHelpers.CreateGrid();
-    private readonly TextBox _urlInput = new() { Dock = DockStyle.Fill, PlaceholderText = "https://github.com/owner/repository.git" };
+    private readonly TextBox _urlInput = new() { Dock = DockStyle.Fill, PlaceholderText = "https://git.example.com/group/repository.git" };
     private readonly TextBox _previewOutput = new() { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, Height = 90, ScrollBars = ScrollBars.Vertical };
     private IReadOnlyList<GitRewriteComparison> _comparisons = [];
+    private IReadOnlyList<GitServiceInstance> _gitServices = [];
 
     public GitRewritesControl(ApplicationServices services, Action<string> status)
     {
@@ -58,12 +59,17 @@ public sealed class GitRewritesControl : UserControl, IAsyncRefreshable
     {
         try
         {
-            _comparisons = await _services.GitUrlRewriteService.CompareAsync();
+            var configTask = _services.ConfigStore.LoadAsync();
+            var comparisonsTask = _services.GitUrlRewriteService.CompareAsync();
+            await Task.WhenAll(configTask, comparisonsTask);
+            _gitServices = configTask.Result.GitServices;
+            _comparisons = comparisonsTask.Result;
             _grid.DataSource = _comparisons.Select((item, index) => new RewriteRow
             {
                 Index = index,
-                Owner = item.GitHubOwner ?? "<额外配置>",
-                Identity = item.IdentityDisplayName ?? string.Empty,
+                Git服务 = ServiceName(item.ServiceInstanceId),
+                命名空间 = item.NamespacePath ?? "<额外配置>",
+                身份 = item.IdentityDisplayName ?? string.Empty,
                 BaseURL = item.ExpectedBaseUrl,
                 InsteadOfURL = item.InsteadOfUrl,
                 状态 = item.Status.ToString(),
@@ -181,11 +187,19 @@ public sealed class GitRewritesControl : UserControl, IAsyncRefreshable
         return _comparisons[row.Index];
     }
 
+    private string ServiceName(string? serviceInstanceId)
+        => string.IsNullOrWhiteSpace(serviceInstanceId)
+            ? "<额外配置>"
+            : _gitServices.FirstOrDefault(item =>
+                string.Equals(item.Id, serviceInstanceId, StringComparison.OrdinalIgnoreCase))?.DisplayName
+                ?? serviceInstanceId;
+
     private sealed class RewriteRow
     {
         public int Index { get; init; }
-        public string Owner { get; init; } = string.Empty;
-        public string Identity { get; init; } = string.Empty;
+        public string Git服务 { get; init; } = string.Empty;
+        public string 命名空间 { get; init; } = string.Empty;
+        public string 身份 { get; init; } = string.Empty;
         public string BaseURL { get; init; } = string.Empty;
         public string InsteadOfURL { get; init; } = string.Empty;
         public string 状态 { get; init; } = string.Empty;

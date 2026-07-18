@@ -199,6 +199,15 @@ public sealed class OverviewControl : UserControl, IAsyncRefreshable
             string.IsNullOrWhiteSpace(identity.PrivateKeyPath) || !_services.FileSystem.FileExists(identity.PrivateKeyPath));
         var missingPublic = config.Identities.Count(identity =>
             string.IsNullOrWhiteSpace(identity.PublicKeyPath) || !_services.FileSystem.FileExists(identity.PublicKeyPath));
+        var missingServices = config.Identities.Count(identity => config.FindService(identity.ServiceInstanceId) is null);
+        if (missingServices > 0)
+        {
+            return new OverviewCardState(
+                $"已配置 {config.Identities.Count} 个身份；{missingServices} 个身份引用了不存在的 Git 服务",
+                "服务缺失",
+                OverviewStatusKind.Error);
+        }
+
         if (missingPrivate > 0 || missingPublic > 0)
         {
             return new OverviewCardState(
@@ -208,7 +217,7 @@ public sealed class OverviewControl : UserControl, IAsyncRefreshable
         }
 
         return new OverviewCardState(
-            $"已配置 {config.Identities.Count} 个身份，所有身份的私钥和公钥文件均可用",
+            $"{config.GitServices.Count} 个 Git 服务下配置了 {config.Identities.Count} 个身份，所有密钥文件均可用",
             $"{config.Identities.Count} 个身份",
             OverviewStatusKind.Info);
     }
@@ -216,7 +225,7 @@ public sealed class OverviewControl : UserControl, IAsyncRefreshable
     private static async Task<OverviewCardState> LoadOwnerRouteStateAsync(Task<LoadResult<AppConfig>> configTask)
     {
         var config = RequireConfig(await configTask);
-        if (config.OwnerRoutes.Count == 0)
+        if (config.RepositoryRoutes.Count == 0)
         {
             return new OverviewCardState(
                 "尚未配置仓库路由；可将不同服务的 Owner / Namespace 映射到指定身份",
@@ -224,14 +233,17 @@ public sealed class OverviewControl : UserControl, IAsyncRefreshable
                 OverviewStatusKind.Warning);
         }
 
-        var identityIds = config.Identities.Select(item => item.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var invalidReferences = config.OwnerRoutes.Count(route => !identityIds.Contains(route.IdentityId));
-        var enabledCount = config.OwnerRoutes.Count(route => route.Enabled);
-        var disabledCount = config.OwnerRoutes.Count - enabledCount;
+        var identities = config.Identities.ToDictionary(item => item.Id, StringComparer.OrdinalIgnoreCase);
+        var invalidReferences = config.RepositoryRoutes.Count(route =>
+            config.FindService(route.ServiceInstanceId) is null
+            || !identities.TryGetValue(route.IdentityId, out var identity)
+            || !string.Equals(identity.ServiceInstanceId, route.ServiceInstanceId, StringComparison.OrdinalIgnoreCase));
+        var enabledCount = config.RepositoryRoutes.Count(route => route.Enabled);
+        var disabledCount = config.RepositoryRoutes.Count - enabledCount;
         if (invalidReferences > 0)
         {
             return new OverviewCardState(
-                $"共 {config.OwnerRoutes.Count} 条路由；{invalidReferences} 条引用了不存在的身份",
+                $"共 {config.RepositoryRoutes.Count} 条路由；{invalidReferences} 条存在服务缺失或身份跨服务引用",
                 "需要修复",
                 OverviewStatusKind.Error);
         }
@@ -239,7 +251,7 @@ public sealed class OverviewControl : UserControl, IAsyncRefreshable
         if (disabledCount > 0)
         {
             return new OverviewCardState(
-                $"共 {config.OwnerRoutes.Count} 条路由，其中 {enabledCount} 条启用、{disabledCount} 条停用",
+                $"共 {config.RepositoryRoutes.Count} 条路由，其中 {enabledCount} 条启用、{disabledCount} 条停用",
                 "部分启用",
                 OverviewStatusKind.Warning);
         }
@@ -302,7 +314,7 @@ public sealed class OverviewControl : UserControl, IAsyncRefreshable
         if (comparisons.Count == 0)
         {
             return new OverviewCardState(
-                "当前没有需要管理的 Git rewrite 规则；启用 Owner 路由后会自动生成期望规则",
+                "当前没有需要管理的 Git rewrite 规则；启用仓库路由后会自动生成期望规则",
                 "无规则",
                 OverviewStatusKind.Unknown);
         }
@@ -328,7 +340,7 @@ public sealed class OverviewControl : UserControl, IAsyncRefreshable
         }
 
         return new OverviewCardState(
-            $"{correctCount} 条 Git rewrite 规则均与当前 Owner 路由一致",
+            $"{correctCount} 条 Git rewrite 规则均与当前仓库路由一致",
             "已同步",
             OverviewStatusKind.Normal);
     }
