@@ -322,7 +322,7 @@ public sealed class SshKeyRenameService
     }
 
     private static void ApplyPathReplacements(
-        IEnumerable<GitHubIdentity> identities,
+        IEnumerable<GitIdentity> identities,
         IReadOnlyDictionary<string, string> replacements)
     {
         foreach (var identity in identities)
@@ -341,12 +341,13 @@ public sealed class SshKeyRenameService
         }
     }
 
-    private static GitHubIdentity CloneIdentity(GitHubIdentity identity)
+    private static GitIdentity CloneIdentity(GitIdentity identity)
         => new()
         {
             Id = identity.Id,
+            ServiceInstanceId = identity.ServiceInstanceId,
             DisplayName = identity.DisplayName,
-            GitHubUsername = identity.GitHubUsername,
+            AccountName = identity.AccountName,
             HostAlias = identity.HostAlias,
             PrivateKeyPath = identity.PrivateKeyPath,
             PublicKeyPath = identity.PublicKeyPath,

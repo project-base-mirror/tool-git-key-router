@@ -2,7 +2,7 @@ namespace GitKeyRouter.Core.Models;
 
 public sealed class SshKeyGenerationResult
 {
-    public required GitHubIdentity Identity { get; init; }
+    public required GitIdentity Identity { get; init; }
 
     public required ProcessResult Process { get; init; }
 

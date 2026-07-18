@@ -4,7 +4,7 @@ namespace GitKeyRouter.Core.Validation;
 
 public static class OwnerRouteValidator
 {
-    public static ValidationResult Validate(OwnerRoute route, AppConfig config, string? originalOwner = null)
+    public static ValidationResult Validate(RepositoryRoute route, AppConfig config, string? originalOwner = null)
     {
         ArgumentNullException.ThrowIfNull(route);
         ArgumentNullException.ThrowIfNull(config);

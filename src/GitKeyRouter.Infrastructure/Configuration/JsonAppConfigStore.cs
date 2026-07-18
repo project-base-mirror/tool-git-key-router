@@ -1,6 +1,7 @@
 using System.Text.Json;
 using GitKeyRouter.Core.Abstractions;
 using GitKeyRouter.Core.Models;
+using GitKeyRouter.Core.Services;
 
 namespace GitKeyRouter.Infrastructure.Configuration;
 
@@ -36,10 +37,21 @@ public sealed class JsonAppConfigStore : IAppConfigStore
             var text = await _fileSystem.ReadAllTextAsync(ConfigPath, cancellationToken).ConfigureAwait(false);
             try
             {
-                var config = JsonSerializer.Deserialize<AppConfig>(text, JsonOptions)
-                    ?? throw new InvalidDataException("The application configuration is empty.");
-                config.Identities ??= [];
-                config.OwnerRoutes ??= [];
+                using var document = JsonDocument.Parse(text);
+                var schemaVersion = document.RootElement.TryGetProperty("SchemaVersion", out var schemaElement)
+                    ? schemaElement.GetInt32()
+                    : 1;
+                if (schemaVersion > AppConfig.CurrentSchemaVersion)
+                {
+                    throw new InvalidDataException(
+                        $"Configuration schema {schemaVersion} is newer than the supported schema {AppConfig.CurrentSchemaVersion}.");
+                }
+
+                var config = schemaVersion <= 1
+                    ? MigrateSchema1(text)
+                    : JsonSerializer.Deserialize<AppConfig>(text, JsonOptions)
+                        ?? throw new InvalidDataException("The application configuration is empty.");
+                config.Normalize();
                 return config;
             }
             catch (JsonException exception)
@@ -61,6 +73,7 @@ public sealed class JsonAppConfigStore : IAppConfigStore
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            config.Normalize();
             var text = JsonSerializer.Serialize(config, JsonOptions) + Environment.NewLine;
             await _fileSystem.WriteAllTextAtomicAsync(ConfigPath, text, cancellationToken).ConfigureAwait(false);
         }
@@ -68,5 +81,21 @@ public sealed class JsonAppConfigStore : IAppConfigStore
         {
             _gate.Release();
         }
+    }
+
+    private static AppConfig MigrateSchema1(string text)
+    {
+        var legacy = JsonSerializer.Deserialize<Schema1Config>(text, JsonOptions)
+            ?? throw new InvalidDataException("The Schema 1 application configuration is empty.");
+        return AppConfigMigrator.FromSchema1(legacy.Identities ?? [], legacy.OwnerRoutes ?? []);
+    }
+
+    private sealed class Schema1Config
+    {
+        public int SchemaVersion { get; set; } = 1;
+
+        public List<AppConfigMigrator.Schema1GitHubIdentity>? Identities { get; set; }
+
+        public List<AppConfigMigrator.Schema1OwnerRoute>? OwnerRoutes { get; set; }
     }
 }

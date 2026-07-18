@@ -122,7 +122,7 @@ public sealed partial class DiagnosticService
                 "Confirm that these identities are intended to use the same key pair.");
         }
 
-        var publicKeyMaterial = new Dictionary<string, List<(GitHubIdentity Identity, string Path)>>(StringComparer.Ordinal);
+        var publicKeyMaterial = new Dictionary<string, List<(GitIdentity Identity, string Path)>>(StringComparer.Ordinal);
 
         foreach (var identity in config.Identities)
         {

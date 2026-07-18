@@ -64,7 +64,7 @@ public sealed class CliApplication
         var confirmed = args.Contains("--yes", StringComparer.OrdinalIgnoreCase);
         var config = await _services.ConfigStore.LoadAsync(cancellationToken).ConfigureAwait(false);
         var raw = await _services.SshConfigService.ReadRawAsync(cancellationToken).ConfigureAwait(false);
-        var sshPreview = _services.SshConfigService.PreviewSynchronizeAll(raw, config.Identities);
+        var sshPreview = _services.SshConfigService.PreviewSynchronizeAll(raw, config);
         var gitPlan = await _services.GitUrlRewriteService.BuildReconcilePlanAsync(cancellationToken).ConfigureAwait(false);
 
         Console.WriteLine("SSH config changes:");

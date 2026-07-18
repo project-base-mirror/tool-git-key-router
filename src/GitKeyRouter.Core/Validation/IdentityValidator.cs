@@ -4,7 +4,7 @@ namespace GitKeyRouter.Core.Validation;
 
 public static class IdentityValidator
 {
-    public static ValidationResult Validate(GitHubIdentity identity, IEnumerable<GitHubIdentity> existing)
+    public static ValidationResult Validate(GitIdentity identity, IEnumerable<GitIdentity> existing)
     {
         ArgumentNullException.ThrowIfNull(identity);
         ArgumentNullException.ThrowIfNull(existing);

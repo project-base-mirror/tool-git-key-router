@@ -10,7 +10,7 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
     private readonly ApplicationServices _services;
     private readonly Action<string> _status;
     private readonly DataGridView _grid = UiHelpers.CreateGrid();
-    private IReadOnlyList<GitHubIdentity> _identities = [];
+    private IReadOnlyList<GitIdentity> _identities = [];
 
     public IdentitiesControl(ApplicationServices services, Action<string> status)
     {
@@ -460,7 +460,7 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
         await OfferSshSyncAsync(identity, null, forcePrompt: true);
     }
 
-    private async Task OfferSshSyncAsync(GitHubIdentity identity, string? previousAlias, bool forcePrompt = false)
+    private async Task OfferSshSyncAsync(GitIdentity identity, string? previousAlias, bool forcePrompt = false)
     {
         if (!forcePrompt
             && MessageBox.Show(this, "身份已保存。是否立即同步对应的 SSH Config managed block？", "同步 SSH Config", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
@@ -538,7 +538,7 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
     }
 
     private static IdentityRow CreateRow(
-        GitHubIdentity identity,
+        GitIdentity identity,
         SshPublicKeyVariant? variant,
         string sshConfigStatus,
         string keyUsage)
@@ -597,7 +597,7 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
             : $"{fingerprint[..visibleCharacters]}…";
     }
 
-    private bool ConfirmSharedKeyUsage(GitHubIdentity candidate)
+    private bool ConfirmSharedKeyUsage(GitIdentity candidate)
     {
         var sharing = _identities
             .Where(item => !string.Equals(item.Id, candidate.Id, StringComparison.OrdinalIgnoreCase)
@@ -620,7 +620,7 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
             MessageBoxIcon.Warning) == DialogResult.Yes;
     }
 
-    private static IReadOnlyDictionary<string, int> BuildKeyUsageCounts(IEnumerable<GitHubIdentity> identities)
+    private static IReadOnlyDictionary<string, int> BuildKeyUsageCounts(IEnumerable<GitIdentity> identities)
     {
         var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var identity in identities)
@@ -637,7 +637,7 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
         return counts;
     }
 
-    private static string GetKeyUsage(GitHubIdentity identity, IReadOnlyDictionary<string, int> counts)
+    private static string GetKeyUsage(GitIdentity identity, IReadOnlyDictionary<string, int> counts)
     {
         var maximum = new[] { identity.PrivateKeyPath, identity.PublicKeyPath }
             .Where(path => !string.IsNullOrWhiteSpace(path))
@@ -665,7 +665,7 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
     private IdentityRow? SelectedRow()
         => _grid.CurrentRow?.DataBoundItem as IdentityRow;
 
-    private GitHubIdentity? SelectedIdentity()
+    private GitIdentity? SelectedIdentity()
     {
         if (_grid.CurrentRow?.DataBoundItem is not IdentityRow row)
         {

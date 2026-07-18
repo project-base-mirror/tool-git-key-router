@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.RegularExpressions;
 using GitKeyRouter.Core.Abstractions;
 using GitKeyRouter.Core.Models;
@@ -14,12 +13,18 @@ public sealed partial class SshConfigService
     private readonly IFileSystem _fileSystem;
     private readonly IAppPaths _paths;
     private readonly IBackupService _backupService;
+    private readonly GitProviderAdapterRegistry _providers;
 
-    public SshConfigService(IFileSystem fileSystem, IAppPaths paths, IBackupService backupService)
+    public SshConfigService(
+        IFileSystem fileSystem,
+        IAppPaths paths,
+        IBackupService backupService,
+        GitProviderAdapterRegistry? providers = null)
     {
         _fileSystem = fileSystem;
         _paths = paths;
         _backupService = backupService;
+        _providers = providers ?? GitProviderAdapterRegistry.CreateDefault();
     }
 
     public async Task<string> ReadRawAsync(CancellationToken cancellationToken = default)
@@ -49,7 +54,13 @@ public sealed partial class SshConfigService
         return blocks;
     }
 
-    public ChangePreview PreviewUpsert(string original, GitHubIdentity identity)
+    public ChangePreview PreviewUpsert(string original, GitIdentity identity)
+        => PreviewUpsert(original, GitServiceInstance.CreateGitHubCom(), identity);
+
+    public ChangePreview PreviewUpsert(
+        string original,
+        GitServiceInstance service,
+        GitIdentity identity)
     {
         var validation = HostAliasValidator.Validate(identity.HostAlias);
         if (!validation.IsValid)
@@ -66,7 +77,7 @@ public sealed partial class SshConfigService
         }
 
         var newline = DetectNewline(original);
-        var blockText = BuildManagedBlock(identity, newline);
+        var blockText = _providers.Get(service.ProviderKind).BuildSshManagedBlock(service, identity, newline);
         string updated;
         if (blocks.Count == 1)
         {
@@ -115,12 +126,31 @@ public sealed partial class SshConfigService
         };
     }
 
-    public ChangePreview PreviewSynchronizeAll(string original, IEnumerable<GitHubIdentity> identities)
+    public ChangePreview PreviewSynchronizeAll(string original, IEnumerable<GitIdentity> identities)
     {
         var updated = original;
         foreach (var identity in identities.OrderBy(item => item.HostAlias, StringComparer.OrdinalIgnoreCase))
         {
             updated = PreviewUpsert(updated, identity).UpdatedText;
+        }
+
+        return new ChangePreview
+        {
+            Description = "Synchronize all GitKeyRouter SSH managed blocks",
+            OriginalText = original,
+            UpdatedText = updated,
+            DiffText = TextDiffService.CreateSimpleDiff(original, updated, "ssh_config.before", "ssh_config.after")
+        };
+    }
+
+    public ChangePreview PreviewSynchronizeAll(string original, AppConfig config)
+    {
+        var updated = original;
+        foreach (var identity in config.Identities.OrderBy(item => item.HostAlias, StringComparer.OrdinalIgnoreCase))
+        {
+            var service = config.FindService(identity.ServiceInstanceId)
+                ?? throw new InvalidOperationException($"Git service '{identity.ServiceInstanceId}' was not found.");
+            updated = PreviewUpsert(updated, service, identity).UpdatedText;
         }
 
         return new ChangePreview
@@ -151,24 +181,16 @@ public sealed partial class SshConfigService
         return OperationResult.Ok("SSH config was updated and backed up.");
     }
 
-    public static string BuildManagedBlock(GitHubIdentity identity, string newline)
-    {
-        var keyPath = ConvertWindowsPathToOpenSsh(identity.PrivateKeyPath);
-        if (keyPath.Contains(' '))
-        {
-            keyPath = $"\"{keyPath}\"";
-        }
+    public static string BuildManagedBlock(GitIdentity identity, string newline)
+        => BuildManagedBlock(GitServiceInstance.CreateGitHubCom(), identity, newline);
 
-        var builder = new StringBuilder();
-        builder.Append(BeginPrefix).Append(identity.HostAlias).Append(newline);
-        builder.Append("Host ").Append(identity.HostAlias).Append(newline);
-        builder.Append("    HostName github.com").Append(newline);
-        builder.Append("    User git").Append(newline);
-        builder.Append("    IdentityFile ").Append(keyPath).Append(newline);
-        builder.Append("    IdentitiesOnly yes").Append(newline);
-        builder.Append(EndPrefix).Append(identity.HostAlias).Append(newline);
-        return builder.ToString();
-    }
+    public static string BuildManagedBlock(
+        GitServiceInstance service,
+        GitIdentity identity,
+        string newline)
+        => GitProviderAdapterRegistry.CreateDefault()
+            .Get(service.ProviderKind)
+            .BuildSshManagedBlock(service, identity, newline);
 
     public static string ConvertWindowsPathToOpenSsh(string path)
         => Path.GetFullPath(path).Replace('\\', '/');

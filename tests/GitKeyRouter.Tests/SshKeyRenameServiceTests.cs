@@ -20,7 +20,7 @@ public sealed class SshKeyRenameServiceTests
         await File.WriteAllTextAsync(oldPrivatePath, "-----BEGIN OPENSSH PRIVATE KEY-----\nsecret");
         await File.WriteAllTextAsync(oldPublicPath, OpenSsh);
 
-        var identities = new List<GitHubIdentity>
+        var identities = new List<GitIdentity>
         {
             Identity("one", "Account One", "github-one", oldPrivatePath, oldPublicPath),
             Identity("two", "Account Two", "github-two", oldPrivatePath, oldPublicPath)

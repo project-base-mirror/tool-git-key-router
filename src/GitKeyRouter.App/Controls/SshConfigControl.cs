@@ -82,7 +82,7 @@ public sealed class SshConfigControl : UserControl, IAsyncRefreshable
     private async Task SynchronizeAllAsync()
     {
         var config = await _services.ConfigStore.LoadAsync();
-        var preview = _services.SshConfigService.PreviewSynchronizeAll(_raw, config.Identities);
+        var preview = _services.SshConfigService.PreviewSynchronizeAll(_raw, config);
         using var diff = new DiffPreviewForm("同步全部 SSH managed block", preview.DiffText);
         if (diff.ShowDialog(this) != DialogResult.OK)
         {

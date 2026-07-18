@@ -7,9 +7,9 @@ public sealed class OwnerRouteEditForm : Form
     private readonly TextBox _owner = new() { PlaceholderText = "例如：openai 或你的 GitHub 组织名" };
     private readonly ComboBox _identity = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly CheckBox _enabled = new() { Text = "启用", Checked = true, AutoSize = true };
-    private readonly OwnerRoute? _original;
+    private readonly RepositoryRoute? _original;
 
-    public OwnerRouteEditForm(IReadOnlyList<GitHubIdentity> identities, OwnerRoute? route = null)
+    public OwnerRouteEditForm(IReadOnlyList<GitIdentity> identities, RepositoryRoute? route = null)
     {
         _original = route;
         Text = route is null ? "新建 Owner 路由" : "编辑 Owner 路由";
@@ -59,7 +59,7 @@ public sealed class OwnerRouteEditForm : Form
         }
     }
 
-    public OwnerRoute? ResultRoute { get; private set; }
+    public RepositoryRoute? ResultRoute { get; private set; }
 
     public string? OriginalOwner => _original?.GitHubOwner;
 
@@ -72,7 +72,7 @@ public sealed class OwnerRouteEditForm : Form
             return;
         }
 
-        ResultRoute = new OwnerRoute
+        ResultRoute = new RepositoryRoute
         {
             GitHubOwner = _owner.Text.Trim(),
             IdentityId = identityId,

@@ -9,8 +9,8 @@ public sealed class OwnerRoutesControl : UserControl, IAsyncRefreshable
     private readonly ApplicationServices _services;
     private readonly Action<string> _status;
     private readonly DataGridView _grid = UiHelpers.CreateGrid();
-    private IReadOnlyList<OwnerRoute> _routes = [];
-    private IReadOnlyList<GitHubIdentity> _identities = [];
+    private IReadOnlyList<RepositoryRoute> _routes = [];
+    private IReadOnlyList<GitIdentity> _identities = [];
 
     public OwnerRoutesControl(ApplicationServices services, Action<string> status)
     {
@@ -215,7 +215,7 @@ public sealed class OwnerRoutesControl : UserControl, IAsyncRefreshable
         _status("Git 命令已复制；程序实际执行时不会通过 shell 拼接这些文本");
     }
 
-    private OwnerRoute? SelectedRoute()
+    private RepositoryRoute? SelectedRoute()
     {
         if (_grid.CurrentRow?.DataBoundItem is not RouteRow row)
         {

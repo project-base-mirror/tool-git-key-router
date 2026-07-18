@@ -1,10 +1,6 @@
 namespace GitKeyRouter.Core.Models;
 
-public sealed class OwnerRoute
+[Obsolete("Use RepositoryRoute. This compatibility type will be removed after the Schema 2 transition.")]
+public sealed class OwnerRoute : RepositoryRoute
 {
-    public string GitHubOwner { get; set; } = string.Empty;
-
-    public string IdentityId { get; set; } = string.Empty;
-
-    public bool Enabled { get; set; } = true;
 }

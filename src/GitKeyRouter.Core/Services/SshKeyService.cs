@@ -36,9 +36,9 @@ public sealed partial class SshKeyService
         return Path.Combine(sshDirectory, $"id_ed25519_{normalizedAlias}");
     }
 
-    public bool PrivateKeyExists(GitHubIdentity identity) => _fileSystem.FileExists(identity.PrivateKeyPath);
+    public bool PrivateKeyExists(GitIdentity identity) => _fileSystem.FileExists(identity.PrivateKeyPath);
 
-    public bool PublicKeyExists(GitHubIdentity identity) => _fileSystem.FileExists(identity.PublicKeyPath);
+    public bool PublicKeyExists(GitIdentity identity) => _fileSystem.FileExists(identity.PublicKeyPath);
 
     public async Task<OperationResult<IReadOnlyList<SshPrivateKeyCandidate>>> DiscoverPrivateKeysAsync(
         string sshDirectory,
@@ -109,7 +109,7 @@ public sealed partial class SshKeyService
     }
 
     public async Task<OperationResult<IReadOnlyList<SshPublicKeyVariant>>> ListPublicKeyVariantsAsync(
-        GitHubIdentity identity,
+        GitIdentity identity,
         CancellationToken cancellationToken = default)
     {
         try
@@ -197,7 +197,7 @@ public sealed partial class SshKeyService
     }
 
     public Task<OperationResult<string>> ReadPublicKeyAsync(
-        GitHubIdentity identity,
+        GitIdentity identity,
         CancellationToken cancellationToken = default)
         => ReadPublicKeyAsync(identity.PublicKeyPath, requireOpenSsh: false, cancellationToken);
 
@@ -242,7 +242,7 @@ public sealed partial class SshKeyService
     }
 
     public async Task<OperationResult<SshKeyGenerationResult>> GenerateAsync(
-        GitHubIdentity identity,
+        GitIdentity identity,
         bool overwrite,
         CancellationToken cancellationToken = default)
     {
@@ -313,7 +313,7 @@ public sealed partial class SshKeyService
     }
 
     public async Task<OperationResult<SshKeyConversionResult>> ConvertPublicKeyAsync(
-        GitHubIdentity identity,
+        GitIdentity identity,
         string sourcePath,
         SshPublicKeyExportFormat targetFormat,
         bool overwrite,
@@ -431,7 +431,7 @@ public sealed partial class SshKeyService
     }
 
     public Task<OperationResult> ExportPublicKeyAsync(
-        GitHubIdentity identity,
+        GitIdentity identity,
         string destinationPath,
         bool overwrite,
         CancellationToken cancellationToken = default)

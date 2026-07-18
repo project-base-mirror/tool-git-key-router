@@ -20,16 +20,16 @@ public sealed class IdentityEditForm : Form
     private readonly TextBox _publicKeyPath = new() { PlaceholderText = "通常为私钥路径加 .pub" };
     private readonly TextBox _comment = new() { PlaceholderText = "例如：name@example.com（可选）" };
     private readonly Label _keyDiscoveryNote = new();
-    private readonly GitHubIdentity _original;
+    private readonly GitIdentity _original;
     private string _lastSuggestedPublicKeyPath = string.Empty;
 
     public IdentityEditForm(
         string sshDirectory,
-        GitHubIdentity? identity = null,
+        GitIdentity? identity = null,
         IReadOnlyList<SshPrivateKeyCandidate>? discoveredKeys = null)
     {
         _sshDirectory = sshDirectory;
-        _original = identity ?? new GitHubIdentity();
+        _original = identity ?? new GitIdentity();
         Text = identity is null ? "新建 GitHub 身份" : "编辑 GitHub 身份";
         StartPosition = FormStartPosition.CenterParent;
         Width = 760;
@@ -86,7 +86,7 @@ public sealed class IdentityEditForm : Form
         _privateKeyPath.Leave += (_, _) => FillPublicKeyPathFromPrivate();
     }
 
-    public GitHubIdentity? ResultIdentity { get; private set; }
+    public GitIdentity? ResultIdentity { get; private set; }
 
     private static void AddRow(TableLayoutPanel table, int row, string label, Control control)
     {
@@ -118,7 +118,7 @@ public sealed class IdentityEditForm : Form
             : $"未在 {_sshDirectory} 发现可识别的私钥；仍可手动输入路径或稍后生成密钥。程序只保存路径。";
     }
 
-    private void LoadValues(GitHubIdentity identity)
+    private void LoadValues(GitIdentity identity)
     {
         _displayName.Text = identity.DisplayName;
         _username.Text = identity.GitHubUsername;
@@ -202,9 +202,10 @@ public sealed class IdentityEditForm : Form
             return;
         }
 
-        ResultIdentity = new GitHubIdentity
+        ResultIdentity = new GitIdentity
         {
             Id = _original.Id,
+            ServiceInstanceId = _original.ServiceInstanceId,
             CreatedAt = _original.CreatedAt,
             DisplayName = _displayName.Text.Trim(),
             GitHubUsername = _username.Text.Trim(),

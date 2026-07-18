@@ -17,18 +17,18 @@ public sealed class IdentityService
         _clock = clock;
     }
 
-    public async Task<IReadOnlyList<GitHubIdentity>> ListAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<GitIdentity>> ListAsync(CancellationToken cancellationToken = default)
         => (await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false)).Identities
             .OrderBy(item => item.DisplayName, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
 
-    public async Task<OperationResult<GitHubIdentity>> SaveAsync(GitHubIdentity identity, CancellationToken cancellationToken = default)
+    public async Task<OperationResult<GitIdentity>> SaveAsync(GitIdentity identity, CancellationToken cancellationToken = default)
     {
         var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
         var validation = IdentityValidator.Validate(identity, config.Identities);
         if (!validation.IsValid)
         {
-            return OperationResult<GitHubIdentity>.Fail("Identity validation failed.", validation.Errors.ToArray());
+            return OperationResult<GitIdentity>.Fail("Identity validation failed.", validation.Errors.ToArray());
         }
 
         var existingIndex = config.Identities.FindIndex(item => string.Equals(item.Id, identity.Id, StringComparison.OrdinalIgnoreCase));
@@ -53,7 +53,7 @@ public sealed class IdentityService
         }
 
         await _configStore.SaveAsync(config, cancellationToken).ConfigureAwait(false);
-        return OperationResult<GitHubIdentity>.Ok(identity, "Identity saved.");
+        return OperationResult<GitIdentity>.Ok(identity, "Identity saved.");
     }
 
     public async Task<OperationResult> DeleteAsync(string identityId, CancellationToken cancellationToken = default)
