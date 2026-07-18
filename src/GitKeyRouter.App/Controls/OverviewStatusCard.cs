@@ -69,6 +69,7 @@ internal sealed class OverviewStatusCard : Panel
         Controls.Add(textPanel);
         Controls.Add(_actionPanel);
         SetState("正在读取实际状态...", "读取中", OverviewStatusKind.Unknown, actionEnabled: false);
+        LayoutActionControls();
     }
 
     public OverviewStatusKind StatusKind { get; private set; }
@@ -83,12 +84,6 @@ internal sealed class OverviewStatusCard : Panel
         StatusKind = statusKind;
         UiHelpers.ApplyOverviewStatusBadge(_statusBadge, statusText, statusKind);
         _actionButton.Enabled = actionEnabled;
-    }
-
-    protected override void OnSizeChanged(EventArgs eventArgs)
-    {
-        base.OnSizeChanged(eventArgs);
-        LayoutActionControls();
     }
 
     protected override void OnPaint(PaintEventArgs eventArgs)
