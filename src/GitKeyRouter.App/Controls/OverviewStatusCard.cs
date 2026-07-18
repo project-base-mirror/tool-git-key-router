@@ -6,6 +6,8 @@ internal sealed class OverviewStatusCard : Panel
 {
     private const int BadgeWidth = 92;
     private const int ActionGap = 10;
+    private const int MinimumActionButtonWidth = 108;
+    private const int ActionButtonWidthBuffer = 12;
 
     private readonly Label _description;
     private readonly Label _statusBadge;
@@ -51,9 +53,9 @@ internal sealed class OverviewStatusCard : Panel
         _statusBadge = UiHelpers.CreateOverviewStatusBadge();
         _actionButton = UiHelpers.Button(actionText, onClick);
         _actionButton.AutoSize = false;
-        _actionButton.Width = Math.Max(90, _actionButton.PreferredSize.Width);
-        _actionButton.Height = 34;
         _actionButton.Margin = Padding.Empty;
+        _actionButton.TextAlign = ContentAlignment.MiddleCenter;
+        _actionButton.Size = GetActionButtonSize();
 
         _actionPanel = new Panel
         {
@@ -65,6 +67,8 @@ internal sealed class OverviewStatusCard : Panel
         _actionPanel.Controls.Add(_statusBadge);
         _actionPanel.Controls.Add(_actionButton);
         _actionPanel.SizeChanged += (_, _) => LayoutActionControls();
+        _actionButton.FontChanged += (_, _) => LayoutActionControls();
+        _actionButton.TextChanged += (_, _) => LayoutActionControls();
 
         Controls.Add(textPanel);
         Controls.Add(_actionPanel);
@@ -95,10 +99,30 @@ internal sealed class OverviewStatusCard : Panel
 
     private void LayoutActionControls()
     {
+        var actionButtonSize = GetActionButtonSize();
+        if (_actionButton.Size != actionButtonSize)
+        {
+            _actionButton.Size = actionButtonSize;
+        }
+
+        var actionPanelWidth = BadgeWidth + ActionGap + _actionButton.Width;
+        if (_actionPanel.Width != actionPanelWidth)
+        {
+            _actionPanel.Width = actionPanelWidth;
+        }
+
         var actionY = Math.Max(0, (_actionPanel.ClientSize.Height - _actionButton.Height) / 2);
         _actionButton.Location = new Point(_actionPanel.ClientSize.Width - _actionButton.Width, actionY);
 
         var badgeY = Math.Max(0, (_actionPanel.ClientSize.Height - _statusBadge.Height) / 2);
         _statusBadge.Location = new Point(_actionButton.Left - ActionGap - BadgeWidth, badgeY);
+    }
+
+    private Size GetActionButtonSize()
+    {
+        var preferredSize = _actionButton.GetPreferredSize(Size.Empty);
+        return new Size(
+            Math.Max(MinimumActionButtonWidth, preferredSize.Width + ActionButtonWidthBuffer),
+            Math.Max(34, preferredSize.Height));
     }
 }
