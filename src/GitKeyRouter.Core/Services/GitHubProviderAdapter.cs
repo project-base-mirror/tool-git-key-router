@@ -9,19 +9,23 @@ public sealed class GitHubProviderAdapter : IGitProviderAdapter
 {
     public GitProviderKind Kind => GitProviderKind.GitHub;
 
+    public IReadOnlyList<GitRemoteUrlPattern> GetSupportedRemotePatterns(GitServiceInstance service)
+        => GitRemoteUrlPatternFactory.Create(service);
+
     public IReadOnlyList<GitUrlRewriteRule> BuildRewriteRules(
         GitServiceInstance service,
         GitIdentity identity,
         RepositoryRoute route)
     {
         var namespacePath = route.NamespacePath.Trim('/');
-        var webBaseUrl = service.WebBaseUrl.TrimEnd('/');
         var baseUrl = $"{service.SshUser}@{identity.HostAlias}:{namespacePath}/";
-        return
-        [
-            new GitUrlRewriteRule(baseUrl, $"{webBaseUrl}/{namespacePath}/"),
-            new GitUrlRewriteRule(baseUrl, $"{service.SshUser}@{service.HostName}:{namespacePath}/")
-        ];
+        return GetSupportedRemotePatterns(service)
+            .Where(pattern => pattern.Kind == GitRemoteUrlPatternKind.Scp
+                || pattern.Kind == GitRemoteUrlPatternKind.Web && !pattern.IsInsecureHttp
+                || service.EnableExtendedSshUrlRewrites)
+            .Select(pattern => new GitUrlRewriteRule(baseUrl, $"{pattern.Prefix}{namespacePath}/"))
+            .Distinct()
+            .ToList();
     }
 
     public string BuildSshManagedBlock(

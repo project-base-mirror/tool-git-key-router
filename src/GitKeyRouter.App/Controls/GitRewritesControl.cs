@@ -155,8 +155,23 @@ public sealed class GitRewritesControl : UserControl, IAsyncRefreshable
             return;
         }
 
-        var preview = await _services.GitUrlRewriteService.PreviewAsync(_urlInput.Text.Trim());
-        _previewOutput.Text = $"原始 URL：{preview.OriginalUrl}\r\n匹配前缀：{preview.MatchedPrefix ?? "<无>"}\r\n目标 Base：{preview.MatchedBaseUrl ?? "<无>"}\r\n重写结果：{preview.RewrittenUrl}";
+        var remoteUrl = _urlInput.Text.Trim();
+        var parseTask = _services.GitUrlRewriteService.ParseRemoteUrlAsync(remoteUrl);
+        var previewTask = _services.GitUrlRewriteService.PreviewAsync(remoteUrl);
+        await Task.WhenAll(parseTask, previewTask);
+        var parsed = parseTask.Result;
+        var preview = previewTask.Result;
+        _previewOutput.Text = string.Join("\r\n",
+        [
+            $"原始 URL：{preview.OriginalUrl}",
+            $"识别服务：{parsed?.ServiceDisplayName ?? "<未识别>"}",
+            $"URL 格式：{parsed?.PatternKind.ToString() ?? "<未识别>"}",
+            $"命名空间：{parsed?.NamespacePath ?? "<未识别>"}",
+            $"仓库名称：{parsed?.RepositoryName ?? "<未识别>"}",
+            $"匹配前缀：{preview.MatchedPrefix ?? "<无>"}",
+            $"目标 Base：{preview.MatchedBaseUrl ?? "<无>"}",
+            $"重写结果：{preview.RewrittenUrl}"
+        ]);
     }
 
     private async Task TestConnectionAsync()

@@ -22,6 +22,7 @@ public sealed class CliApplication
             "list-identities" => await ListIdentitiesAsync(cancellationToken).ConfigureAwait(false),
             "list-routes" => await ListRoutesAsync(cancellationToken).ConfigureAwait(false),
             "apply" => await ApplyAsync(args[1..], cancellationToken).ConfigureAwait(false),
+            "parse-url" => await ParseUrlAsync(args[1..], cancellationToken).ConfigureAwait(false),
             "test-service" => await TestServiceAsync(args[1..], cancellationToken).ConfigureAwait(false),
             "test-route" => await TestRouteAsync(args[1..], cancellationToken).ConfigureAwait(false),
             "test-ssh" => await TestSshAsync(args[1..], cancellationToken).ConfigureAwait(false),
@@ -157,6 +158,29 @@ public sealed class CliApplication
         return result.Succeeded ? 0 : 2;
     }
 
+    private async Task<int> ParseUrlAsync(string[] args, CancellationToken cancellationToken)
+    {
+        if (args.Length == 0)
+        {
+            Console.Error.WriteLine("Usage: GitKeyRouter.exe parse-url <repository-url>");
+            return 3;
+        }
+
+        var result = await _services.GitUrlRewriteService.ParseRemoteUrlAsync(args[0], cancellationToken).ConfigureAwait(false);
+        if (result is null)
+        {
+            Console.Error.WriteLine("The repository URL does not match any configured Git service.");
+            return 1;
+        }
+
+        Console.WriteLine($"Service:    {result.ServiceDisplayName} ({result.ServiceInstanceId})");
+        Console.WriteLine($"Format:     {result.PatternKind}");
+        Console.WriteLine($"Namespace:  {result.NamespacePath}");
+        Console.WriteLine($"Repository: {result.RepositoryName}");
+        Console.WriteLine($"Prefix:     {result.MatchedPrefix}");
+        return 0;
+    }
+
     private async Task<int> TestSshAsync(string[] args, CancellationToken cancellationToken)
     {
         if (args.Length == 0)
@@ -234,6 +258,7 @@ public sealed class CliApplication
         Console.WriteLine("  list-identities");
         Console.WriteLine("  list-routes");
         Console.WriteLine("  apply [--yes]");
+        Console.WriteLine("  parse-url <repository-url>");
         Console.WriteLine("  test-service <id-or-host>");
         Console.WriteLine("  test-route <namespace> [--service <id-or-host>] [--url <repository-url>] [--connect]");
         Console.WriteLine("  test-ssh <host-alias-or-identity-id> [--verbose]");

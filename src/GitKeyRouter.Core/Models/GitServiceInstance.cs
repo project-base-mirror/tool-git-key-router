@@ -18,6 +18,10 @@ public sealed class GitServiceInstance
 
     public string WebBaseUrl { get; set; } = string.Empty;
 
+    public bool AllowInsecureHttp { get; set; }
+
+    public bool EnableExtendedSshUrlRewrites { get; set; } = true;
+
     public bool IsBuiltIn { get; set; }
 
     public static GitServiceInstance CreateGitHubCom()
@@ -29,6 +33,7 @@ public sealed class GitServiceInstance
             HostName = "github.com",
             SshUser = "git",
             WebBaseUrl = "https://github.com",
+            EnableExtendedSshUrlRewrites = false,
             IsBuiltIn = true
         };
 }

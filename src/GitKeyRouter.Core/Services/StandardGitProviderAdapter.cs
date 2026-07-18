@@ -17,6 +17,9 @@ public abstract class StandardGitProviderAdapter : IGitProviderAdapter
 
     public GitProviderKind Kind { get; }
 
+    public virtual IReadOnlyList<GitRemoteUrlPattern> GetSupportedRemotePatterns(GitServiceInstance service)
+        => GitRemoteUrlPatternFactory.Create(service);
+
     public virtual IReadOnlyList<GitUrlRewriteRule> BuildRewriteRules(
         GitServiceInstance service,
         GitIdentity identity,
@@ -24,12 +27,19 @@ public abstract class StandardGitProviderAdapter : IGitProviderAdapter
     {
         var namespacePath = route.NamespacePath.Trim('/');
         var baseUrl = $"{service.SshUser}@{identity.HostAlias}:{namespacePath}/";
-        return
-        [
-            new GitUrlRewriteRule(baseUrl, $"{service.WebBaseUrl.TrimEnd('/')}/{namespacePath}/"),
-            new GitUrlRewriteRule(baseUrl, $"{service.SshUser}@{service.HostName}:{namespacePath}/")
-        ];
+        return GetSupportedRemotePatterns(service)
+            .Where(pattern => ShouldGenerateRewrite(service, pattern))
+            .Select(pattern => new GitUrlRewriteRule(baseUrl, $"{pattern.Prefix}{namespacePath}/"))
+            .Distinct()
+            .ToList();
     }
+
+    protected static bool ShouldGenerateRewrite(
+        GitServiceInstance service,
+        GitRemoteUrlPattern pattern)
+        => pattern.Kind == GitRemoteUrlPatternKind.Scp
+            || pattern.Kind == GitRemoteUrlPatternKind.Web && !pattern.IsInsecureHttp
+            || service.EnableExtendedSshUrlRewrites;
 
     public virtual string BuildSshManagedBlock(
         GitServiceInstance service,

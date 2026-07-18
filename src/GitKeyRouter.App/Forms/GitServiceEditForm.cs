@@ -13,13 +13,15 @@ public sealed class GitServiceEditForm : Form
     private readonly NumericUpDown _sshPort = new() { Minimum = 0, Maximum = 65535, Value = 0 };
     private readonly TextBox _sshUser = new() { Text = "git" };
     private readonly TextBox _webBaseUrl = new();
+    private readonly CheckBox _extendedSshUrls = new() { Text = "生成 ssh:// 与 git+ssh:// rewrite", AutoSize = true };
+    private readonly CheckBox _allowInsecureHttp = new() { Text = "同时接受 HTTP URL（不安全）", AutoSize = true };
     private readonly GitServiceInstance? _original;
 
     public GitServiceEditForm(GitServiceInstance? service = null)
     {
         _original = service;
         Text = service is null ? "新建 Git 服务" : "编辑 Git 服务";
-        UiHelpers.ConfigureDialog(this, 680, 360);
+        UiHelpers.ConfigureDialog(this, 680, 420);
 
         _template.Items.AddRange(["GitLab.com", "自建 GitLab", "自建 Gitea", "通用 Git 服务"]);
         _provider.DataSource = Enum.GetValues<GitProviderKind>();
@@ -33,6 +35,8 @@ public sealed class GitServiceEditForm : Form
         UiHelpers.AddCompactDialogRow(table, 4, "SSH 端口（0=默认）", _sshPort);
         UiHelpers.AddCompactDialogRow(table, 5, "SSH 用户", _sshUser);
         UiHelpers.AddCompactDialogRow(table, 6, "Web Base URL", _webBaseUrl);
+        UiHelpers.AddCompactDialogRow(table, 7, "扩展 URL", _extendedSshUrls);
+        UiHelpers.AddCompactDialogRow(table, 8, "HTTP 兼容", _allowInsecureHttp);
 
         var save = UiHelpers.CreateDialogButton("保存", DialogResult.OK, primary: true);
         var cancel = UiHelpers.CreateDialogButton("取消", DialogResult.Cancel);
@@ -60,6 +64,7 @@ public sealed class GitServiceEditForm : Form
                 _sshPort.Enabled = false;
                 _sshUser.ReadOnly = true;
                 _webBaseUrl.ReadOnly = true;
+                _allowInsecureHttp.Enabled = false;
             }
         }
     }
@@ -85,6 +90,8 @@ public sealed class GitServiceEditForm : Form
         _sshPort.Value = service.SshPort ?? 0;
         _sshUser.Text = service.SshUser;
         _webBaseUrl.Text = service.WebBaseUrl;
+        _extendedSshUrls.Checked = service.EnableExtendedSshUrlRewrites;
+        _allowInsecureHttp.Checked = service.AllowInsecureHttp;
     }
 
     private void SaveClicked(object? sender, EventArgs eventArgs)
@@ -108,6 +115,8 @@ public sealed class GitServiceEditForm : Form
             SshPort = _sshPort.Value == 0 ? null : (int)_sshPort.Value,
             SshUser = _sshUser.Text.Trim(),
             WebBaseUrl = _webBaseUrl.Text.Trim(),
+            EnableExtendedSshUrlRewrites = _extendedSshUrls.Checked,
+            AllowInsecureHttp = _allowInsecureHttp.Checked,
             IsBuiltIn = _original?.IsBuiltIn == true
         };
     }

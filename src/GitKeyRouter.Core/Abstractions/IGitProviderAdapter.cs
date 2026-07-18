@@ -7,6 +7,8 @@ public interface IGitProviderAdapter
 {
     GitProviderKind Kind { get; }
 
+    IReadOnlyList<GitRemoteUrlPattern> GetSupportedRemotePatterns(GitServiceInstance service);
+
     IReadOnlyList<GitUrlRewriteRule> BuildRewriteRules(
         GitServiceInstance service,
         GitIdentity identity,

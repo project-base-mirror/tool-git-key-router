@@ -162,7 +162,7 @@ public sealed class GitUrlRewriteServiceTests
 
         var plan = await service.BuildDeleteRoutePlanAsync(gitLab.Id, "team");
 
-        Assert.Equal(2, plan.Removes.Count);
+        Assert.Equal(4, plan.Removes.Count);
         Assert.All(plan.Removes, rule => Assert.Contains("gitlab.office.example", rule.InsteadOfUrl, StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(plan.Removes, rule => rule.InsteadOfUrl.Contains("github.com", StringComparison.OrdinalIgnoreCase));
     }

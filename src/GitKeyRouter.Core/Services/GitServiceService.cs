@@ -48,6 +48,8 @@ public sealed class GitServiceService
             service.SshUser = existing.SshUser;
             service.SshPort = existing.SshPort;
             service.WebBaseUrl = existing.WebBaseUrl;
+            service.AllowInsecureHttp = existing.AllowInsecureHttp;
+            service.EnableExtendedSshUrlRewrites = existing.EnableExtendedSshUrlRewrites;
             service.IsBuiltIn = true;
         }
 

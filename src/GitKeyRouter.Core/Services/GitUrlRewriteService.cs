@@ -9,6 +9,7 @@ public sealed class GitUrlRewriteService
     private readonly IGitUrlRewriteStore _store;
     private readonly IBackupService _backupService;
     private readonly GitProviderAdapterRegistry _providers;
+    private readonly GitRemoteUrlParser _remoteUrlParser;
 
     public GitUrlRewriteService(
         IAppConfigStore configStore,
@@ -20,6 +21,7 @@ public sealed class GitUrlRewriteService
         _store = store;
         _backupService = backupService;
         _providers = providers ?? GitProviderAdapterRegistry.CreateDefault();
+        _remoteUrlParser = new GitRemoteUrlParser(_providers);
     }
 
     public async Task<IReadOnlyList<GitRewriteComparison>> CompareAsync(CancellationToken cancellationToken = default)
@@ -275,6 +277,14 @@ public sealed class GitUrlRewriteService
 
     public Task<ProcessResult> TestRemoteAsync(string originalUrl, CancellationToken cancellationToken = default)
         => _store.TestRemoteAsync(originalUrl, cancellationToken);
+
+    public async Task<GitRemoteUrlMatch?> ParseRemoteUrlAsync(
+        string remoteUrl,
+        CancellationToken cancellationToken = default)
+    {
+        var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        return _remoteUrlParser.Parse(remoteUrl, config.GitServices);
+    }
 
     private IReadOnlyList<ExpectedRouteRule> BuildExpectedEntries(AppConfig config)
     {
