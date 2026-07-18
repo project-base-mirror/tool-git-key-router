@@ -37,6 +37,7 @@ public sealed class SshKeyInspectionResult
     public string SourcePath { get; init; } = string.Empty;
     public string PublicKeyText { get; init; } = string.Empty;
     public string? Algorithm { get; init; }
+    public string Fingerprint { get; init; } = string.Empty;
     public bool Exists { get; init; }
     public bool IsOpenSsh { get; init; }
     public bool IsPrivateMaterial { get; init; }

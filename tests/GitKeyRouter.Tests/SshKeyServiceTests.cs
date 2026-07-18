@@ -12,6 +12,24 @@ public sealed class SshKeyServiceTests
     private const string Pem = "-----BEGIN PUBLIC KEY-----\nAQID\n-----END PUBLIC KEY-----";
 
     [Fact]
+    public void ComputesStandardOpenSshSha256Fingerprint()
+    {
+        var inspection = SshKeyFormatDetector.Detect(OpenSsh, "id_demo.pub");
+
+        Assert.Equal(SshKeyFormat.OpenSshPublic, inspection.Format);
+        Assert.Equal("SHA256:ZkAslGjFiUHdGf/WUL8rQvkib4PTvQatUV0OUQSncCA", inspection.Fingerprint);
+        Assert.True(SshKeyFormatDetector.TryGetSha256Fingerprint(OpenSsh, out var fingerprint));
+        Assert.Equal(inspection.Fingerprint, fingerprint);
+    }
+
+    [Fact]
+    public void RejectsFingerprintForNonOpenSshPublicKeyText()
+    {
+        Assert.False(SshKeyFormatDetector.TryGetSha256Fingerprint(Pem, out var fingerprint));
+        Assert.Empty(fingerprint);
+    }
+
+    [Fact]
     public async Task DiscoversRecognizedPrivateKeysAndSkipsPublicOrSshMetadataFiles()
     {
         using var directory = new TemporaryDirectory();

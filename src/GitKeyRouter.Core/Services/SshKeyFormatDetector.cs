@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Security.Cryptography;
 using System.Text;
 using GitKeyRouter.Core.Models;
 
@@ -61,6 +62,7 @@ public static class SshKeyFormatDetector
                 SourcePath = sourcePath,
                 PublicKeyText = normalized,
                 Algorithm = algorithm,
+                Fingerprint = CreateSha256Fingerprint(normalized),
                 Exists = true,
                 IsOpenSsh = true,
                 CanConvert = true
@@ -106,6 +108,38 @@ public static class SshKeyFormatDetector
         }
 
         return false;
+    }
+
+    public static bool TryGetSha256Fingerprint(string? text, out string fingerprint)
+    {
+        fingerprint = string.Empty;
+        if (!TryNormalizeOpenSshPublicKey(text, out var normalized, out _))
+        {
+            return false;
+        }
+
+        fingerprint = CreateSha256Fingerprint(normalized);
+        return fingerprint.Length > 0;
+    }
+
+    private static string CreateSha256Fingerprint(string normalizedPublicKey)
+    {
+        var parts = normalizedPublicKey.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2)
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            var blob = Convert.FromBase64String(parts[1]);
+            var hash = SHA256.HashData(blob);
+            return $"SHA256:{Convert.ToBase64String(hash).TrimEnd('=')}";
+        }
+        catch (FormatException)
+        {
+            return string.Empty;
+        }
     }
 
     private static bool TryReadAlgorithm(ReadOnlySpan<byte> blob, out string algorithm)

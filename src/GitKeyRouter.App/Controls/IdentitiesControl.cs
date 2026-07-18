@@ -26,6 +26,7 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
         toolbar.Controls.Add(UiHelpers.Button("重命名密钥", async (_, _) => await RenameKeyAsync()));
         toolbar.Controls.Add(UiHelpers.Button("查看公钥", async (_, _) => await ViewPublicKeyAsync(false)));
         toolbar.Controls.Add(UiHelpers.Button("复制到 GitHub", async (_, _) => await ViewPublicKeyAsync(true)));
+        toolbar.Controls.Add(UiHelpers.Button("复制指纹", (_, _) => CopyFingerprint()));
         toolbar.Controls.Add(UiHelpers.Button("转换格式", async (_, _) => await ConvertPublicKeyAsync()));
         toolbar.Controls.Add(UiHelpers.Button("导出公钥", async (_, _) => await ExportPublicKeyAsync()));
         toolbar.Controls.Add(UiHelpers.Button("同步 SSH Config", async (_, _) => await SyncSshAsync()));
@@ -74,11 +75,25 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
         }
 
         _grid.DataSource = rows;
-        foreach (var hiddenName in new[] { nameof(IdentityRow.Id), nameof(IdentityRow.PublicKeyPath) })
+        foreach (var hiddenName in new[] { nameof(IdentityRow.Id), nameof(IdentityRow.PublicKeyPath), nameof(IdentityRow.Fingerprint) })
         {
             if (_grid.Columns[hiddenName] is { } column)
             {
                 column.Visible = false;
+            }
+        }
+
+        if (_grid.Columns[nameof(IdentityRow.SHA256指纹)] is { } fingerprintColumn)
+        {
+            fingerprintColumn.HeaderText = "SHA256 指纹";
+        }
+
+        foreach (DataGridViewRow gridRow in _grid.Rows)
+        {
+            if (gridRow.DataBoundItem is IdentityRow row
+                && _grid.Columns[nameof(IdentityRow.SHA256指纹)] is { } column)
+            {
+                gridRow.Cells[column.Index].ToolTipText = row.Fingerprint;
             }
         }
 
@@ -537,11 +552,50 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
             私钥 = File.Exists(identity.PrivateKeyPath) ? "存在" : "缺失",
             公钥格式 = variant?.Inspection.DisplayName ?? "缺失",
             公钥文件 = variant?.FileName ?? Path.GetFileName(identity.PublicKeyPath),
+            Fingerprint = variant?.Inspection.Fingerprint ?? string.Empty,
+            SHA256指纹 = ShortFingerprint(variant?.Inspection.Fingerprint),
             OpenSSH格式 = variant?.Inspection.IsOpenSsh == true ? "是" : "否",
             配置路径 = variant?.IsConfiguredPath == true ? "是" : "否",
             SSH配置 = sshConfigStatus,
             密钥使用 = keyUsage
         };
+
+    private void CopyFingerprint()
+    {
+        var row = SelectedRow();
+        if (row is null)
+        {
+            MessageBox.Show(this, "请先选择一个公钥。", "GitKeyRouter", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(row.Fingerprint))
+        {
+            MessageBox.Show(
+                this,
+                "当前公钥格式无法直接计算标准 OpenSSH SHA256 指纹。请先转换为 OpenSSH 公钥格式。",
+                "指纹不可用",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        Clipboard.SetText(row.Fingerprint);
+        _status($"已复制指纹：{row.Fingerprint}");
+    }
+
+    private static string ShortFingerprint(string? fingerprint)
+    {
+        if (string.IsNullOrWhiteSpace(fingerprint))
+        {
+            return "不可用";
+        }
+
+        const int visibleCharacters = 24;
+        return fingerprint.Length <= visibleCharacters
+            ? fingerprint
+            : $"{fingerprint[..visibleCharacters]}…";
+    }
 
     private bool ConfirmSharedKeyUsage(GitHubIdentity candidate)
     {
@@ -626,12 +680,14 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
     {
         public string Id { get; init; } = string.Empty;
         public string PublicKeyPath { get; init; } = string.Empty;
+        public string Fingerprint { get; init; } = string.Empty;
         public string 显示名称 { get; init; } = string.Empty;
         public string GitHub用户名 { get; init; } = string.Empty;
         public string HostAlias { get; init; } = string.Empty;
         public string 私钥 { get; init; } = string.Empty;
         public string 公钥格式 { get; init; } = string.Empty;
         public string 公钥文件 { get; init; } = string.Empty;
+        public string SHA256指纹 { get; init; } = string.Empty;
         public string OpenSSH格式 { get; init; } = string.Empty;
         public string 配置路径 { get; init; } = string.Empty;
         public string SSH配置 { get; init; } = string.Empty;
