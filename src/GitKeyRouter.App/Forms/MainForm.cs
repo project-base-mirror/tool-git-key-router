@@ -34,7 +34,7 @@ public sealed class MainForm : Form
             ["概览"] = new OverviewControl(services, SetStatus, ShowPageAsync),
             ["Git 服务"] = new GitServicesControl(services, SetStatus),
             ["Git 身份"] = new IdentitiesControl(services, SetStatus),
-            ["Owner 路由"] = new OwnerRoutesControl(services, SetStatus),
+            ["仓库路由"] = new OwnerRoutesControl(services, SetStatus),
             ["SSH Config"] = new SshConfigControl(services, SetStatus),
             ["Git 重写配置"] = new GitRewritesControl(services, SetStatus),
             ["诊断"] = new DiagnosticsControl(services, SetStatus),

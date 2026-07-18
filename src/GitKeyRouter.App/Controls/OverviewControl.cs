@@ -54,12 +54,12 @@ public sealed class OverviewControl : UserControl, IAsyncRefreshable
             "去管理",
             async (_, _) => await _navigate("Git 身份"));
         _ownerRoutesCard = CreateOverviewCard(
-            "Owner 路由",
-            "正在读取 Owner 与身份映射...",
+            "仓库路由",
+            "正在读取服务命名空间与身份映射...",
             "读取中",
             OverviewStatusKind.Unknown,
             "查看路由",
-            async (_, _) => await _navigate("Owner 路由"));
+            async (_, _) => await _navigate("仓库路由"));
         _sshConfigCard = CreateOverviewCard(
             "SSH Config",
             "正在检查受管理 Host 区块...",
@@ -219,7 +219,7 @@ public sealed class OverviewControl : UserControl, IAsyncRefreshable
         if (config.OwnerRoutes.Count == 0)
         {
             return new OverviewCardState(
-                "尚未配置 Owner 路由；可将不同 GitHub Owner 映射到指定身份",
+                "尚未配置仓库路由；可将不同服务的 Owner / Namespace 映射到指定身份",
                 "未配置",
                 OverviewStatusKind.Warning);
         }
@@ -245,7 +245,7 @@ public sealed class OverviewControl : UserControl, IAsyncRefreshable
         }
 
         return new OverviewCardState(
-            $"{enabledCount} 条 Owner 路由均已启用，并且都能找到对应身份",
+            $"{enabledCount} 条仓库路由均已启用，并且都能找到对应身份",
             $"{enabledCount} 条路由",
             OverviewStatusKind.Info);
     }

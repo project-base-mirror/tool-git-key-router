@@ -17,6 +17,10 @@ public enum GitRewriteStatus
 
 public sealed class GitRewriteComparison
 {
+    public string? ServiceInstanceId { get; init; }
+
+    public string? NamespacePath { get; init; }
+
     public string? GitHubOwner { get; init; }
 
     public string? IdentityId { get; init; }

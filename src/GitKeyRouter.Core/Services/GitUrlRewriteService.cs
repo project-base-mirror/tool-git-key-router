@@ -8,23 +8,31 @@ public sealed class GitUrlRewriteService
     private readonly IAppConfigStore _configStore;
     private readonly IGitUrlRewriteStore _store;
     private readonly IBackupService _backupService;
+    private readonly GitProviderAdapterRegistry _providers;
 
-    public GitUrlRewriteService(IAppConfigStore configStore, IGitUrlRewriteStore store, IBackupService backupService)
+    public GitUrlRewriteService(
+        IAppConfigStore configStore,
+        IGitUrlRewriteStore store,
+        IBackupService backupService,
+        GitProviderAdapterRegistry? providers = null)
     {
         _configStore = configStore;
         _store = store;
         _backupService = backupService;
+        _providers = providers ?? GitProviderAdapterRegistry.CreateDefault();
     }
 
     public async Task<IReadOnlyList<GitRewriteComparison>> CompareAsync(CancellationToken cancellationToken = default)
     {
         var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
-        var expected = OwnerRouteService.BuildExpectedRules(config);
+        var expectedEntries = BuildExpectedEntries(config);
+        var expected = expectedEntries.Select(item => item.Rule).ToList();
         var actual = await _store.GetAllAsync(cancellationToken).ConfigureAwait(false);
         var comparisons = new List<GitRewriteComparison>();
 
-        foreach (var expectedRule in expected)
+        foreach (var entry in expectedEntries)
         {
+            var expectedRule = entry.Rule;
             var exact = actual.Where(item => RuleEquals(item, expectedRule)).ToList();
             var samePrefix = actual.Where(item => string.Equals(item.InsteadOfUrl, expectedRule.InsteadOfUrl, StringComparison.OrdinalIgnoreCase)).ToList();
             var status = exact.Count switch
@@ -35,14 +43,13 @@ public sealed class GitUrlRewriteService
                 _ => GitRewriteStatus.Duplicate
             };
 
-            var owner = config.OwnerRoutes.FirstOrDefault(route => expectedRule.InsteadOfUrl.Contains($"/{route.GitHubOwner}/", StringComparison.OrdinalIgnoreCase)
-                || expectedRule.InsteadOfUrl.Contains($":{route.GitHubOwner}/", StringComparison.OrdinalIgnoreCase));
-            var identity = owner is null ? null : config.Identities.FirstOrDefault(item => string.Equals(item.Id, owner.IdentityId, StringComparison.OrdinalIgnoreCase));
             comparisons.Add(new GitRewriteComparison
             {
-                GitHubOwner = owner?.GitHubOwner,
-                IdentityId = identity?.Id,
-                IdentityDisplayName = identity?.DisplayName,
+                ServiceInstanceId = entry.Route.ServiceInstanceId,
+                NamespacePath = entry.Route.NamespacePath,
+                GitHubOwner = entry.Service.ProviderKind == GitProviderKind.GitHub ? entry.Route.NamespacePath : null,
+                IdentityId = entry.Identity.Id,
+                IdentityDisplayName = entry.Identity.DisplayName,
                 ExpectedBaseUrl = expectedRule.BaseUrl,
                 InsteadOfUrl = expectedRule.InsteadOfUrl,
                 Status = status,
@@ -123,11 +130,21 @@ public sealed class GitUrlRewriteService
     }
 
     public async Task<GitRewritePlan> BuildDeleteOwnerPlanAsync(string owner, CancellationToken cancellationToken = default)
+        => await BuildDeleteRoutePlanAsync(
+            GitServiceInstance.GitHubComId,
+            owner,
+            cancellationToken).ConfigureAwait(false);
+
+    public async Task<GitRewritePlan> BuildDeleteRoutePlanAsync(
+        string serviceInstanceId,
+        string namespacePath,
+        CancellationToken cancellationToken = default)
     {
         var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
-        var expected = OwnerRouteService.BuildExpectedRules(config)
-            .Where(rule => rule.InsteadOfUrl.Contains($"/{owner}/", StringComparison.OrdinalIgnoreCase)
-                || rule.InsteadOfUrl.Contains($":{owner}/", StringComparison.OrdinalIgnoreCase))
+        var expected = BuildExpectedEntries(config)
+            .Where(item => string.Equals(item.Route.ServiceInstanceId, serviceInstanceId, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(item.Route.NamespacePath, namespacePath, StringComparison.OrdinalIgnoreCase))
+            .Select(item => item.Rule)
             .ToList();
         var actual = await _store.GetAllAsync(cancellationToken).ConfigureAwait(false);
         var plan = new GitRewritePlan();
@@ -259,7 +276,36 @@ public sealed class GitUrlRewriteService
     public Task<ProcessResult> TestRemoteAsync(string originalUrl, CancellationToken cancellationToken = default)
         => _store.TestRemoteAsync(originalUrl, cancellationToken);
 
+    private IReadOnlyList<ExpectedRouteRule> BuildExpectedEntries(AppConfig config)
+    {
+        var result = new List<ExpectedRouteRule>();
+        foreach (var route in config.RepositoryRoutes.Where(item => item.Enabled))
+        {
+            var service = config.FindService(route.ServiceInstanceId);
+            var identity = config.Identities.FirstOrDefault(item =>
+                string.Equals(item.Id, route.IdentityId, StringComparison.OrdinalIgnoreCase));
+            if (service is null || identity is null
+                || !string.Equals(identity.ServiceInstanceId, service.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            foreach (var rule in _providers.Get(service.ProviderKind).BuildRewriteRules(service, identity, route))
+            {
+                result.Add(new ExpectedRouteRule(route, service, identity, rule));
+            }
+        }
+
+        return result;
+    }
+
     private static bool RuleEquals(GitUrlRewriteRule left, GitUrlRewriteRule right)
         => string.Equals(left.BaseUrl, right.BaseUrl, StringComparison.OrdinalIgnoreCase)
             && string.Equals(left.InsteadOfUrl, right.InsteadOfUrl, StringComparison.OrdinalIgnoreCase);
+
+    private sealed record ExpectedRouteRule(
+        RepositoryRoute Route,
+        GitServiceInstance Service,
+        GitIdentity Identity,
+        GitUrlRewriteRule Rule);
 }

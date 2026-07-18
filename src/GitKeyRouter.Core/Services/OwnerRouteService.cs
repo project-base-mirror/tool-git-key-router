@@ -21,52 +21,84 @@ public sealed class OwnerRouteService
     }
 
     public async Task<IReadOnlyList<RepositoryRoute>> ListAsync(CancellationToken cancellationToken = default)
-        => (await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false)).OwnerRoutes
-            .OrderBy(item => item.GitHubOwner, StringComparer.OrdinalIgnoreCase)
+        => (await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false)).RepositoryRoutes
+            .OrderBy(item => item.ServiceInstanceId, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.NamespacePath, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
     public async Task<OperationResult<RepositoryRoute>> SaveAsync(
         RepositoryRoute route,
         string? originalOwner = null,
         CancellationToken cancellationToken = default)
+        => await SaveAsync(
+            route,
+            route.ServiceInstanceId,
+            originalOwner,
+            cancellationToken).ConfigureAwait(false);
+
+    public async Task<OperationResult<RepositoryRoute>> SaveAsync(
+        RepositoryRoute route,
+        string? originalServiceInstanceId,
+        string? originalNamespacePath,
+        CancellationToken cancellationToken = default)
     {
         var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
-        var validation = OwnerRouteValidator.Validate(route, config, originalOwner);
+        var validation = OwnerRouteValidator.Validate(
+            route,
+            config,
+            originalServiceInstanceId,
+            originalNamespacePath,
+            _providers);
         if (!validation.IsValid)
         {
-            return OperationResult<RepositoryRoute>.Fail("Owner route validation failed.", validation.Errors.ToArray());
+            return OperationResult<RepositoryRoute>.Fail("Repository route validation failed.", validation.Errors.ToArray());
         }
 
-        await _backupService.CreateSnapshotAsync($"Save owner route: {route.GitHubOwner}", cancellationToken).ConfigureAwait(false);
-        var existing = config.OwnerRoutes.FirstOrDefault(item => string.Equals(item.GitHubOwner, originalOwner ?? route.GitHubOwner, StringComparison.OrdinalIgnoreCase));
+        await _backupService.CreateSnapshotAsync(
+            $"Save repository route: {route.ServiceInstanceId}/{route.NamespacePath}",
+            cancellationToken).ConfigureAwait(false);
+        var existing = config.RepositoryRoutes.FirstOrDefault(item =>
+            string.Equals(item.ServiceInstanceId, originalServiceInstanceId ?? route.ServiceInstanceId, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(item.NamespacePath, originalNamespacePath ?? route.NamespacePath, StringComparison.OrdinalIgnoreCase));
         if (existing is null)
         {
-            config.OwnerRoutes.Add(route);
+            config.RepositoryRoutes.Add(route);
         }
         else
         {
-            existing.GitHubOwner = route.GitHubOwner;
+            existing.ServiceInstanceId = route.ServiceInstanceId;
+            existing.NamespacePath = route.NamespacePath;
             existing.IdentityId = route.IdentityId;
             existing.Enabled = route.Enabled;
         }
 
         await _configStore.SaveAsync(config, cancellationToken).ConfigureAwait(false);
-        return OperationResult<RepositoryRoute>.Ok(route, "Owner route saved.");
+        return OperationResult<RepositoryRoute>.Ok(route, "Repository route saved.");
     }
 
     public async Task<OperationResult> DeleteAsync(string owner, CancellationToken cancellationToken = default)
+        => await DeleteAsync(GitServiceInstance.GitHubComId, owner, cancellationToken).ConfigureAwait(false);
+
+    public async Task<OperationResult> DeleteAsync(
+        string serviceInstanceId,
+        string namespacePath,
+        CancellationToken cancellationToken = default)
     {
         var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
-        var route = config.OwnerRoutes.FirstOrDefault(item => string.Equals(item.GitHubOwner, owner, StringComparison.OrdinalIgnoreCase));
+        var route = config.RepositoryRoutes.FirstOrDefault(item =>
+            string.Equals(item.ServiceInstanceId, serviceInstanceId, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(item.NamespacePath, namespacePath, StringComparison.OrdinalIgnoreCase));
         if (route is null)
         {
-            return OperationResult.Fail("Owner route was not found.");
+            return OperationResult.Fail("Repository route was not found.");
         }
 
-        await _backupService.CreateSnapshotAsync($"Delete owner route: {owner}", cancellationToken).ConfigureAwait(false);
-        config.OwnerRoutes.Remove(route);
+        await _backupService.CreateSnapshotAsync(
+            $"Delete repository route: {serviceInstanceId}/{namespacePath}",
+            cancellationToken).ConfigureAwait(false);
+        config.RepositoryRoutes.Remove(route);
         await _configStore.SaveAsync(config, cancellationToken).ConfigureAwait(false);
-        return OperationResult.Ok("Owner route deleted from application configuration.");
+        return OperationResult.Ok("Repository route deleted from application configuration.");
     }
 
     public static IReadOnlyList<GitUrlRewriteRule> BuildExpectedRules(
@@ -76,7 +108,7 @@ public sealed class OwnerRouteService
         providers ??= GitProviderAdapterRegistry.CreateDefault();
         var identities = config.Identities.ToDictionary(item => item.Id, StringComparer.OrdinalIgnoreCase);
         var rules = new List<GitUrlRewriteRule>();
-        foreach (var route in config.OwnerRoutes.Where(item => item.Enabled))
+        foreach (var route in config.RepositoryRoutes.Where(item => item.Enabled))
         {
             if (!identities.TryGetValue(route.IdentityId, out var identity))
             {

@@ -36,7 +36,11 @@ public static class AppBootstrapper
             gitProviderAdapters);
         var ownerRouteService = new OwnerRouteService(configStore, backupService, gitProviderAdapters);
         var sshConfigService = new SshConfigService(fileSystem, paths, backupService, gitProviderAdapters);
-        var gitUrlRewriteService = new GitUrlRewriteService(configStore, gitStore, backupService);
+        var gitUrlRewriteService = new GitUrlRewriteService(
+            configStore,
+            gitStore,
+            backupService,
+            gitProviderAdapters);
         var sshKeyService = new SshKeyService(fileSystem, processRunner, toolchainService, clock);
         var sshKeyRenameService = new SshKeyRenameService(
             fileSystem,

@@ -53,6 +53,120 @@ public sealed class GitUrlRewriteServiceTests
         Assert.Single(git.Rules.Where(item => item == rule));
     }
 
+    [Fact]
+    public async Task Compare_MapsRulesToTheirServiceAndNamespace()
+    {
+        var gitLab = new GitServiceInstance
+        {
+            Id = "gitlab-office",
+            DisplayName = "Office GitLab",
+            ProviderKind = GitProviderKind.GitLab,
+            HostName = "gitlab.office.example",
+            SshUser = "git",
+            WebBaseUrl = "https://gitlab.office.example"
+        };
+        var identity = new GitIdentity
+        {
+            Id = "work",
+            ServiceInstanceId = gitLab.Id,
+            DisplayName = "Work",
+            AccountName = "camus",
+            HostAlias = "gitlab-work"
+        };
+        var store = new InMemoryAppConfigStore
+        {
+            Config = new AppConfig
+            {
+                GitServices = [GitServiceInstance.CreateGitHubCom(), gitLab],
+                Identities = [identity],
+                RepositoryRoutes =
+                [
+                    new RepositoryRoute
+                    {
+                        ServiceInstanceId = gitLab.Id,
+                        NamespacePath = "company/platform",
+                        IdentityId = identity.Id,
+                        Enabled = true
+                    }
+                ]
+            }
+        };
+        var git = new FakeGitUrlRewriteStore();
+        var service = new GitUrlRewriteService(store, git, new NoOpBackupService());
+
+        var comparisons = await service.CompareAsync();
+
+        Assert.All(comparisons.Where(item => item.Status == GitRewriteStatus.Missing), item =>
+        {
+            Assert.Equal(gitLab.Id, item.ServiceInstanceId);
+            Assert.Equal("company/platform", item.NamespacePath);
+            Assert.Null(item.GitHubOwner);
+        });
+    }
+
+    [Fact]
+    public async Task DeleteRoutePlan_OnlyRemovesRulesForSelectedServiceNamespace()
+    {
+        var gitLab = new GitServiceInstance
+        {
+            Id = "gitlab-office",
+            DisplayName = "Office GitLab",
+            ProviderKind = GitProviderKind.GitLab,
+            HostName = "gitlab.office.example",
+            SshUser = "git",
+            WebBaseUrl = "https://gitlab.office.example"
+        };
+        var githubIdentity = new GitIdentity
+        {
+            Id = "github",
+            ServiceInstanceId = GitServiceInstance.GitHubComId,
+            DisplayName = "GitHub",
+            HostAlias = "github-team"
+        };
+        var gitLabIdentity = new GitIdentity
+        {
+            Id = "gitlab",
+            ServiceInstanceId = gitLab.Id,
+            DisplayName = "GitLab",
+            HostAlias = "gitlab-team"
+        };
+        var config = new AppConfig
+        {
+            GitServices = [GitServiceInstance.CreateGitHubCom(), gitLab],
+            Identities = [githubIdentity, gitLabIdentity],
+            RepositoryRoutes =
+            [
+                new RepositoryRoute
+                {
+                    ServiceInstanceId = GitServiceInstance.GitHubComId,
+                    NamespacePath = "team",
+                    IdentityId = githubIdentity.Id,
+                    Enabled = true
+                },
+                new RepositoryRoute
+                {
+                    ServiceInstanceId = gitLab.Id,
+                    NamespacePath = "team",
+                    IdentityId = gitLabIdentity.Id,
+                    Enabled = true
+                }
+            ]
+        };
+        var expected = OwnerRouteService.BuildExpectedRules(config);
+        var git = new FakeGitUrlRewriteStore();
+        git.Rules.AddRange(expected);
+        var service = new GitUrlRewriteService(
+            new InMemoryAppConfigStore { Config = config },
+            git,
+            new NoOpBackupService());
+
+        var plan = await service.BuildDeleteRoutePlanAsync(gitLab.Id, "team");
+
+        Assert.Equal(2, plan.Removes.Count);
+        Assert.All(plan.Removes, rule => Assert.Contains("gitlab.office.example", rule.InsteadOfUrl, StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(plan.Removes, rule => rule.InsteadOfUrl.Contains("github.com", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static InMemoryAppConfigStore ConfigStore()
         => new()
         {

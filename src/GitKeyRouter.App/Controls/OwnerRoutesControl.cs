@@ -11,12 +11,13 @@ public sealed class OwnerRoutesControl : UserControl, IAsyncRefreshable
     private readonly DataGridView _grid = UiHelpers.CreateGrid();
     private IReadOnlyList<RepositoryRoute> _routes = [];
     private IReadOnlyList<GitIdentity> _identities = [];
+    private IReadOnlyList<GitServiceInstance> _gitServices = [];
 
     public OwnerRoutesControl(ApplicationServices services, Action<string> status)
     {
         _services = services;
         _status = status;
-        var header = UiHelpers.CreatePageHeader("Owner 路由", "把不同 GitHub Owner 稳定映射到对应 SSH 身份");
+        var header = UiHelpers.CreatePageHeader("仓库路由", "按 Git 服务和 Owner / Namespace 将仓库稳定映射到对应 SSH 身份");
         var toolbar = UiHelpers.CreateToolbar();
         toolbar.Controls.Add(UiHelpers.Button("新建", async (_, _) => await CreateAsync()));
         toolbar.Controls.Add(UiHelpers.Button("编辑", async (_, _) => await EditAsync()));
@@ -40,8 +41,12 @@ public sealed class OwnerRoutesControl : UserControl, IAsyncRefreshable
     public async Task RefreshAsync()
     {
         var config = await _services.ConfigStore.LoadAsync();
-        _routes = config.OwnerRoutes.OrderBy(item => item.GitHubOwner, StringComparer.OrdinalIgnoreCase).ToList();
+        _routes = config.RepositoryRoutes
+            .OrderBy(item => ServiceName(config.GitServices, item.ServiceInstanceId), StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(item => item.NamespacePath, StringComparer.OrdinalIgnoreCase)
+            .ToList();
         _identities = config.Identities;
+        _gitServices = config.GitServices;
         IReadOnlyList<GitRewriteComparison> comparisons;
         try
         {
@@ -55,10 +60,14 @@ public sealed class OwnerRoutesControl : UserControl, IAsyncRefreshable
         _grid.DataSource = _routes.Select(route =>
         {
             var identity = _identities.FirstOrDefault(item => string.Equals(item.Id, route.IdentityId, StringComparison.OrdinalIgnoreCase));
-            var related = comparisons.Where(item => string.Equals(item.GitHubOwner, route.GitHubOwner, StringComparison.OrdinalIgnoreCase)).ToList();
+            var related = comparisons.Where(item =>
+                string.Equals(item.ServiceInstanceId, route.ServiceInstanceId, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(item.NamespacePath, route.NamespacePath, StringComparison.OrdinalIgnoreCase)).ToList();
             return new RouteRow
             {
-                Owner = route.GitHubOwner,
+                ServiceInstanceId = route.ServiceInstanceId,
+                Git服务 = ServiceName(_gitServices, route.ServiceInstanceId),
+                命名空间 = route.NamespacePath,
                 IdentityId = route.IdentityId,
                 身份 = identity?.DisplayName ?? "<缺失>",
                 HostAlias = identity?.HostAlias ?? "<缺失>",
@@ -71,19 +80,23 @@ public sealed class OwnerRoutesControl : UserControl, IAsyncRefreshable
         {
             identityColumn.Visible = false;
         }
+        if (_grid.Columns[nameof(RouteRow.ServiceInstanceId)] is { } serviceIdColumn)
+        {
+            serviceIdColumn.Visible = false;
+        }
 
-        _status($"已加载 {_routes.Count} 条 Owner 路由");
+        _status($"已加载 {_routes.Count} 条仓库路由");
     }
 
     private async Task CreateAsync()
     {
         if (_identities.Count == 0)
         {
-            MessageBox.Show(this, "请先创建至少一个 GitHub 身份。", "GitKeyRouter", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, "请先创建至少一个 Git 身份。", "GitKeyRouter", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
-        using var form = new OwnerRouteEditForm(_identities);
+        using var form = new OwnerRouteEditForm(_gitServices, _identities);
         if (form.ShowDialog(this) != DialogResult.OK || form.ResultRoute is null)
         {
             return;
@@ -107,13 +120,16 @@ public sealed class OwnerRoutesControl : UserControl, IAsyncRefreshable
             return;
         }
 
-        using var form = new OwnerRouteEditForm(_identities, route);
+        using var form = new OwnerRouteEditForm(_gitServices, _identities, route);
         if (form.ShowDialog(this) != DialogResult.OK || form.ResultRoute is null)
         {
             return;
         }
 
-        var result = await _services.OwnerRouteService.SaveAsync(form.ResultRoute, form.OriginalOwner);
+        var result = await _services.OwnerRouteService.SaveAsync(
+            form.ResultRoute,
+            form.OriginalServiceInstanceId,
+            form.OriginalNamespacePath);
         if (!result.Success)
         {
             UiHelpers.ShowErrors(this, result);
@@ -131,12 +147,12 @@ public sealed class OwnerRoutesControl : UserControl, IAsyncRefreshable
             return;
         }
 
-        if (MessageBox.Show(this, $"删除 Owner 路由“{route.GitHubOwner}”？\r\nGit 全局配置不会在此步骤中自动删除。", "确认删除", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+        if (MessageBox.Show(this, $"删除仓库路由“{ServiceName(_gitServices, route.ServiceInstanceId)} / {route.NamespacePath}”？\r\nGit 全局配置不会在此步骤中自动删除。", "确认删除", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
         {
             return;
         }
 
-        var result = await _services.OwnerRouteService.DeleteAsync(route.GitHubOwner);
+        var result = await _services.OwnerRouteService.DeleteAsync(route.ServiceInstanceId, route.NamespacePath);
         if (!result.Success)
         {
             UiHelpers.ShowErrors(this, result);
@@ -161,9 +177,9 @@ public sealed class OwnerRoutesControl : UserControl, IAsyncRefreshable
         }
 
         await ApplyPlanAsync(
-            await _services.GitUrlRewriteService.BuildDeleteOwnerPlanAsync(route.GitHubOwner),
-            $"删除 {route.GitHubOwner} 的 Git rewrite",
-            $"Delete Git URL rewrites for owner: {route.GitHubOwner}");
+            await _services.GitUrlRewriteService.BuildDeleteRoutePlanAsync(route.ServiceInstanceId, route.NamespacePath),
+            $"删除 {route.NamespacePath} 的 Git rewrite",
+            $"Delete Git URL rewrites for route: {route.ServiceInstanceId}/{route.NamespacePath}");
     }
 
     private async Task ApplyPlanAsync(GitRewritePlan plan, string title, string reason)
@@ -200,17 +216,16 @@ public sealed class OwnerRoutesControl : UserControl, IAsyncRefreshable
         }
 
         var identity = _identities.FirstOrDefault(item => string.Equals(item.Id, route.IdentityId, StringComparison.OrdinalIgnoreCase));
-        if (identity is null)
+        var service = _gitServices.FirstOrDefault(item => string.Equals(item.Id, route.ServiceInstanceId, StringComparison.OrdinalIgnoreCase));
+        if (identity is null || service is null)
         {
             return;
         }
 
-        var baseUrl = $"git@{identity.HostAlias}:{route.GitHubOwner}/";
-        var lines = new[]
-        {
-            $"git config --global --add \"url.{baseUrl}.insteadOf\" \"https://github.com/{route.GitHubOwner}/\"",
-            $"git config --global --add \"url.{baseUrl}.insteadOf\" \"git@github.com:{route.GitHubOwner}/\""
-        };
+        var lines = _services.GitProviderAdapters.Get(service.ProviderKind)
+            .BuildRewriteRules(service, identity, route)
+            .Select(rule => $"git config --global --add \"url.{rule.BaseUrl}.insteadOf\" \"{rule.InsteadOfUrl}\"")
+            .ToArray();
         Clipboard.SetText(string.Join(Environment.NewLine, lines));
         _status("Git 命令已复制；程序实际执行时不会通过 shell 拼接这些文本");
     }
@@ -219,16 +234,24 @@ public sealed class OwnerRoutesControl : UserControl, IAsyncRefreshable
     {
         if (_grid.CurrentRow?.DataBoundItem is not RouteRow row)
         {
-            MessageBox.Show(this, "请先选择一条 Owner 路由。", "GitKeyRouter", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, "请先选择一条仓库路由。", "GitKeyRouter", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return null;
         }
 
-        return _routes.FirstOrDefault(item => string.Equals(item.GitHubOwner, row.Owner, StringComparison.OrdinalIgnoreCase));
+        return _routes.FirstOrDefault(item =>
+            string.Equals(item.ServiceInstanceId, row.ServiceInstanceId, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(item.NamespacePath, row.命名空间, StringComparison.OrdinalIgnoreCase));
     }
+
+    private static string ServiceName(IEnumerable<GitServiceInstance> services, string serviceInstanceId)
+        => services.FirstOrDefault(item => string.Equals(item.Id, serviceInstanceId, StringComparison.OrdinalIgnoreCase))?.DisplayName
+            ?? $"缺失：{serviceInstanceId}";
 
     private sealed class RouteRow
     {
-        public string Owner { get; init; } = string.Empty;
+        public string ServiceInstanceId { get; init; } = string.Empty;
+        public string Git服务 { get; init; } = string.Empty;
+        public string 命名空间 { get; init; } = string.Empty;
         public string IdentityId { get; init; } = string.Empty;
         public string 身份 { get; init; } = string.Empty;
         public string HostAlias { get; init; } = string.Empty;
