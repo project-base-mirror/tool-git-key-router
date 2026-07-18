@@ -135,6 +135,37 @@ public static class UiHelpers
         return card;
     }
 
+    public static void EnableStatusColors(DataGridView grid, params string[] columnNames)
+    {
+        var names = columnNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        grid.CellFormatting += (_, eventArgs) =>
+        {
+            if (eventArgs.RowIndex < 0
+                || eventArgs.ColumnIndex < 0
+                || !names.Contains(grid.Columns[eventArgs.ColumnIndex].Name))
+            {
+                return;
+            }
+
+            var palette = GetStatusPalette(eventArgs.Value);
+            if (palette is null)
+            {
+                return;
+            }
+
+            var style = eventArgs.CellStyle;
+            if (style is null)
+            {
+                return;
+            }
+
+            style.BackColor = palette.Value.BackColor;
+            style.ForeColor = palette.Value.ForeColor;
+            style.SelectionBackColor = palette.Value.SelectionBackColor;
+            style.SelectionForeColor = palette.Value.ForeColor;
+        };
+    }
+
     public static void ShowErrors(IWin32Window owner, OperationResult result)
     {
         var text = result.Message;
@@ -185,6 +216,70 @@ public static class UiHelpers
 
         return builder.ToString();
     }
+
+    public static string FormatKeyRenamePlan(SshKeyRenamePlan plan)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine($"身份：{plan.IdentityDisplayName}");
+        builder.AppendLine($"新文件名：{plan.NewBaseName}");
+        builder.AppendLine();
+        builder.AppendLine("文件移动：");
+        foreach (var move in plan.FileMoves)
+        {
+            builder.AppendLine($"- {move.SourcePath}");
+            builder.AppendLine($"+ {move.DestinationPath}");
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("将一起更新引用的身份：");
+        foreach (var identityName in plan.AffectedIdentityNames)
+        {
+            builder.AppendLine($"- {identityName}");
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("SSH Config 变更：");
+        builder.AppendLine(string.IsNullOrWhiteSpace(plan.SshConfigDiff) ? "无变更" : plan.SshConfigDiff);
+        builder.AppendLine();
+        builder.AppendLine("执行前会创建配置快照，并为每个现有密钥文件创建独立备份。失败时会尝试回滚文件与配置。");
+        return builder.ToString();
+    }
+
+    private static (Color BackColor, Color ForeColor, Color SelectionBackColor)? GetStatusPalette(object? value)
+    {
+        if (value is bool enabled)
+        {
+            return enabled
+                ? (Color.FromArgb(231, 246, 236), Color.FromArgb(25, 111, 61), Color.FromArgb(205, 232, 214))
+                : (Color.FromArgb(240, 242, 246), TextSecondary, Color.FromArgb(222, 226, 233));
+        }
+
+        var text = Convert.ToString(value)?.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        if (ContainsAny(text, "缺失", "不存在", "重复", "missing", "duplicate", "conflict", "error", "错误", "失败", "不可"))
+        {
+            return (Color.FromArgb(253, 232, 232), Color.FromArgb(174, 38, 45), Color.FromArgb(242, 205, 207));
+        }
+
+        if (ContainsAny(text, "未同步", "未知", "extra", "warning", "警告", "共享", "否", "未启用"))
+        {
+            return (Color.FromArgb(255, 247, 224), Color.FromArgb(143, 91, 0), Color.FromArgb(244, 229, 188));
+        }
+
+        if (ContainsAny(text, "正常", "存在", "correct", "normal", "success", "成功", "已同步", "独立", "是"))
+        {
+            return (Color.FromArgb(231, 246, 236), Color.FromArgb(25, 111, 61), Color.FromArgb(205, 232, 214));
+        }
+
+        return null;
+    }
+
+    private static bool ContainsAny(string value, params string[] tokens)
+        => tokens.Any(token => value.Contains(token, StringComparison.OrdinalIgnoreCase));
 
     private sealed class WrappingToolbar : FlowLayoutPanel
     {

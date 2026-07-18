@@ -14,6 +14,8 @@ public interface IFileSystem
 
     void CopyFile(string sourcePath, string destinationPath, bool overwrite);
 
+    void MoveFile(string sourcePath, string destinationPath, bool overwrite);
+
     void DeleteFile(string path);
 
     IEnumerable<string> EnumerateDirectories(string path);

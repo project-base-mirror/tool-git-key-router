@@ -100,6 +100,30 @@ public sealed partial class DiagnosticService
                 DiagnosticSeverity.Error, "Assign a unique HostAlias to every identity.");
         }
 
+        foreach (var duplicate in config.Identities
+                     .Where(item => !string.IsNullOrWhiteSpace(item.PrivateKeyPath))
+                     .GroupBy(item => NormalizePath(item.PrivateKeyPath), StringComparer.OrdinalIgnoreCase)
+                     .Where(group => group.Count() > 1))
+        {
+            Add(report, "PRIVATE_KEY_PATH_SHARED", "Keys", "Private key path is shared by multiple identities",
+                $"Path: {duplicate.Key}{Environment.NewLine}Identities: {string.Join(", ", duplicate.Select(item => item.DisplayName))}",
+                DiagnosticSeverity.Warning,
+                "Use a separate key for each account unless sharing is intentional.");
+        }
+
+        foreach (var duplicate in config.Identities
+                     .Where(item => !string.IsNullOrWhiteSpace(item.PublicKeyPath))
+                     .GroupBy(item => NormalizePath(item.PublicKeyPath), StringComparer.OrdinalIgnoreCase)
+                     .Where(group => group.Count() > 1))
+        {
+            Add(report, "PUBLIC_KEY_PATH_SHARED", "Keys", "Public key path is shared by multiple identities",
+                $"Path: {duplicate.Key}{Environment.NewLine}Identities: {string.Join(", ", duplicate.Select(item => item.DisplayName))}",
+                DiagnosticSeverity.Warning,
+                "Confirm that these identities are intended to use the same key pair.");
+        }
+
+        var publicKeyMaterial = new Dictionary<string, List<(GitHubIdentity Identity, string Path)>>(StringComparer.Ordinal);
+
         foreach (var identity in config.Identities)
         {
             Add(report, $"PRIVATE_KEY_{identity.Id}", "Keys", $"Private key: {identity.DisplayName}",
@@ -115,8 +139,23 @@ public sealed partial class DiagnosticService
                 try
                 {
                     var publicKeyText = (await _fileSystem.ReadAllTextAsync(identity.PublicKeyPath, cancellationToken).ConfigureAwait(false)).Trim();
-                    var looksLikePublicKey = publicKeyText.StartsWith("ssh-", StringComparison.Ordinal)
-                        && !publicKeyText.Contains("PRIVATE KEY", StringComparison.OrdinalIgnoreCase);
+                    var looksLikePublicKey = SshKeyFormatDetector.TryNormalizeOpenSshPublicKey(
+                        publicKeyText,
+                        out var normalizedPublicKey,
+                        out _);
+                    if (looksLikePublicKey)
+                    {
+                        var keyParts = normalizedPublicKey.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+                        var keyMaterial = string.Join(' ', keyParts.Take(2));
+                        if (!publicKeyMaterial.TryGetValue(keyMaterial, out var usages))
+                        {
+                            usages = [];
+                            publicKeyMaterial[keyMaterial] = usages;
+                        }
+
+                        usages.Add((identity, identity.PublicKeyPath));
+                    }
+
                     Add(report, $"PUBLIC_KEY_READ_{identity.Id}", "Keys", $"Public key readable: {identity.DisplayName}",
                         looksLikePublicKey ? "The file is readable and has an OpenSSH public-key prefix." : "The file is readable but does not look like a normal OpenSSH public key.",
                         looksLikePublicKey ? DiagnosticSeverity.Normal : DiagnosticSeverity.Warning,
@@ -128,6 +167,16 @@ public sealed partial class DiagnosticService
                         exception.Message, DiagnosticSeverity.Error, "Check file access and select the correct public key path.");
                 }
             }
+        }
+
+        foreach (var duplicate in publicKeyMaterial.Values.Where(group =>
+                     group.Select(item => item.Identity.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1
+                     && group.Select(item => NormalizePath(item.Path)).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1))
+        {
+            Add(report, "PUBLIC_KEY_MATERIAL_REUSED", "Keys", "Different files contain the same public key",
+                string.Join(Environment.NewLine, duplicate.Select(item => $"{item.Identity.DisplayName}: {item.Path}")),
+                DiagnosticSeverity.Warning,
+                "These accounts use copies of the same key pair. Generate separate keys unless this is intentional.");
         }
 
         foreach (var group in config.OwnerRoutes.Where(item => item.Enabled)
@@ -240,6 +289,18 @@ public sealed partial class DiagnosticService
 
     private static bool ContainsHost(string text, string hostAlias)
         => Regex.IsMatch(text, $"(?im)^\\s*Host\\s+{Regex.Escape(hostAlias)}(?:\\s|$)", RegexOptions.CultureInvariant);
+
+    private static string NormalizePath(string path)
+    {
+        try
+        {
+            return Path.GetFullPath(path);
+        }
+        catch
+        {
+            return path.Trim();
+        }
+    }
 
     private static void Add(
         DiagnosticReport report,

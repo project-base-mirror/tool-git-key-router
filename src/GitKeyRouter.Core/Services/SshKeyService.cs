@@ -121,7 +121,7 @@ public sealed partial class SshKeyService
             }
 
             var directory = Path.GetDirectoryName(identity.PublicKeyPath);
-            var stem = GetVariantStem(identity.PublicKeyPath);
+            var stem = GetPublicKeyVariantStem(identity.PublicKeyPath);
             if (!string.IsNullOrWhiteSpace(directory) && _fileSystem.DirectoryExists(directory))
             {
                 foreach (var path in _fileSystem.EnumerateFiles(directory, $"{stem}*"))
@@ -605,7 +605,7 @@ public sealed partial class SshKeyService
             Timeout = TimeSpan.FromSeconds(30)
         }, cancellationToken);
 
-    private static string GetVariantStem(string configuredPublicKeyPath)
+    public static string GetPublicKeyVariantStem(string configuredPublicKeyPath)
     {
         var stem = Path.GetFileNameWithoutExtension(configuredPublicKeyPath);
         foreach (var suffix in new[] { ".openssh", ".rfc4716", ".pem" })
@@ -622,7 +622,7 @@ public sealed partial class SshKeyService
     private static string GetVariantPath(string configuredPublicKeyPath, SshPublicKeyExportFormat format)
     {
         var directory = Path.GetDirectoryName(configuredPublicKeyPath) ?? string.Empty;
-        var stem = GetVariantStem(configuredPublicKeyPath);
+        var stem = GetPublicKeyVariantStem(configuredPublicKeyPath);
         var suffix = format switch
         {
             SshPublicKeyExportFormat.OpenSsh => ".openssh.pub",

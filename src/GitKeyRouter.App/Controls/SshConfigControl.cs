@@ -38,6 +38,7 @@ public sealed class SshConfigControl : UserControl, IAsyncRefreshable
         Controls.Add(tabs);
         Controls.Add(toolbar);
         Controls.Add(header);
+        UiHelpers.EnableStatusColors(_managedGrid, nameof(ManagedRow.状态));
     }
 
     public async Task RefreshAsync()

@@ -36,6 +36,7 @@ public sealed class DiagnosticsControl : UserControl, IAsyncRefreshable
         Controls.Add(_reportText);
         Controls.Add(toolbar);
         Controls.Add(header);
+        UiHelpers.EnableStatusColors(_grid, nameof(DiagnosticRow.级别));
     }
 
     public async Task RefreshAsync()

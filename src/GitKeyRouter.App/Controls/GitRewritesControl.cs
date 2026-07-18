@@ -51,6 +51,7 @@ public sealed class GitRewritesControl : UserControl, IAsyncRefreshable
         Controls.Add(testPanel);
         Controls.Add(toolbar);
         Controls.Add(header);
+        UiHelpers.EnableStatusColors(_grid, nameof(RewriteRow.状态));
     }
 
     public async Task RefreshAsync()

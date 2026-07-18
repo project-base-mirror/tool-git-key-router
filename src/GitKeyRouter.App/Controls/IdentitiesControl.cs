@@ -23,6 +23,7 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
         toolbar.Controls.Add(UiHelpers.Button("编辑", async (_, _) => await EditAsync()));
         toolbar.Controls.Add(UiHelpers.Button("删除记录", async (_, _) => await DeleteAsync()));
         toolbar.Controls.Add(UiHelpers.Button("生成密钥", async (_, _) => await GenerateKeyAsync()));
+        toolbar.Controls.Add(UiHelpers.Button("重命名密钥", async (_, _) => await RenameKeyAsync()));
         toolbar.Controls.Add(UiHelpers.Button("查看公钥", async (_, _) => await ViewPublicKeyAsync(false)));
         toolbar.Controls.Add(UiHelpers.Button("复制到 GitHub", async (_, _) => await ViewPublicKeyAsync(true)));
         toolbar.Controls.Add(UiHelpers.Button("转换格式", async (_, _) => await ConvertPublicKeyAsync()));
@@ -37,6 +38,13 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
         Controls.Add(toolbar);
         Controls.Add(header);
         _grid.CellDoubleClick += async (_, _) => await EditAsync();
+        UiHelpers.EnableStatusColors(
+            _grid,
+            nameof(IdentityRow.私钥),
+            nameof(IdentityRow.OpenSSH格式),
+            nameof(IdentityRow.配置路径),
+            nameof(IdentityRow.SSH配置),
+            nameof(IdentityRow.密钥使用));
     }
 
     public async Task RefreshAsync()
@@ -44,6 +52,7 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
         _identities = await _services.IdentityService.ListAsync();
         var raw = await _services.SshConfigService.ReadRawAsync();
         var blocks = _services.SshConfigService.ParseManagedBlocks(raw);
+        var keyUsageCounts = BuildKeyUsageCounts(_identities);
         var rows = new List<IdentityRow>();
         foreach (var identity in _identities)
         {
@@ -56,11 +65,12 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
                 : [];
             if (variants.Count == 0)
             {
-                rows.Add(CreateRow(identity, null, sshConfigStatus));
+                rows.Add(CreateRow(identity, null, sshConfigStatus, GetKeyUsage(identity, keyUsageCounts)));
                 continue;
             }
 
-            rows.AddRange(variants.Select(variant => CreateRow(identity, variant, sshConfigStatus)));
+            rows.AddRange(variants.Select(variant =>
+                CreateRow(identity, variant, sshConfigStatus, GetKeyUsage(identity, keyUsageCounts))));
         }
 
         _grid.DataSource = rows;
@@ -80,6 +90,11 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
         var discoveredKeys = await DiscoverPrivateKeysAsync();
         using var form = new IdentityEditForm(_services.Paths.SshDirectory, discoveredKeys: discoveredKeys);
         if (form.ShowDialog(this) != DialogResult.OK || form.ResultIdentity is null)
+        {
+            return;
+        }
+
+        if (!ConfirmSharedKeyUsage(form.ResultIdentity))
         {
             return;
         }
@@ -107,6 +122,11 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
         var discoveredKeys = await DiscoverPrivateKeysAsync();
         using var form = new IdentityEditForm(_services.Paths.SshDirectory, identity, discoveredKeys);
         if (form.ShowDialog(this) != DialogResult.OK || form.ResultIdentity is null)
+        {
+            return;
+        }
+
+        if (!ConfirmSharedKeyUsage(form.ResultIdentity))
         {
             return;
         }
@@ -233,6 +253,63 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
         publicKey.ShowDialog(this);
         await RefreshAsync();
         _status("SSH 密钥生成完成");
+    }
+
+    private async Task RenameKeyAsync()
+    {
+        var identity = SelectedIdentity();
+        if (identity is null)
+        {
+            return;
+        }
+
+        var currentName = Path.GetFileName(identity.PrivateKeyPath);
+        var suggestedName = Path.GetFileName(
+            SshKeyService.CreateDefaultPrivateKeyPath(_services.Paths.SshDirectory, identity.HostAlias));
+        if (string.Equals(currentName, suggestedName, StringComparison.OrdinalIgnoreCase))
+        {
+            suggestedName += "_new";
+        }
+
+        using var renameForm = new KeyRenameForm(currentName, suggestedName);
+        if (renameForm.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _status("正在生成密钥重命名预览...");
+        var planResult = await _services.SshKeyRenameService.BuildPlanAsync(identity.Id, renameForm.NewBaseName);
+        if (!planResult.Success || planResult.Value is null)
+        {
+            UiHelpers.ShowErrors(this, planResult);
+            return;
+        }
+
+        using var preview = new DiffPreviewForm(
+            "密钥文件与配置变更预览",
+            UiHelpers.FormatKeyRenamePlan(planResult.Value),
+            "确认重命名");
+        if (preview.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _status("正在备份并重命名密钥文件...");
+        var result = await _services.SshKeyRenameService.ApplyAsync(planResult.Value);
+        if (!result.Success || result.Value is null)
+        {
+            UiHelpers.ShowErrors(this, result);
+            return;
+        }
+
+        await RefreshAsync();
+        MessageBox.Show(
+            this,
+            $"密钥文件、账户路径和 SSH Config 已更新。\r\n\r\n已创建 {result.Value.BackupFiles.Count} 个文件备份。",
+            "重命名完成",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
+        _status("密钥文件及相关配置已重命名");
     }
 
     private async Task ViewPublicKeyAsync(bool copyOnly)
@@ -445,7 +522,11 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
         System.Diagnostics.Process.Start(startInfo);
     }
 
-    private static IdentityRow CreateRow(GitHubIdentity identity, SshPublicKeyVariant? variant, string sshConfigStatus)
+    private static IdentityRow CreateRow(
+        GitHubIdentity identity,
+        SshPublicKeyVariant? variant,
+        string sshConfigStatus,
+        string keyUsage)
         => new()
         {
             Id = identity.Id,
@@ -458,8 +539,74 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
             公钥文件 = variant?.FileName ?? Path.GetFileName(identity.PublicKeyPath),
             OpenSSH格式 = variant?.Inspection.IsOpenSsh == true ? "是" : "否",
             配置路径 = variant?.IsConfiguredPath == true ? "是" : "否",
-            SSH配置 = sshConfigStatus
+            SSH配置 = sshConfigStatus,
+            密钥使用 = keyUsage
         };
+
+    private bool ConfirmSharedKeyUsage(GitHubIdentity candidate)
+    {
+        var sharing = _identities
+            .Where(item => !string.Equals(item.Id, candidate.Id, StringComparison.OrdinalIgnoreCase)
+                && (PathsEqual(item.PrivateKeyPath, candidate.PrivateKeyPath)
+                    || PathsEqual(item.PublicKeyPath, candidate.PublicKeyPath)))
+            .Select(item => item.DisplayName)
+            .Distinct(StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(item => item, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+        if (sharing.Count == 0)
+        {
+            return true;
+        }
+
+        return MessageBox.Show(
+            this,
+            $"该身份将与以下账户使用相同的私钥或公钥路径：\r\n\r\n- {string.Join("\r\n- ", sharing)}\r\n\r\n这意味着这些账户可能实际使用同一把密钥。仍然保存？",
+            "检测到共享密钥",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning) == DialogResult.Yes;
+    }
+
+    private static IReadOnlyDictionary<string, int> BuildKeyUsageCounts(IEnumerable<GitHubIdentity> identities)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var identity in identities)
+        {
+            foreach (var path in new[] { identity.PrivateKeyPath, identity.PublicKeyPath }
+                         .Where(path => !string.IsNullOrWhiteSpace(path))
+                         .Select(NormalizePath)
+                         .Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                counts[path] = counts.GetValueOrDefault(path) + 1;
+            }
+        }
+
+        return counts;
+    }
+
+    private static string GetKeyUsage(GitHubIdentity identity, IReadOnlyDictionary<string, int> counts)
+    {
+        var maximum = new[] { identity.PrivateKeyPath, identity.PublicKeyPath }
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => counts.GetValueOrDefault(NormalizePath(path), 1))
+            .DefaultIfEmpty(1)
+            .Max();
+        return maximum > 1 ? $"共享（{maximum} 个身份）" : "独立";
+    }
+
+    private static bool PathsEqual(string left, string right)
+        => string.Equals(NormalizePath(left), NormalizePath(right), StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizePath(string path)
+    {
+        try
+        {
+            return Path.GetFullPath(path);
+        }
+        catch
+        {
+            return path.Trim();
+        }
+    }
 
     private IdentityRow? SelectedRow()
         => _grid.CurrentRow?.DataBoundItem as IdentityRow;
@@ -488,5 +635,6 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
         public string OpenSSH格式 { get; init; } = string.Empty;
         public string 配置路径 { get; init; } = string.Empty;
         public string SSH配置 { get; init; } = string.Empty;
+        public string 密钥使用 { get; init; } = string.Empty;
     }
 }

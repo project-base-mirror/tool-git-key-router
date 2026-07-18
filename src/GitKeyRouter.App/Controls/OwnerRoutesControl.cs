@@ -30,6 +30,11 @@ public sealed class OwnerRoutesControl : UserControl, IAsyncRefreshable
         Controls.Add(toolbar);
         Controls.Add(header);
         _grid.CellDoubleClick += async (_, _) => await EditAsync();
+        UiHelpers.EnableStatusColors(
+            _grid,
+            nameof(RouteRow.启用),
+            nameof(RouteRow.HTTPS状态),
+            nameof(RouteRow.SSH状态));
     }
 
     public async Task RefreshAsync()

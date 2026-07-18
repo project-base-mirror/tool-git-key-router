@@ -28,6 +28,13 @@ public static class AppBootstrapper
         var sshConfigService = new SshConfigService(fileSystem, paths, backupService);
         var gitUrlRewriteService = new GitUrlRewriteService(configStore, gitStore, backupService);
         var sshKeyService = new SshKeyService(fileSystem, processRunner, toolchainService, clock);
+        var sshKeyRenameService = new SshKeyRenameService(
+            fileSystem,
+            configStore,
+            backupService,
+            sshConfigService,
+            sshKeyService,
+            clock);
         var diagnosticService = new DiagnosticService(
             configStore,
             paths,
@@ -47,6 +54,7 @@ public static class AppBootstrapper
             IdentityService = identityService,
             OwnerRouteService = ownerRouteService,
             SshKeyService = sshKeyService,
+            SshKeyRenameService = sshKeyRenameService,
             SshConfigService = sshConfigService,
             GitUrlRewriteService = gitUrlRewriteService,
             DiagnosticService = diagnosticService,
