@@ -9,12 +9,18 @@ public sealed class IdentityService
     private readonly IAppConfigStore _configStore;
     private readonly IBackupService _backupService;
     private readonly IClock _clock;
+    private readonly SshConfigService? _sshConfigService;
 
-    public IdentityService(IAppConfigStore configStore, IBackupService backupService, IClock clock)
+    public IdentityService(
+        IAppConfigStore configStore,
+        IBackupService backupService,
+        IClock clock,
+        SshConfigService? sshConfigService = null)
     {
         _configStore = configStore;
         _backupService = backupService;
         _clock = clock;
+        _sshConfigService = sshConfigService;
     }
 
     public async Task<IReadOnlyList<GitIdentity>> ListAsync(CancellationToken cancellationToken = default)
@@ -25,7 +31,11 @@ public sealed class IdentityService
     public async Task<OperationResult<GitIdentity>> SaveAsync(GitIdentity identity, CancellationToken cancellationToken = default)
     {
         var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
-        var validation = IdentityValidator.Validate(identity, config);
+        var unmanagedHostAliases = _sshConfigService is null
+            ? []
+            : _sshConfigService.ParseUnmanagedHostAliases(
+                await _sshConfigService.ReadRawAsync(cancellationToken).ConfigureAwait(false));
+        var validation = IdentityValidator.Validate(identity, config, unmanagedHostAliases);
         if (!validation.IsValid)
         {
             return OperationResult<GitIdentity>.Fail("Identity validation failed.", validation.Errors.ToArray());

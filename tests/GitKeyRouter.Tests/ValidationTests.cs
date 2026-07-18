@@ -106,4 +106,55 @@ public sealed class ValidationTests
 
         Assert.False(IdentityValidator.Validate(identity, new AppConfig()).IsValid);
     }
+
+    [Fact]
+    public void Identity_RejectsHostAliasMatchingAnyConfiguredServiceHostName()
+    {
+        var gitLab = new GitServiceInstance
+        {
+            Id = "gitlab-office",
+            DisplayName = "Office GitLab",
+            ProviderKind = GitProviderKind.GitLab,
+            HostName = "gitlab.office.example",
+            SshUser = "git",
+            WebBaseUrl = "https://gitlab.office.example"
+        };
+        var identity = new GitIdentity
+        {
+            ServiceInstanceId = GitServiceInstance.GitHubComId,
+            DisplayName = "Conflicting alias",
+            AccountName = "camus",
+            HostAlias = "gitlab.office.example.",
+            PrivateKeyPath = @"C:\keys\conflict",
+            PublicKeyPath = @"C:\keys\conflict.pub"
+        };
+        var config = new AppConfig
+        {
+            GitServices = [GitServiceInstance.CreateGitHubCom(), gitLab]
+        };
+
+        var result = IdentityValidator.Validate(identity, config);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.Contains("real host name", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Identity_RejectsHostAliasFromUnmanagedSshConfig()
+    {
+        var identity = new GitIdentity
+        {
+            ServiceInstanceId = GitServiceInstance.GitHubComId,
+            DisplayName = "Existing SSH alias",
+            AccountName = "camus",
+            HostAlias = "work-git",
+            PrivateKeyPath = @"C:\keys\work",
+            PublicKeyPath = @"C:\keys\work.pub"
+        };
+
+        var result = IdentityValidator.Validate(identity, new AppConfig(), ["work-git"]);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.Contains("unmanaged SSH Host", StringComparison.OrdinalIgnoreCase));
+    }
 }

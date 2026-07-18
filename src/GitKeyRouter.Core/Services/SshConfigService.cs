@@ -54,6 +54,34 @@ public sealed partial class SshConfigService
         return blocks;
     }
 
+    public IReadOnlyList<string> ParseUnmanagedHostAliases(string text)
+    {
+        var unmanagedText = ManagedBlockPattern().Replace(text, string.Empty);
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in unmanagedText.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var trimmed = line.Trim();
+            if (!trimmed.StartsWith("Host ", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            foreach (var token in trimmed[5..].Split(
+                         [' ', '\t'],
+                         StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (token.StartsWith('!') || token.Contains('*') || token.Contains('?'))
+                {
+                    continue;
+                }
+
+                result.Add(token);
+            }
+        }
+
+        return result.OrderBy(item => item, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
     public ChangePreview PreviewUpsert(string original, GitIdentity identity)
         => PreviewUpsert(original, GitServiceInstance.CreateGitHubCom(), identity);
 

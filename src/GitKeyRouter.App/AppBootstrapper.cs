@@ -27,7 +27,8 @@ public static class AppBootstrapper
         ISafeLogger logger = new SafeFileLogger(paths);
         var gitProviderAdapters = GitProviderAdapterRegistry.CreateDefault();
 
-        var identityService = new IdentityService(configStore, backupService, clock);
+        var sshConfigService = new SshConfigService(fileSystem, paths, backupService, gitProviderAdapters);
+        var identityService = new IdentityService(configStore, backupService, clock, sshConfigService);
         var gitServiceService = new GitServiceService(
             configStore,
             backupService,
@@ -35,7 +36,6 @@ public static class AppBootstrapper
             toolchainService,
             gitProviderAdapters);
         var ownerRouteService = new OwnerRouteService(configStore, backupService, gitProviderAdapters);
-        var sshConfigService = new SshConfigService(fileSystem, paths, backupService, gitProviderAdapters);
         var gitUrlRewriteService = new GitUrlRewriteService(
             configStore,
             gitStore,

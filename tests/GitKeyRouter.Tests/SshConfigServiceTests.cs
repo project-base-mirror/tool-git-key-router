@@ -71,6 +71,21 @@ public sealed class SshConfigServiceTests
         Assert.Throws<InvalidOperationException>(() => service.PreviewUpsert(duplicate, Identity("github-camus", @"D:\key")));
     }
 
+    [Fact]
+    public void ParseUnmanagedHostAliases_IgnoresManagedBlocksWildcardsAndNegations()
+    {
+        var service = CreateService();
+        var managed = service.PreviewUpsert(string.Empty, Identity("github-camus", @"C:\key")).UpdatedText;
+        var config = "Host work-git backup-git\n    HostName git.example\n"
+            + "Host * !blocked wildcard-*\n    ServerAliveInterval 30\n"
+            + managed;
+
+        var aliases = service.ParseUnmanagedHostAliases(config);
+
+        Assert.Equal(["backup-git", "work-git"], aliases);
+        Assert.DoesNotContain("github-camus", aliases);
+    }
+
     private static SshConfigService CreateService()
     {
         var temp = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "GitKeyRouter.Tests", Guid.NewGuid().ToString("N"));

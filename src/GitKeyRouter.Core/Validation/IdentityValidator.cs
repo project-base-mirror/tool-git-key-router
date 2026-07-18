@@ -7,7 +7,10 @@ public static class IdentityValidator
     public static ValidationResult Validate(GitIdentity identity, IEnumerable<GitIdentity> existing)
         => ValidateCore(identity, existing);
 
-    public static ValidationResult Validate(GitIdentity identity, AppConfig config)
+    public static ValidationResult Validate(
+        GitIdentity identity,
+        AppConfig config,
+        IEnumerable<string>? unmanagedHostAliases = null)
     {
         ArgumentNullException.ThrowIfNull(config);
         var result = ValidateCore(identity, config.Identities);
@@ -24,8 +27,26 @@ public static class IdentityValidator
             result.Add($"AccountName '{identity.AccountName}' is already configured for this Git service.");
         }
 
+        var normalizedAlias = NormalizeHost(identity.HostAlias);
+        var conflictingService = config.GitServices.FirstOrDefault(service =>
+            string.Equals(NormalizeHost(service.HostName), normalizedAlias, StringComparison.OrdinalIgnoreCase));
+        if (conflictingService is not null)
+        {
+            result.Add(
+                $"HostAlias '{identity.HostAlias}' conflicts with the real host name of Git service '{conflictingService.DisplayName}'.");
+        }
+
+        if (unmanagedHostAliases?.Any(alias =>
+                string.Equals(NormalizeHost(alias), normalizedAlias, StringComparison.OrdinalIgnoreCase)) == true)
+        {
+            result.Add($"HostAlias '{identity.HostAlias}' already exists in an unmanaged SSH Host declaration.");
+        }
+
         return result;
     }
+
+    private static string NormalizeHost(string? value)
+        => (value ?? string.Empty).Trim().TrimEnd('.');
 
     private static ValidationResult ValidateCore(GitIdentity identity, IEnumerable<GitIdentity> existing)
     {
