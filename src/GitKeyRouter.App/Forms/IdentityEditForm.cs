@@ -7,9 +7,10 @@ namespace GitKeyRouter.App.Forms;
 public sealed class IdentityEditForm : Form
 {
     private readonly string _sshDirectory;
-    private readonly TextBox _displayName = new() { PlaceholderText = "例如：个人 GitHub" };
-    private readonly TextBox _username = new() { PlaceholderText = "例如：octocat" };
-    private readonly TextBox _hostAlias = new() { PlaceholderText = "例如：github-personal" };
+    private readonly ComboBox _service = new() { DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly TextBox _displayName = new() { PlaceholderText = "例如：个人 GitHub 或公司 GitLab" };
+    private readonly TextBox _username = new() { PlaceholderText = "例如：octocat 或 camus" };
+    private readonly TextBox _hostAlias = new() { PlaceholderText = "例如：github-personal 或 gitlab-work" };
     private readonly CueComboBox _privateKeyPath = new()
     {
         DropDownStyle = ComboBoxStyle.DropDown,
@@ -25,15 +26,16 @@ public sealed class IdentityEditForm : Form
 
     public IdentityEditForm(
         string sshDirectory,
+        IReadOnlyList<GitServiceInstance> services,
         GitIdentity? identity = null,
         IReadOnlyList<SshPrivateKeyCandidate>? discoveredKeys = null)
     {
         _sshDirectory = sshDirectory;
         _original = identity ?? new GitIdentity();
-        Text = identity is null ? "新建 GitHub 身份" : "编辑 GitHub 身份";
+        Text = identity is null ? "新建 Git 身份" : "编辑 Git 身份";
         StartPosition = FormStartPosition.CenterParent;
         Width = 760;
-        Height = 430;
+        Height = 470;
         MinimizeBox = false;
         MaximizeBox = false;
 
@@ -41,7 +43,7 @@ public sealed class IdentityEditForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 3,
-            RowCount = 7,
+            RowCount = 8,
             Padding = new Padding(14),
             AutoSize = true
         };
@@ -49,17 +51,26 @@ public sealed class IdentityEditForm : Form
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90));
 
-        AddRow(table, 0, "显示名称", _displayName);
-        AddRow(table, 1, "GitHub 用户名", _username);
-        AddRow(table, 2, "HostAlias", _hostAlias);
-        AddPathRow(table, 3, "私钥路径", _privateKeyPath, false);
-        AddPathRow(table, 4, "公钥路径", _publicKeyPath, true);
-        AddRow(table, 5, "注释 / Email", _comment);
+        var serviceChoices = services
+            .Select(item => new ServiceChoice(item.Id, $"{item.DisplayName} ({item.HostName})"))
+            .ToList();
+        _service.DataSource = serviceChoices;
+        _service.DisplayMember = nameof(ServiceChoice.DisplayText);
+        _service.ValueMember = nameof(ServiceChoice.Id);
+        _service.SelectedIndex = serviceChoices.Count == 1 ? 0 : -1;
+
+        AddRow(table, 0, "Git 服务", _service);
+        AddRow(table, 1, "显示名称", _displayName);
+        AddRow(table, 2, "账号", _username);
+        AddRow(table, 3, "HostAlias", _hostAlias);
+        AddPathRow(table, 4, "私钥路径", _privateKeyPath, false);
+        AddPathRow(table, 5, "公钥路径", _publicKeyPath, true);
+        AddRow(table, 6, "注释 / Email", _comment);
 
         _keyDiscoveryNote.Dock = DockStyle.Fill;
         _keyDiscoveryNote.AutoSize = true;
         _keyDiscoveryNote.ForeColor = SystemColors.GrayText;
-        table.Controls.Add(_keyDiscoveryNote, 1, 6);
+        table.Controls.Add(_keyDiscoveryNote, 1, 7);
         table.SetColumnSpan(_keyDiscoveryNote, 2);
 
         var buttons = new FlowLayoutPanel
@@ -120,8 +131,9 @@ public sealed class IdentityEditForm : Form
 
     private void LoadValues(GitIdentity identity)
     {
+        _service.SelectedValue = identity.ServiceInstanceId;
         _displayName.Text = identity.DisplayName;
-        _username.Text = identity.GitHubUsername;
+        _username.Text = identity.AccountName;
         _hostAlias.Text = identity.HostAlias;
         _privateKeyPath.Text = identity.PrivateKeyPath;
         _publicKeyPath.Text = identity.PublicKeyPath;
@@ -195,9 +207,10 @@ public sealed class IdentityEditForm : Form
         FillDefaultKeyPaths();
         if (string.IsNullOrWhiteSpace(_displayName.Text)
             || string.IsNullOrWhiteSpace(_username.Text)
-            || string.IsNullOrWhiteSpace(_hostAlias.Text))
+            || string.IsNullOrWhiteSpace(_hostAlias.Text)
+            || _service.SelectedValue is not string serviceInstanceId)
         {
-            MessageBox.Show(this, "显示名称、GitHub 用户名和 HostAlias 为必填项。", "GitKeyRouter", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(this, "Git 服务、显示名称、账号和 HostAlias 为必填项。", "GitKeyRouter", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             DialogResult = DialogResult.None;
             return;
         }
@@ -205,16 +218,18 @@ public sealed class IdentityEditForm : Form
         ResultIdentity = new GitIdentity
         {
             Id = _original.Id,
-            ServiceInstanceId = _original.ServiceInstanceId,
+            ServiceInstanceId = serviceInstanceId,
             CreatedAt = _original.CreatedAt,
             DisplayName = _displayName.Text.Trim(),
-            GitHubUsername = _username.Text.Trim(),
+            AccountName = _username.Text.Trim(),
             HostAlias = _hostAlias.Text.Trim(),
             PrivateKeyPath = _privateKeyPath.Text.Trim(),
             PublicKeyPath = _publicKeyPath.Text.Trim(),
             EmailOrComment = _comment.Text.Trim()
         };
     }
+
+    private sealed record ServiceChoice(string Id, string DisplayText);
 
     private sealed class CueComboBox : ComboBox
     {

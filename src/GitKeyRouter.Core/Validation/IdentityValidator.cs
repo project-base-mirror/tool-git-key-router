@@ -5,6 +5,29 @@ namespace GitKeyRouter.Core.Validation;
 public static class IdentityValidator
 {
     public static ValidationResult Validate(GitIdentity identity, IEnumerable<GitIdentity> existing)
+        => ValidateCore(identity, existing);
+
+    public static ValidationResult Validate(GitIdentity identity, AppConfig config)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        var result = ValidateCore(identity, config.Identities);
+        if (string.IsNullOrWhiteSpace(identity.ServiceInstanceId)
+            || config.FindService(identity.ServiceInstanceId) is null)
+        {
+            result.Add("ServiceInstanceId must reference an existing Git service.");
+        }
+
+        if (config.Identities.Any(item => !string.Equals(item.Id, identity.Id, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(item.ServiceInstanceId, identity.ServiceInstanceId, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(item.AccountName, identity.AccountName, StringComparison.OrdinalIgnoreCase)))
+        {
+            result.Add($"AccountName '{identity.AccountName}' is already configured for this Git service.");
+        }
+
+        return result;
+    }
+
+    private static ValidationResult ValidateCore(GitIdentity identity, IEnumerable<GitIdentity> existing)
     {
         ArgumentNullException.ThrowIfNull(identity);
         ArgumentNullException.ThrowIfNull(existing);
@@ -15,10 +38,14 @@ public static class IdentityValidator
             result.Add("DisplayName is required.");
         }
 
-        var userValidation = GitHubOwnerValidator.Validate(identity.GitHubUsername);
-        foreach (var error in userValidation.Errors)
+        if (string.IsNullOrWhiteSpace(identity.AccountName))
         {
-            result.Add($"GitHubUsername: {error}");
+            result.Add("AccountName is required.");
+        }
+        else if (identity.AccountName.Length > 200
+                 || identity.AccountName.Any(char.IsControl))
+        {
+            result.Add("AccountName is invalid or too long.");
         }
 
         var aliasValidation = HostAliasValidator.Validate(identity.HostAlias);

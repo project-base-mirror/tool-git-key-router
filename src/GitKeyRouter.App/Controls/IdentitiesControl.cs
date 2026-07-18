@@ -11,13 +11,14 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
     private readonly Action<string> _status;
     private readonly DataGridView _grid = UiHelpers.CreateGrid();
     private IReadOnlyList<GitIdentity> _identities = [];
+    private IReadOnlyList<GitServiceInstance> _gitServices = [];
 
     public IdentitiesControl(ApplicationServices services, Action<string> status)
     {
         _services = services;
         _status = status;
 
-        var header = UiHelpers.CreatePageHeader("GitHub 身份", "管理身份信息、SSH 密钥、公钥格式与连接测试");
+        var header = UiHelpers.CreatePageHeader("Git 身份", "管理不同 Git 服务的账号、SSH 密钥、公钥格式与连接测试");
         var toolbar = UiHelpers.CreateToolbar();
         toolbar.Controls.Add(UiHelpers.Button("新建", async (_, _) => await CreateAsync()));
         toolbar.Controls.Add(UiHelpers.Button("编辑", async (_, _) => await EditAsync()));
@@ -25,7 +26,7 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
         toolbar.Controls.Add(UiHelpers.Button("生成密钥", async (_, _) => await GenerateKeyAsync()));
         toolbar.Controls.Add(UiHelpers.Button("重命名密钥", async (_, _) => await RenameKeyAsync()));
         toolbar.Controls.Add(UiHelpers.Button("查看公钥", async (_, _) => await ViewPublicKeyAsync(false)));
-        toolbar.Controls.Add(UiHelpers.Button("复制到 GitHub", async (_, _) => await ViewPublicKeyAsync(true)));
+        toolbar.Controls.Add(UiHelpers.Button("复制公钥", async (_, _) => await ViewPublicKeyAsync(true)));
         toolbar.Controls.Add(UiHelpers.Button("复制指纹", (_, _) => CopyFingerprint()));
         toolbar.Controls.Add(UiHelpers.Button("转换格式", async (_, _) => await ConvertPublicKeyAsync()));
         toolbar.Controls.Add(UiHelpers.Button("导出公钥", async (_, _) => await ExportPublicKeyAsync()));
@@ -50,7 +51,13 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
 
     public async Task RefreshAsync()
     {
-        _identities = await _services.IdentityService.ListAsync();
+        var config = await _services.ConfigStore.LoadAsync();
+        _identities = config.Identities
+            .OrderBy(item => item.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+        _gitServices = config.GitServices
+            .OrderBy(item => item.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
         var raw = await _services.SshConfigService.ReadRawAsync();
         var blocks = _services.SshConfigService.ParseManagedBlocks(raw);
         var keyUsageCounts = BuildKeyUsageCounts(_identities);
@@ -66,12 +73,22 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
                 : [];
             if (variants.Count == 0)
             {
-                rows.Add(CreateRow(identity, null, sshConfigStatus, GetKeyUsage(identity, keyUsageCounts)));
+                rows.Add(CreateRow(
+                    identity,
+                    ServiceName(identity.ServiceInstanceId),
+                    null,
+                    sshConfigStatus,
+                    GetKeyUsage(identity, keyUsageCounts)));
                 continue;
             }
 
             rows.AddRange(variants.Select(variant =>
-                CreateRow(identity, variant, sshConfigStatus, GetKeyUsage(identity, keyUsageCounts))));
+                CreateRow(
+                    identity,
+                    ServiceName(identity.ServiceInstanceId),
+                    variant,
+                    sshConfigStatus,
+                    GetKeyUsage(identity, keyUsageCounts))));
         }
 
         _grid.DataSource = rows;
@@ -103,7 +120,10 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
     private async Task CreateAsync()
     {
         var discoveredKeys = await DiscoverPrivateKeysAsync();
-        using var form = new IdentityEditForm(_services.Paths.SshDirectory, discoveredKeys: discoveredKeys);
+        using var form = new IdentityEditForm(
+            _services.Paths.SshDirectory,
+            _gitServices,
+            discoveredKeys: discoveredKeys);
         if (form.ShowDialog(this) != DialogResult.OK || form.ResultIdentity is null)
         {
             return;
@@ -135,7 +155,11 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
 
         var oldAlias = identity.HostAlias;
         var discoveredKeys = await DiscoverPrivateKeysAsync();
-        using var form = new IdentityEditForm(_services.Paths.SshDirectory, identity, discoveredKeys);
+        using var form = new IdentityEditForm(
+            _services.Paths.SshDirectory,
+            _gitServices,
+            identity,
+            discoveredKeys);
         if (form.ShowDialog(this) != DialogResult.OK || form.ResultIdentity is null)
         {
             return;
@@ -181,7 +205,7 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
 
         var answer = MessageBox.Show(
             this,
-            $"删除身份记录“{identity.DisplayName}”？\r\n\r\n私钥和公钥文件不会被删除，关联 Owner 路由会被禁用。",
+            $"删除身份记录“{identity.DisplayName}”？\r\n\r\n私钥和公钥文件不会被删除，关联仓库路由会被禁用。",
             "确认删除身份",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning);
@@ -352,7 +376,7 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
         if (copyOnly)
         {
             Clipboard.SetText(result.Value);
-            _status("OpenSSH 公钥已复制，可直接粘贴到 GitHub");
+            _status("OpenSSH 公钥已复制，可粘贴到对应 Git 服务的 SSH Key 页面");
             return;
         }
 
@@ -476,7 +500,15 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
             updated = _services.SshConfigService.PreviewDelete(updated, previousAlias).UpdatedText;
         }
 
-        updated = _services.SshConfigService.PreviewUpsert(updated, identity).UpdatedText;
+        var service = _gitServices.FirstOrDefault(item =>
+            string.Equals(item.Id, identity.ServiceInstanceId, StringComparison.OrdinalIgnoreCase));
+        if (service is null)
+        {
+            MessageBox.Show(this, "该身份关联的 Git 服务不存在。", "GitKeyRouter", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        updated = _services.SshConfigService.PreviewUpsert(updated, service, identity).UpdatedText;
         var preview = new ChangePreview
         {
             Description = $"Synchronize SSH identity: {identity.HostAlias}",
@@ -539,6 +571,7 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
 
     private static IdentityRow CreateRow(
         GitIdentity identity,
+        string serviceName,
         SshPublicKeyVariant? variant,
         string sshConfigStatus,
         string keyUsage)
@@ -547,7 +580,8 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
             Id = identity.Id,
             PublicKeyPath = variant?.Path ?? string.Empty,
             显示名称 = identity.DisplayName,
-            GitHub用户名 = identity.GitHubUsername,
+            Git服务 = serviceName,
+            账号 = identity.AccountName,
             HostAlias = identity.HostAlias,
             私钥 = File.Exists(identity.PrivateKeyPath) ? "存在" : "缺失",
             公钥格式 = variant?.Inspection.DisplayName ?? "缺失",
@@ -559,6 +593,11 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
             SSH配置 = sshConfigStatus,
             密钥使用 = keyUsage
         };
+
+    private string ServiceName(string serviceInstanceId)
+        => _gitServices.FirstOrDefault(item =>
+            string.Equals(item.Id, serviceInstanceId, StringComparison.OrdinalIgnoreCase))?.DisplayName
+            ?? $"缺失：{serviceInstanceId}";
 
     private void CopyFingerprint()
     {
@@ -682,7 +721,8 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
         public string PublicKeyPath { get; init; } = string.Empty;
         public string Fingerprint { get; init; } = string.Empty;
         public string 显示名称 { get; init; } = string.Empty;
-        public string GitHub用户名 { get; init; } = string.Empty;
+        public string Git服务 { get; init; } = string.Empty;
+        public string 账号 { get; init; } = string.Empty;
         public string HostAlias { get; init; } = string.Empty;
         public string 私钥 { get; init; } = string.Empty;
         public string 公钥格式 { get; init; } = string.Empty;

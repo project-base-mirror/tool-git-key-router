@@ -47,12 +47,12 @@ public sealed class OverviewControl : UserControl, IAsyncRefreshable
             "查看诊断",
             async (_, _) => await _navigate("诊断"));
         _identitiesCard = CreateOverviewCard(
-            "GitHub 身份",
+            "Git 身份",
             "正在读取身份与密钥文件状态...",
             "读取中",
             OverviewStatusKind.Unknown,
             "去管理",
-            async (_, _) => await _navigate("GitHub 身份"));
+            async (_, _) => await _navigate("Git 身份"));
         _ownerRoutesCard = CreateOverviewCard(
             "Owner 路由",
             "正在读取 Owner 与身份映射...",
@@ -190,7 +190,7 @@ public sealed class OverviewControl : UserControl, IAsyncRefreshable
         if (config.Identities.Count == 0)
         {
             return new OverviewCardState(
-                "尚未配置 GitHub 身份；创建身份后可管理 SSH 密钥与 HostAlias",
+                "尚未配置 Git 身份；创建身份后可管理 SSH 密钥与 HostAlias",
                 "未配置",
                 OverviewStatusKind.Warning);
         }

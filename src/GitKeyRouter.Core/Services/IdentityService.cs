@@ -25,7 +25,7 @@ public sealed class IdentityService
     public async Task<OperationResult<GitIdentity>> SaveAsync(GitIdentity identity, CancellationToken cancellationToken = default)
     {
         var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
-        var validation = IdentityValidator.Validate(identity, config.Identities);
+        var validation = IdentityValidator.Validate(identity, config);
         if (!validation.IsValid)
         {
             return OperationResult<GitIdentity>.Fail("Identity validation failed.", validation.Errors.ToArray());
