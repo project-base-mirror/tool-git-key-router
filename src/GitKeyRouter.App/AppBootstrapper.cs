@@ -35,6 +35,13 @@ public static class AppBootstrapper
             processRunner,
             toolchainService,
             gitProviderAdapters);
+        var gitProfileService = new GitProfileService(
+            configStore,
+            backupService,
+            fileSystem,
+            paths,
+            processRunner,
+            toolchainService);
         var ownerRouteService = new OwnerRouteService(configStore, backupService, gitProviderAdapters);
         var gitUrlRewriteService = new GitUrlRewriteService(
             configStore,
@@ -74,6 +81,7 @@ public static class AppBootstrapper
             BackupService = backupService,
             GitProviderAdapters = gitProviderAdapters,
             GitServiceService = gitServiceService,
+            GitProfileService = gitProfileService,
             IdentityService = identityService,
             OwnerRouteService = ownerRouteService,
             SshKeyService = sshKeyService,

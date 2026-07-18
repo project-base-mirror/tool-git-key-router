@@ -34,6 +34,7 @@ public sealed class MainForm : Form
             ["概览"] = new OverviewControl(services, SetStatus, ShowPageAsync),
             ["Git 服务"] = new GitServicesControl(services, SetStatus),
             ["Git 身份"] = new IdentitiesControl(services, SetStatus),
+            ["Git Profiles"] = new GitProfilesControl(services, SetStatus),
             ["仓库路由"] = new OwnerRoutesControl(services, SetStatus),
             ["SSH Config"] = new SshConfigControl(services, SetStatus),
             ["Git 重写配置"] = new GitRewritesControl(services, SetStatus),
@@ -144,7 +145,7 @@ public sealed class MainForm : Form
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
-            AutoScroll = false,
+            AutoScroll = true,
             BackColor = UiHelpers.SidebarBackground,
             Padding = new Padding(12, 8, 12, 8)
         };

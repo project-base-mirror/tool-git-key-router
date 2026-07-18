@@ -21,6 +21,8 @@ public sealed class ApplicationServices
 
     public required GitServiceService GitServiceService { get; init; }
 
+    public required GitProfileService GitProfileService { get; init; }
+
     public required IdentityService IdentityService { get; init; }
 
     public required OwnerRouteService OwnerRouteService { get; init; }

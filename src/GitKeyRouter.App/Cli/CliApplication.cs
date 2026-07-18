@@ -20,9 +20,12 @@ public sealed class CliApplication
             "diagnose" => await DiagnoseAsync(cancellationToken).ConfigureAwait(false),
             "list-services" => await ListServicesAsync(cancellationToken).ConfigureAwait(false),
             "list-identities" => await ListIdentitiesAsync(cancellationToken).ConfigureAwait(false),
+            "list-profiles" => await ListProfilesAsync(cancellationToken).ConfigureAwait(false),
             "list-routes" => await ListRoutesAsync(cancellationToken).ConfigureAwait(false),
             "apply" => await ApplyAsync(args[1..], cancellationToken).ConfigureAwait(false),
+            "apply-profiles" => await ApplyProfilesAsync(args[1..], cancellationToken).ConfigureAwait(false),
             "parse-url" => await ParseUrlAsync(args[1..], cancellationToken).ConfigureAwait(false),
+            "resolve-profile" => await ResolveProfileAsync(args[1..], cancellationToken).ConfigureAwait(false),
             "test-service" => await TestServiceAsync(args[1..], cancellationToken).ConfigureAwait(false),
             "test-route" => await TestRouteAsync(args[1..], cancellationToken).ConfigureAwait(false),
             "test-ssh" => await TestSshAsync(args[1..], cancellationToken).ConfigureAwait(false),
@@ -57,6 +60,20 @@ public sealed class CliApplication
         {
             var service = config.FindService(identity.ServiceInstanceId);
             Console.WriteLine($"{identity.Id}\t{service?.DisplayName ?? identity.ServiceInstanceId}\t{identity.DisplayName}\t{identity.AccountName}\t{identity.HostAlias}\t{identity.PrivateKeyPath}");
+        }
+
+        return 0;
+    }
+
+    private async Task<int> ListProfilesAsync(CancellationToken cancellationToken)
+    {
+        var config = await _services.ConfigStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var profile in config.GitProfiles.OrderBy(item => item.DisplayName, StringComparer.CurrentCultureIgnoreCase))
+        {
+            var ruleCount = config.GitProfileRules.Count(item =>
+                string.Equals(item.ProfileId, profile.Id, StringComparison.OrdinalIgnoreCase));
+            Console.WriteLine(
+                $"{profile.Id}\t{profile.DisplayName}\t{profile.UserName}\t{profile.UserEmail}\tSigning={profile.EnableCommitSigning}\tRules={ruleCount}");
         }
 
         return 0;
@@ -114,6 +131,55 @@ public sealed class CliApplication
         }
 
         Console.WriteLine("Configuration applied successfully.");
+        return 0;
+    }
+
+    private async Task<int> ApplyProfilesAsync(string[] args, CancellationToken cancellationToken)
+    {
+        var preview = await _services.GitProfileService.BuildPreviewAsync(cancellationToken).ConfigureAwait(false);
+        Console.WriteLine(preview.DiffText);
+        if (!args.Contains("--yes", StringComparer.OrdinalIgnoreCase))
+        {
+            Console.Error.WriteLine("Preview only. Re-run with --yes to apply Git Profile conditional config.");
+            return preview.HasChanges ? 2 : 0;
+        }
+
+        var result = await _services.GitProfileService.ApplyAsync(preview, cancellationToken).ConfigureAwait(false);
+        if (!result.Success || result.Value is null)
+        {
+            PrintErrors(result);
+            return 2;
+        }
+
+        Console.WriteLine($"Applied {result.Value.ProfileFileCount} profile files.");
+        Console.WriteLine($"Master include: {result.Value.MasterConfigPath}");
+        return 0;
+    }
+
+    private async Task<int> ResolveProfileAsync(string[] args, CancellationToken cancellationToken)
+    {
+        if (args.Length == 0)
+        {
+            Console.Error.WriteLine("Usage: GitKeyRouter.exe resolve-profile <repository-directory> [--url <remote-url>]");
+            return 3;
+        }
+
+        var config = await _services.ConfigStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        var remoteUrl = GetOption(args, "--url");
+        var profile = _services.GitProfileService.ResolveProfile(
+            config,
+            args[0],
+            remoteUrl is null ? [] : [remoteUrl]);
+        if (profile is null)
+        {
+            Console.Error.WriteLine("No Git Profile rule matched the repository context.");
+            return 1;
+        }
+
+        Console.WriteLine($"Profile: {profile.DisplayName} ({profile.Id})");
+        Console.WriteLine($"user.name: {profile.UserName}");
+        Console.WriteLine($"user.email: {profile.UserEmail}");
+        Console.WriteLine($"Signing: {profile.EnableCommitSigning}");
         return 0;
     }
 
@@ -256,9 +322,12 @@ public sealed class CliApplication
         Console.WriteLine("  diagnose");
         Console.WriteLine("  list-services");
         Console.WriteLine("  list-identities");
+        Console.WriteLine("  list-profiles");
         Console.WriteLine("  list-routes");
         Console.WriteLine("  apply [--yes]");
+        Console.WriteLine("  apply-profiles [--yes]");
         Console.WriteLine("  parse-url <repository-url>");
+        Console.WriteLine("  resolve-profile <repository-directory> [--url <remote-url>]");
         Console.WriteLine("  test-service <id-or-host>");
         Console.WriteLine("  test-route <namespace> [--service <id-or-host>] [--url <repository-url>] [--connect]");
         Console.WriteLine("  test-ssh <host-alias-or-identity-id> [--verbose]");

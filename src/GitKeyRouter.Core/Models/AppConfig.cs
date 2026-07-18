@@ -4,7 +4,7 @@ namespace GitKeyRouter.Core.Models;
 
 public sealed class AppConfig
 {
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
 
@@ -13,6 +13,10 @@ public sealed class AppConfig
     public List<GitIdentity> Identities { get; set; } = [];
 
     public List<RepositoryRoute> RepositoryRoutes { get; set; } = [];
+
+    public List<GitProfile> GitProfiles { get; set; } = [];
+
+    public List<GitProfileRule> GitProfileRules { get; set; } = [];
 
     [JsonIgnore]
     public List<RepositoryRoute> OwnerRoutes
@@ -30,6 +34,8 @@ public sealed class AppConfig
         GitServices ??= [];
         Identities ??= [];
         RepositoryRoutes ??= [];
+        GitProfiles ??= [];
+        GitProfileRules ??= [];
 
         if (!GitServices.Any(item => string.Equals(item.Id, GitServiceInstance.GitHubComId, StringComparison.OrdinalIgnoreCase)))
         {

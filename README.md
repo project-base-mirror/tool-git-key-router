@@ -6,6 +6,7 @@ GitKeyRouter 是一个面向 Windows 10 / Windows 11 的本地桌面工具，用
 - 每个服务下的多个 SSH 身份、账号和密钥路径
 - `%USERPROFILE%\.ssh\config` 中按服务生成的 HostAlias
 - 按“Git 服务 + Owner / Namespace”路由的 `url.*.insteadOf` 全局 Git 配置
+- 按目录或远程 URL 自动选择 `user.name`、`user.email` 和签名密钥的 Git Profiles
 - 配置修改前的 diff、命令输出、备份和选择性恢复
 - GUI 与 DevRunner 可调用的简单 CLI
 
@@ -305,6 +306,14 @@ git_url_rewrites.json
 
 恢复 Git rewrite 仍通过 `git config` 逐条精确删除和增加，不替换整个 `.gitconfig`。
 
+## Git Profiles 与提交身份
+
+0.3.0 新增“Git Profiles”页面。每个 Profile 可以保存 `user.name`、`user.email`、签名密钥、默认 Git 服务和默认 SSH 身份，并通过目录或远程 URL 规则自动生效。
+
+目录规则生成 Git 官方的 `includeIf "gitdir/i:<目录>/"` 条件；远程 URL 规则生成 `includeIf "hasconfig:remote.*.url:<模式>"` 条件。程序不会逐仓库修改 `.git/config`，而是在 `%APPDATA%\GitKeyRouter\git-profiles` 中生成一个 managed 条件配置入口和独立 Profile 文件，并只在全局 Git 配置中注册一次 `include.path`。
+
+“预览并应用”会先显示入口文件和所有 Profile 文件的 diff。删除 Profile 或规则后，需要再次应用才能同步删除已经生成的条件配置。
+
 ## CLI
 
 GUI 与 CLI 使用同一个服务图和同一套业务逻辑。
@@ -313,9 +322,14 @@ GUI 与 CLI 使用同一个服务图和同一套业务逻辑。
 GitKeyRouter.exe diagnose
 GitKeyRouter.exe list-services
 GitKeyRouter.exe list-identities
+GitKeyRouter.exe list-profiles
 GitKeyRouter.exe list-routes
 GitKeyRouter.exe apply
 GitKeyRouter.exe apply --yes
+GitKeyRouter.exe apply-profiles
+GitKeyRouter.exe apply-profiles --yes
+GitKeyRouter.exe parse-url ssh://git@gitlab.example:2222/company/platform/repo.git
+GitKeyRouter.exe resolve-profile C:\code\work\repo --url https://gitlab.example/company/repo.git
 GitKeyRouter.exe test-service gitlab-office
 GitKeyRouter.exe test-route camus0109
 GitKeyRouter.exe test-route company/platform --service gitlab-office
@@ -327,7 +341,7 @@ GitKeyRouter.exe version
 GitKeyRouter.exe help
 ```
 
-`apply` 默认只显示 SSH diff 和 Git rewrite 计划。只有带 `--yes` 才执行修改。
+`apply` 默认只显示 SSH diff 和 Git rewrite 计划。只有带 `--yes` 才执行修改。`apply-profiles` 采用相同策略，默认只显示条件 Git Config diff。
 
 `test-route --connect` 必须同时提供真实 `--url`，避免程序对虚构仓库发起网络请求。
 
@@ -342,7 +356,7 @@ CLI 诊断退出码：
 
 ```json
 {
-  "SchemaVersion": 2,
+  "SchemaVersion": 3,
   "GitServices": [
     {
       "Id": "github.com",
@@ -352,6 +366,8 @@ CLI 诊断退出码：
       "SshPort": null,
       "SshUser": "git",
       "WebBaseUrl": "https://github.com",
+      "AllowInsecureHttp": false,
+      "EnableExtendedSshUrlRewrites": false,
       "IsBuiltIn": true
     }
   ],
@@ -379,9 +395,9 @@ CLI 诊断退出码：
 }
 ```
 
-## 从 0.1 升级
+## 配置升级
 
-0.2 使用 Schema 2。读取 Schema 1 配置时会在内存中自动映射到内置 GitHub.com 服务，身份、HostAlias、SSH managed block 和 Git rewrite 输出保持不变；下次保存时写为 Schema 2。修改配置前仍会创建快照。
+0.3 使用 Schema 3。读取 Schema 1 配置时仍会自动映射到内置 GitHub.com 服务；Schema 2 配置会保留全部服务、身份和仓库路由，并补充空的 Git Profiles 集合。身份、HostAlias、SSH managed block 和原有 GitHub rewrite 输出保持兼容；下次保存时写为 Schema 3。修改配置前仍会创建快照。
 
 ## 输入校验
 

@@ -77,11 +77,68 @@ public sealed class ConfigurationMigrationTests
 
         await store.SaveAsync(config);
         var saved = await File.ReadAllTextAsync(paths.ConfigPath);
-        Assert.Contains("\"SchemaVersion\": 2", saved, StringComparison.Ordinal);
+        Assert.Contains("\"SchemaVersion\": 3", saved, StringComparison.Ordinal);
         Assert.Contains("\"GitServices\"", saved, StringComparison.Ordinal);
         Assert.Contains("\"RepositoryRoutes\"", saved, StringComparison.Ordinal);
         Assert.Contains("\"AccountName\": \"camus0109\"", saved, StringComparison.Ordinal);
         Assert.DoesNotContain("\"OwnerRoutes\"", saved, StringComparison.Ordinal);
         Assert.DoesNotContain("\"GitHubUsername\"", saved, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Schema2Migration_PreservesServicesIdentitiesAndRoutesAndAddsEmptyProfiles()
+    {
+        using var temp = new TemporaryDirectory();
+        var paths = new TestAppPaths(temp.Path);
+        Directory.CreateDirectory(paths.AppDataDirectory);
+        var schema2 = """
+        {
+          "SchemaVersion": 2,
+          "GitServices": [
+            {
+              "Id": "gitlab-office",
+              "DisplayName": "Office GitLab",
+              "ProviderKind": "GitLab",
+              "HostName": "gitlab.office.example",
+              "SshPort": 2222,
+              "SshUser": "git",
+              "WebBaseUrl": "https://gitlab.office.example",
+              "IsBuiltIn": false
+            }
+          ],
+          "Identities": [
+            {
+              "Id": "work",
+              "ServiceInstanceId": "gitlab-office",
+              "DisplayName": "Work",
+              "AccountName": "camus",
+              "HostAlias": "gitlab-work",
+              "PrivateKeyPath": "C:\\keys\\work",
+              "PublicKeyPath": "C:\\keys\\work.pub"
+            }
+          ],
+          "RepositoryRoutes": [
+            {
+              "ServiceInstanceId": "gitlab-office",
+              "NamespacePath": "company/platform",
+              "IdentityId": "work",
+              "Enabled": true
+            }
+          ]
+        }
+        """;
+        await File.WriteAllTextAsync(paths.ConfigPath, schema2);
+
+        var store = new JsonAppConfigStore(paths, new PhysicalFileSystem());
+        var config = await store.LoadAsync();
+
+        Assert.Equal(AppConfig.CurrentSchemaVersion, config.SchemaVersion);
+        Assert.NotNull(config.FindService(GitServiceInstance.GitHubComId));
+        var gitLab = Assert.Single(config.GitServices, item => item.Id == "gitlab-office");
+        Assert.Equal(2222, gitLab.SshPort);
+        Assert.Equal("work", Assert.Single(config.Identities).Id);
+        Assert.Equal("company/platform", Assert.Single(config.RepositoryRoutes).NamespacePath);
+        Assert.Empty(config.GitProfiles);
+        Assert.Empty(config.GitProfileRules);
     }
 }

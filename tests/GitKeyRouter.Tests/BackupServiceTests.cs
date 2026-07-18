@@ -18,13 +18,13 @@ public sealed class BackupServiceTests
         git.Rules.Add(originalRule);
         Directory.CreateDirectory(paths.AppDataDirectory);
         Directory.CreateDirectory(paths.SshDirectory);
-        const string originalConfig = "{\"SchemaVersion\":2,\"GitServices\":[],\"Identities\":[],\"RepositoryRoutes\":[]}";
+        const string originalConfig = "{\"SchemaVersion\":3,\"GitServices\":[],\"Identities\":[],\"RepositoryRoutes\":[],\"GitProfiles\":[],\"GitProfileRules\":[]}";
         await File.WriteAllTextAsync(paths.ConfigPath, originalConfig);
         await File.WriteAllTextAsync(paths.SshConfigPath, "# original ssh config");
         var service = new BackupService(paths, fileSystem, git, new TestClock());
 
         var manifest = await service.CreateSnapshotAsync("test snapshot");
-        Assert.Equal(2, manifest.AppConfigSchemaVersion);
+        Assert.Equal(3, manifest.AppConfigSchemaVersion);
         await File.WriteAllTextAsync(paths.ConfigPath, "{\"changed\":true}");
         await File.WriteAllTextAsync(paths.SshConfigPath, "changed ssh config");
         git.Rules.Clear();
@@ -47,7 +47,7 @@ public sealed class BackupServiceTests
         var fileSystem = new PhysicalFileSystem();
         Directory.CreateDirectory(paths.AppDataDirectory);
         Directory.CreateDirectory(paths.BackupRootDirectory);
-        const string currentConfig = "{\"SchemaVersion\":2,\"GitServices\":[],\"Identities\":[],\"RepositoryRoutes\":[]}";
+        const string currentConfig = "{\"SchemaVersion\":3,\"GitServices\":[],\"Identities\":[],\"RepositoryRoutes\":[],\"GitProfiles\":[],\"GitProfileRules\":[]}";
         await File.WriteAllTextAsync(paths.ConfigPath, currentConfig);
         var backupDirectory = Path.Combine(paths.BackupRootDirectory, "future");
         Directory.CreateDirectory(backupDirectory);
