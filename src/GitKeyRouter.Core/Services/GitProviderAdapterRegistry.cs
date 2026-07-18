@@ -13,7 +13,13 @@ public sealed class GitProviderAdapterRegistry
     }
 
     public static GitProviderAdapterRegistry CreateDefault()
-        => new([new GitHubProviderAdapter()]);
+        => new(
+        [
+            new GitHubProviderAdapter(),
+            new GitLabProviderAdapter(),
+            new GiteaProviderAdapter(),
+            new GenericGitProviderAdapter()
+        ]);
 
     public IGitProviderAdapter Get(GitProviderKind kind)
         => _adapters.TryGetValue(kind, out var adapter)

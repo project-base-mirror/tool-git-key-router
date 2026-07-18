@@ -114,18 +114,25 @@ internal sealed class FixedToolchainService : IToolchainService
 {
     private readonly string _gitPath;
     private readonly string? _sshKeygenPath;
+    private readonly string? _sshPath;
 
-    public FixedToolchainService(string gitPath, string? sshKeygenPath = null)
+    public FixedToolchainService(string gitPath, string? sshKeygenPath = null, string? sshPath = null)
     {
         _gitPath = gitPath;
         _sshKeygenPath = sshKeygenPath;
+        _sshPath = sshPath;
     }
 
     public Task<ToolchainInfo> InspectAsync(CancellationToken cancellationToken = default)
         => Task.FromResult(new ToolchainInfo
         {
             Git = new ExecutableInfo { Name = "git.exe", Exists = true, SelectedPath = _gitPath, Version = "test" },
-            Ssh = new ExecutableInfo { Name = "ssh.exe", Exists = false },
+            Ssh = new ExecutableInfo
+            {
+                Name = "ssh.exe",
+                Exists = !string.IsNullOrWhiteSpace(_sshPath),
+                SelectedPath = _sshPath
+            },
             SshKeygen = new ExecutableInfo
             {
                 Name = "ssh-keygen.exe",

@@ -17,6 +17,10 @@ public sealed class ApplicationServices
 
     public required IBackupService BackupService { get; init; }
 
+    public required GitProviderAdapterRegistry GitProviderAdapters { get; init; }
+
+    public required GitServiceService GitServiceService { get; init; }
+
     public required IdentityService IdentityService { get; init; }
 
     public required OwnerRouteService OwnerRouteService { get; init; }
