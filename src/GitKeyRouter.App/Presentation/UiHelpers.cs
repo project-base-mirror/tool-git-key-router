@@ -16,6 +16,7 @@ public static class UiHelpers
     public static Color TextPrimary { get; } = Color.FromArgb(31, 41, 55);
     public static Color TextSecondary { get; } = Color.FromArgb(102, 112, 133);
     public static Color Border { get; } = Color.FromArgb(221, 226, 235);
+    public static Color OutputBackground { get; } = Color.FromArgb(248, 250, 253);
 
     public static Label CreateOverviewStatusBadge()
     {
@@ -165,6 +166,47 @@ public static class UiHelpers
         };
         card.Controls.Add(content);
         return card;
+    }
+
+    public static TextBox CreateOutputTextBox(
+        bool wordWrap = true,
+        ScrollBars scrollBars = ScrollBars.Vertical)
+        => new()
+        {
+            Dock = DockStyle.Fill,
+            Multiline = true,
+            ReadOnly = true,
+            WordWrap = wordWrap,
+            ScrollBars = scrollBars,
+            BorderStyle = BorderStyle.None,
+            BackColor = OutputBackground,
+            ForeColor = TextPrimary,
+            Font = new Font("Consolas", 9F),
+            Margin = Padding.Empty
+        };
+
+    public static Panel CreateOutputPanel(Control content)
+    {
+        content.Dock = DockStyle.Fill;
+        content.Margin = Padding.Empty;
+
+        var surface = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = OutputBackground,
+            Padding = new Padding(10)
+        };
+        surface.Controls.Add(content);
+
+        var border = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Border,
+            Padding = new Padding(1),
+            Margin = Padding.Empty
+        };
+        border.Controls.Add(surface);
+        return border;
     }
 
     public static void EnableStatusColors(DataGridView grid, params string[] columnNames)

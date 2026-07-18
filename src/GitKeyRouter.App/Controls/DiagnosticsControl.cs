@@ -10,16 +10,10 @@ public sealed class DiagnosticsControl : UserControl, IAsyncRefreshable
     private readonly ApplicationServices _services;
     private readonly Action<string> _status;
     private readonly DataGridView _grid = UiHelpers.CreateGrid();
-    private readonly TextBox _reportText = new()
-    {
-        Dock = DockStyle.Bottom,
-        Height = 210,
-        Multiline = true,
-        ReadOnly = true,
-        ScrollBars = ScrollBars.Both,
-        WordWrap = false,
-        Font = new Font(FontFamily.GenericMonospace, 9F)
-    };
+    private readonly TextBox _reportText = UiHelpers.CreateOutputTextBox(
+        wordWrap: false,
+        scrollBars: ScrollBars.Both);
+    private readonly Panel _reportPanel;
     private DiagnosticReport? _report;
 
     public DiagnosticsControl(ApplicationServices services, Action<string> status)
@@ -32,8 +26,14 @@ public sealed class DiagnosticsControl : UserControl, IAsyncRefreshable
         toolbar.Controls.Add(UiHelpers.Button("复制诊断报告", (_, _) => CopyReport()));
         toolbar.Controls.Add(UiHelpers.Button("导出报告", (_, _) => ExportReport()));
         toolbar.Controls.Add(UiHelpers.Button("查看完整报告", (_, _) => ViewReport()));
+
+        _reportPanel = UiHelpers.CreateOutputPanel(_reportText);
+        _reportPanel.Dock = DockStyle.Bottom;
+        _reportPanel.Height = 210;
+        _reportPanel.Margin = new Padding(0, 8, 0, 0);
+
         Controls.Add(_grid);
-        Controls.Add(_reportText);
+        Controls.Add(_reportPanel);
         Controls.Add(toolbar);
         Controls.Add(header);
         UiHelpers.EnableStatusColors(_grid, nameof(DiagnosticRow.级别));

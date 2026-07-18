@@ -10,7 +10,7 @@ public sealed class GitRewritesControl : UserControl, IAsyncRefreshable
     private readonly Action<string> _status;
     private readonly DataGridView _grid = UiHelpers.CreateGrid();
     private readonly TextBox _urlInput = new() { Dock = DockStyle.Fill, PlaceholderText = "https://git.example.com/group/repository.git" };
-    private readonly TextBox _previewOutput = new() { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, Height = 90, ScrollBars = ScrollBars.Vertical };
+    private readonly TextBox _previewOutput = UiHelpers.CreateOutputTextBox();
     private IReadOnlyList<GitRewriteComparison> _comparisons = [];
     private IReadOnlyList<GitServiceInstance> _gitServices = [];
 
@@ -33,11 +33,15 @@ public sealed class GitRewritesControl : UserControl, IAsyncRefreshable
             Dock = DockStyle.Bottom,
             Height = 150,
             ColumnCount = 3,
-            Padding = new Padding(6)
+            RowCount = 2,
+            Padding = new Padding(6),
+            BackColor = UiHelpers.AppBackground
         };
         testPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         testPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
         testPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
+        testPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        testPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         testPanel.Controls.Add(_urlInput, 0, 0);
         var previewButton = new Button { Text = "本地预览", Dock = DockStyle.Fill };
         previewButton.Click += async (_, _) => await PreviewUrlAsync();
@@ -45,8 +49,10 @@ public sealed class GitRewritesControl : UserControl, IAsyncRefreshable
         connectButton.Click += async (_, _) => await TestConnectionAsync();
         testPanel.Controls.Add(previewButton, 1, 0);
         testPanel.Controls.Add(connectButton, 2, 0);
-        testPanel.Controls.Add(_previewOutput, 0, 1);
-        testPanel.SetColumnSpan(_previewOutput, 3);
+        var previewPanel = UiHelpers.CreateOutputPanel(_previewOutput);
+        previewPanel.Margin = new Padding(3, 6, 3, 3);
+        testPanel.Controls.Add(previewPanel, 0, 1);
+        testPanel.SetColumnSpan(previewPanel, 3);
 
         Controls.Add(_grid);
         Controls.Add(testPanel);

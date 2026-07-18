@@ -33,10 +33,16 @@ public sealed class GitServiceEditForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 2,
             RowCount = 7,
-            Padding = new Padding(16)
+            Padding = new Padding(16),
+            GrowStyle = TableLayoutPanelGrowStyle.FixedSize
         };
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        for (var row = 0; row < table.RowCount; row++)
+        {
+            table.RowStyles.Add(new RowStyle(SizeType.Percent, 100F / table.RowCount));
+        }
+
         AddRow(table, 0, "快速模板", _template);
         AddRow(table, 1, "显示名称", _displayName);
         AddRow(table, 2, "服务类型", _provider);
@@ -85,8 +91,15 @@ public sealed class GitServiceEditForm : Form
 
     private static void AddRow(TableLayoutPanel table, int row, string label, Control editor)
     {
-        editor.Dock = DockStyle.Fill;
-        table.Controls.Add(new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left }, 0, row);
+        editor.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        editor.Margin = new Padding(3, 4, 3, 4);
+        table.Controls.Add(new Label
+        {
+            Text = label,
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(3, 4, 3, 4)
+        }, 0, row);
         table.Controls.Add(editor, 1, row);
     }
 
