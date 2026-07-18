@@ -31,7 +31,7 @@ public sealed class MainForm : Form
 
         _pages = new Dictionary<string, UserControl>(StringComparer.OrdinalIgnoreCase)
         {
-            ["概览"] = new OverviewControl(services, SetStatus),
+            ["概览"] = new OverviewControl(services, SetStatus, ShowPageAsync),
             ["GitHub 身份"] = new IdentitiesControl(services, SetStatus),
             ["Owner 路由"] = new OwnerRoutesControl(services, SetStatus),
             ["SSH Config"] = new SshConfigControl(services, SetStatus),

@@ -17,6 +17,38 @@ public static class UiHelpers
     public static Color TextSecondary { get; } = Color.FromArgb(102, 112, 133);
     public static Color Border { get; } = Color.FromArgb(221, 226, 235);
 
+    public static Label CreateOverviewStatusBadge()
+    {
+        var badge = new Label
+        {
+            AutoSize = false,
+            Width = 92,
+            Height = 28,
+            Font = new Font("Segoe UI Semibold", 8.5F),
+            TextAlign = ContentAlignment.MiddleCenter,
+            BorderStyle = BorderStyle.FixedSingle,
+            Margin = Padding.Empty
+        };
+        ApplyOverviewStatusBadge(badge, "未知", OverviewStatusKind.Unknown);
+        return badge;
+    }
+
+    public static void ApplyOverviewStatusBadge(Label badge, string text, OverviewStatusKind statusKind)
+    {
+        var palette = statusKind switch
+        {
+            OverviewStatusKind.Normal => (Color.FromArgb(231, 246, 236), Color.FromArgb(25, 111, 61)),
+            OverviewStatusKind.Warning => (Color.FromArgb(255, 247, 224), Color.FromArgb(143, 91, 0)),
+            OverviewStatusKind.Error => (Color.FromArgb(253, 232, 232), Color.FromArgb(174, 38, 45)),
+            OverviewStatusKind.Info => (AccentSoft, Accent),
+            _ => (Color.FromArgb(240, 242, 246), TextSecondary)
+        };
+
+        badge.Text = text;
+        badge.BackColor = palette.Item1;
+        badge.ForeColor = palette.Item2;
+    }
+
     public static DataGridView CreateGrid()
     {
         var grid = new DataGridView
