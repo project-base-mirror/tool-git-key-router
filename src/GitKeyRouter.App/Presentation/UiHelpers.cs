@@ -23,7 +23,7 @@ public static class UiHelpers
         {
             AutoSize = false,
             Width = 92,
-            Height = 28,
+            Height = 32,
             Font = new Font("Segoe UI Semibold", 8.5F),
             TextAlign = ContentAlignment.MiddleCenter,
             BorderStyle = BorderStyle.FixedSingle,

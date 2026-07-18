@@ -16,18 +16,18 @@ internal sealed class OverviewStatusCard : Panel
 
     public OverviewStatusCard(string title, string actionText, EventHandler onClick)
     {
-        Height = 96;
-        MinimumSize = new Size(0, 88);
+        Height = 84;
+        MinimumSize = new Size(0, 80);
         BackColor = UiHelpers.Surface;
-        Padding = new Padding(18, 12, 18, 12);
-        Margin = new Padding(0, 0, 0, 12);
+        Padding = new Padding(18, 8, 18, 8);
+        Margin = new Padding(0, 0, 0, 8);
         SetStyle(ControlStyles.ResizeRedraw, true);
 
         var titleLabel = new Label
         {
             Text = title,
             Dock = DockStyle.Top,
-            Height = 32,
+            Height = 28,
             AutoEllipsis = true,
             Font = new Font("Segoe UI Semibold", 11F),
             ForeColor = UiHelpers.TextPrimary,
@@ -53,6 +53,7 @@ internal sealed class OverviewStatusCard : Panel
         _statusBadge = UiHelpers.CreateOverviewStatusBadge();
         _actionButton = UiHelpers.Button(actionText, onClick);
         _actionButton.AutoSize = false;
+        _actionButton.MinimumSize = Size.Empty;
         _actionButton.Margin = Padding.Empty;
         _actionButton.TextAlign = ContentAlignment.MiddleCenter;
         _actionButton.Size = GetActionButtonSize();
@@ -123,6 +124,6 @@ internal sealed class OverviewStatusCard : Panel
         var preferredSize = _actionButton.GetPreferredSize(Size.Empty);
         return new Size(
             Math.Max(MinimumActionButtonWidth, preferredSize.Width + ActionButtonWidthBuffer),
-            Math.Max(34, preferredSize.Height));
+            _statusBadge.Height);
     }
 }
