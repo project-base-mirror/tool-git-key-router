@@ -31,6 +31,7 @@ public sealed class OverviewControl : UserControl, IAsyncRefreshable
         var toolbar = UiHelpers.CreateToolbar();
         toolbar.Controls.Add(UiHelpers.Button("刷新", async (_, _) => await RefreshAsync()));
         toolbar.Controls.Add(UiHelpers.Button("一键诊断", async (_, _) => await RunDiagnosticsAsync()));
+        toolbar.Controls.Add(UiHelpers.Button("检测/安装必需软件", async (_, _) => await CheckRequiredToolsAsync()));
         toolbar.Controls.Add(UiHelpers.Button("打开配置目录", (_, _) => OpenDirectory(_services.Paths.AppDataDirectory)));
 
         Controls.Add(UiHelpers.CreateCard(_summary, new Padding(22)));
@@ -54,6 +55,7 @@ public sealed class OverviewControl : UserControl, IAsyncRefreshable
         AppendTool(builder, tools.Git);
         AppendTool(builder, tools.Ssh);
         AppendTool(builder, tools.SshKeygen);
+        AppendTool(builder, tools.Winget);
         builder.AppendLine();
         builder.AppendLine("配置状态");
         builder.AppendLine(new string('─', 60));
@@ -91,6 +93,12 @@ public sealed class OverviewControl : UserControl, IAsyncRefreshable
         using var form = new GitKeyRouter.App.Forms.TextViewForm("诊断报告", DiagnosticReportFormatter.Format(report));
         form.ShowDialog(this);
         _status($"诊断完成：错误 {report.ErrorCount}，警告 {report.WarningCount}");
+    }
+
+    private async Task CheckRequiredToolsAsync()
+    {
+        await RequiredToolInstallationUi.CheckAndOfferAsync(this, _services, _status, showHealthyMessage: true);
+        await RefreshAsync();
     }
 
     private static void AppendTool(StringBuilder builder, ExecutableInfo tool)

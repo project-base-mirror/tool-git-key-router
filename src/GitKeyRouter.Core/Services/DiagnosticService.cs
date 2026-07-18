@@ -77,8 +77,8 @@ public sealed partial class DiagnosticService
         if (!tool.Exists)
         {
             Add(report, $"TOOL_{tool.Name}_MISSING", "Tools", tool.Name,
-                "Not found. GitKeyRouter did not install or modify software.", DiagnosticSeverity.Error,
-                "Install or enable the required tool and run diagnostics again.");
+                "Not found.", DiagnosticSeverity.Error,
+                "Use Overview > Detect/install required software, then run diagnostics again.");
             return;
         }
 

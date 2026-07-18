@@ -153,7 +153,7 @@ public sealed class GitUrlRewriteStore : IGitUrlRewriteStore
         var toolchain = await _toolchainService.InspectAsync(cancellationToken).ConfigureAwait(false);
         if (!toolchain.Git.Exists || string.IsNullOrWhiteSpace(toolchain.Git.SelectedPath))
         {
-            throw new FileNotFoundException("git.exe was not found. Install Git for Windows or add it to PATH; GitKeyRouter will not install it automatically.");
+            throw new FileNotFoundException("git.exe was not found. Use Overview > Detect/install required software, or add Git to PATH.");
         }
 
         GitExecutablePath = toolchain.Git.SelectedPath;

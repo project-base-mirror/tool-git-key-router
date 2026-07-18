@@ -18,12 +18,14 @@ public sealed class ToolchainService : IToolchainService
         var gitTask = InspectExecutableAsync("git.exe", GitCandidates(), ["--version"], cancellationToken);
         var sshTask = InspectExecutableAsync("ssh.exe", SshCandidates("ssh.exe"), ["-V"], cancellationToken);
         var keygenTask = InspectExecutableAsync("ssh-keygen.exe", SshCandidates("ssh-keygen.exe"), ["-?"], cancellationToken, preferFileVersion: true);
-        await Task.WhenAll(gitTask, sshTask, keygenTask).ConfigureAwait(false);
+        var wingetTask = InspectExecutableAsync("winget.exe", WingetCandidates(), ["--version"], cancellationToken);
+        await Task.WhenAll(gitTask, sshTask, keygenTask, wingetTask).ConfigureAwait(false);
         return new ToolchainInfo
         {
             Git = await gitTask.ConfigureAwait(false),
             Ssh = await sshTask.ConfigureAwait(false),
-            SshKeygen = await keygenTask.ConfigureAwait(false)
+            SshKeygen = await keygenTask.ConfigureAwait(false),
+            Winget = await wingetTask.ConfigureAwait(false)
         };
     }
 
@@ -93,6 +95,17 @@ public sealed class ToolchainService : IToolchainService
 
         var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
         yield return Path.Combine(programFiles, "Git", "usr", "bin", executableName);
+    }
+
+    private static IEnumerable<string> WingetCandidates()
+    {
+        foreach (var path in PathCandidates("winget.exe"))
+        {
+            yield return path;
+        }
+
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        yield return Path.Combine(localAppData, "Microsoft", "WindowsApps", "winget.exe");
     }
 
     private static IEnumerable<string> PathCandidates(string executableName)

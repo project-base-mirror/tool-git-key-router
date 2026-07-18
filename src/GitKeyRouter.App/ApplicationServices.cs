@@ -13,6 +13,8 @@ public sealed class ApplicationServices
 
     public required IToolchainService ToolchainService { get; init; }
 
+    public required IRequiredToolInstallerService RequiredToolInstallerService { get; init; }
+
     public required IBackupService BackupService { get; init; }
 
     public required IdentityService IdentityService { get; init; }

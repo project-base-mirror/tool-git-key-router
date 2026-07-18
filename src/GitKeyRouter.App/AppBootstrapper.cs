@@ -18,6 +18,9 @@ public static class AppBootstrapper
         IClock clock = new SystemClock();
         IProcessRunner processRunner = new ProcessRunner();
         IToolchainService toolchainService = new ToolchainService(processRunner);
+        IRequiredToolInstallerService requiredToolInstallerService = new RequiredToolInstallerService(
+            toolchainService,
+            processRunner);
         var gitStore = new GitUrlRewriteStore(processRunner, toolchainService);
         IBackupService backupService = new BackupService(paths, fileSystem, gitStore, clock);
         IAppConfigStore configStore = new JsonAppConfigStore(paths, fileSystem);
@@ -50,6 +53,7 @@ public static class AppBootstrapper
             FileSystem = fileSystem,
             ConfigStore = configStore,
             ToolchainService = toolchainService,
+            RequiredToolInstallerService = requiredToolInstallerService,
             BackupService = backupService,
             IdentityService = identityService,
             OwnerRouteService = ownerRouteService,

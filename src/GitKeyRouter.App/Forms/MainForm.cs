@@ -61,7 +61,19 @@ public sealed class MainForm : Form
         Controls.Add(divider);
         Controls.Add(sidebar);
         Controls.Add(statusStrip);
-        Shown += async (_, _) => await ShowPageAsync("概览");
+        Shown += async (_, _) =>
+        {
+            await ShowPageAsync("概览");
+            var toolsReady = await RequiredToolInstallationUi.CheckAndOfferAsync(
+                this,
+                services,
+                SetStatus,
+                showHealthyMessage: false);
+            if (toolsReady)
+            {
+                await ShowPageAsync("概览");
+            }
+        };
     }
 
     private Panel CreateSidebar()
