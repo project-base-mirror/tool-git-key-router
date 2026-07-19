@@ -369,6 +369,7 @@ public static class UiHelpers
         {
             if (eventArgs.RowIndex < 0
                 || eventArgs.ColumnIndex < 0
+                || eventArgs.ColumnIndex >= grid.Columns.Count
                 || !names.Contains(grid.Columns[eventArgs.ColumnIndex].Name))
             {
                 return;

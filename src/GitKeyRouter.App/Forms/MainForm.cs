@@ -5,6 +5,7 @@ namespace GitKeyRouter.App.Forms;
 
 public sealed class MainForm : Form
 {
+    private readonly ApplicationServices _services;
     private readonly Panel _contentPanel = new()
     {
         Dock = DockStyle.Fill,
@@ -16,11 +17,13 @@ public sealed class MainForm : Form
         Spring = true,
         TextAlign = ContentAlignment.MiddleLeft
     };
-    private readonly Dictionary<string, UserControl> _pages;
+    private readonly Dictionary<string, Func<UserControl>> _pageFactories;
+    private readonly Dictionary<string, UserControl> _pages = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Button> _navigationButtons = new(StringComparer.OrdinalIgnoreCase);
 
     public MainForm(ApplicationServices services)
     {
+        _services = services;
         Text = $"GitKeyRouter {typeof(MainForm).Assembly.GetName().Version}";
         StartPosition = FormStartPosition.CenterScreen;
         Width = 1280;
@@ -29,17 +32,17 @@ public sealed class MainForm : Form
         Font = new Font("Segoe UI", 9F);
         BackColor = UiHelpers.AppBackground;
 
-        _pages = new Dictionary<string, UserControl>(StringComparer.OrdinalIgnoreCase)
+        _pageFactories = new Dictionary<string, Func<UserControl>>(StringComparer.OrdinalIgnoreCase)
         {
-            ["概览"] = new OverviewControl(services, SetStatus, ShowPageAsync),
-            ["Git 服务"] = new GitServicesControl(services, SetStatus),
-            ["Git 身份"] = new IdentitiesControl(services, SetStatus),
-            ["Git Profiles"] = new GitProfilesControl(services, SetStatus),
-            ["仓库路由"] = new OwnerRoutesControl(services, SetStatus),
-            ["SSH Config"] = new SshConfigControl(services, SetStatus),
-            ["Git 重写配置"] = new GitRewritesControl(services, SetStatus),
-            ["诊断"] = new DiagnosticsControl(services, SetStatus),
-            ["备份与恢复"] = new BackupControl(services, SetStatus)
+            ["概览"] = () => new OverviewControl(services, SetStatus, ShowPageAsync),
+            ["Git 服务"] = () => new GitServicesControl(services, SetStatus),
+            ["Git 身份"] = () => new IdentitiesControl(services, SetStatus),
+            ["Git Profiles"] = () => new GitProfilesControl(services, SetStatus),
+            ["仓库路由"] = () => new OwnerRoutesControl(services, SetStatus),
+            ["SSH Config"] = () => new SshConfigControl(services, SetStatus),
+            ["Git 重写配置"] = () => new GitRewritesControl(services, SetStatus),
+            ["诊断"] = () => new DiagnosticsControl(services, SetStatus),
+            ["备份与恢复"] = () => new BackupControl(services, SetStatus)
         };
 
         var sidebar = CreateSidebar();
@@ -162,7 +165,7 @@ public sealed class MainForm : Form
         };
         navigation.Controls.Add(navigationLabel);
 
-        foreach (var pageName in _pages.Keys)
+        foreach (var pageName in _pageFactories.Keys)
         {
             var button = CreateNavigationButton(pageName);
             _navigationButtons[pageName] = button;
@@ -225,9 +228,30 @@ public sealed class MainForm : Form
 
     private async Task ShowPageAsync(string pageName)
     {
-        if (!_pages.TryGetValue(pageName, out var page))
+        if (!_pageFactories.TryGetValue(pageName, out var factory))
         {
             return;
+        }
+
+        if (!_pages.TryGetValue(pageName, out var page))
+        {
+            try
+            {
+                page = factory();
+                _pages[pageName] = page;
+            }
+            catch (Exception exception)
+            {
+                _services.Logger.Error($"Failed to construct page '{pageName}'.", exception);
+                SetStatus($"页面初始化失败：{pageName}");
+                MessageBox.Show(
+                    this,
+                    $"页面“{pageName}”初始化失败。其他页面仍可继续使用。\r\n\r\n{exception}",
+                    "GitKeyRouter",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+                return;
+            }
         }
 
         UpdateNavigationState(pageName);
@@ -267,12 +291,48 @@ public sealed class MainForm : Form
 
     private void SetStatus(string text)
     {
+        if (IsDisposed || Disposing)
+        {
+            return;
+        }
+
         if (InvokeRequired)
         {
-            BeginInvoke(new Action(() => SetStatus(text)));
+            if (!IsHandleCreated)
+            {
+                return;
+            }
+
+            try
+            {
+                BeginInvoke(new Action(() => SetStatus(text)));
+            }
+            catch (ObjectDisposedException)
+            {
+                // The form can close while a background operation is reporting status.
+            }
+            catch (InvalidOperationException)
+            {
+                // The form can close while a background operation is reporting status.
+            }
             return;
         }
 
         _statusLabel.Text = text;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            foreach (var page in _pages.Values.Distinct())
+            {
+                page.Dispose();
+            }
+
+            _pages.Clear();
+        }
+
+        base.Dispose(disposing);
     }
 }

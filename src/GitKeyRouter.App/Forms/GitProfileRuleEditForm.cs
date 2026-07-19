@@ -17,7 +17,7 @@ public sealed class GitProfileRuleEditForm : Form
         _original = rule;
         Text = rule is null ? "新建 Profile 规则" : "编辑 Profile 规则";
         UiHelpers.ConfigureDialog(this, 680, 250);
-        _kind.DataSource = Enum.GetValues<GitProfileRuleKind>();
+        _kind.Items.AddRange(Enum.GetValues<GitProfileRuleKind>().Cast<object>().ToArray());
         _kind.SelectedIndexChanged += (_, _) => UpdatePatternHint();
         var browse = UiHelpers.CreateDialogButton("浏览...");
         browse.Click += (_, _) => BrowseDirectory();

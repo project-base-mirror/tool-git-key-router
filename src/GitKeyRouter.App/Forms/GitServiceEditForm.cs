@@ -24,7 +24,7 @@ public sealed class GitServiceEditForm : Form
         UiHelpers.ConfigureDialog(this, 680, 420);
 
         _template.Items.AddRange(["GitLab.com", "自建 GitLab", "自建 Gitea", "通用 Git 服务"]);
-        _provider.DataSource = Enum.GetValues<GitProviderKind>();
+        _provider.Items.AddRange(Enum.GetValues<GitProviderKind>().Cast<object>().ToArray());
         _template.SelectedIndexChanged += (_, _) => ApplyTemplate();
 
         var table = UiHelpers.CreateCompactDialogTable(2, 140);
@@ -87,7 +87,10 @@ public sealed class GitServiceEditForm : Form
         _displayName.Text = service.DisplayName;
         _provider.SelectedItem = service.ProviderKind;
         _hostName.Text = service.HostName;
-        _sshPort.Value = service.SshPort ?? 0;
+        _sshPort.Value = Math.Clamp(
+            service.SshPort ?? 0,
+            decimal.ToInt32(_sshPort.Minimum),
+            decimal.ToInt32(_sshPort.Maximum));
         _sshUser.Text = service.SshUser;
         _webBaseUrl.Text = service.WebBaseUrl;
         _extendedSshUrls.Checked = service.EnableExtendedSshUrlRewrites;

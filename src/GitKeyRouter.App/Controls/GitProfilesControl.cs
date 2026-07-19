@@ -38,6 +38,8 @@ public sealed class GitProfilesControl : UserControl, IAsyncRefreshable
             Dock = DockStyle.Fill,
             Orientation = Orientation.Horizontal,
             SplitterWidth = 8,
+            Panel1MinSize = 0,
+            Panel2MinSize = 0,
             BackColor = UiHelpers.AppBackground
         };
         _split.Panel1.Controls.Add(profilesPanel);
@@ -45,10 +47,31 @@ public sealed class GitProfilesControl : UserControl, IAsyncRefreshable
         _split.SizeChanged += (_, _) => UpdateSplitLayout();
         Controls.Add(_split);
         Controls.Add(header);
-        HandleCreated += (_, _) => BeginInvoke(UpdateSplitLayout);
+        HandleCreated += (_, _) => ScheduleSplitLayout();
         _profilesGrid.SelectionChanged += (_, _) => RefreshRulesGrid();
         _profilesGrid.CellDoubleClick += async (_, _) => await EditProfileAsync();
         _rulesGrid.CellDoubleClick += async (_, _) => await EditRuleAsync();
+    }
+
+    private void ScheduleSplitLayout()
+    {
+        if (IsDisposed || Disposing || !IsHandleCreated)
+        {
+            return;
+        }
+
+        try
+        {
+            BeginInvoke(new Action(UpdateSplitLayout));
+        }
+        catch (ObjectDisposedException)
+        {
+            // Closing the main form while layout is queued is safe to ignore.
+        }
+        catch (InvalidOperationException)
+        {
+            // The control can be disposed between HandleCreated and BeginInvoke.
+        }
     }
 
     private void UpdateSplitLayout()
@@ -71,9 +94,6 @@ public sealed class GitProfilesControl : UserControl, IAsyncRefreshable
         _updatingSplitLayout = true;
         try
         {
-            _split.Panel1MinSize = 0;
-            _split.Panel2MinSize = 0;
-
             if (availableHeight < minimumTopHeight + minimumBottomHeight)
             {
                 _split.SplitterDistance = Math.Max(0, availableHeight / 2);
@@ -87,8 +107,6 @@ public sealed class GitProfilesControl : UserControl, IAsyncRefreshable
                 desiredDistance,
                 minimumTopHeight,
                 availableHeight - minimumBottomHeight);
-            _split.Panel1MinSize = minimumTopHeight;
-            _split.Panel2MinSize = minimumBottomHeight;
             _splitLayoutInitialized = true;
         }
         finally
