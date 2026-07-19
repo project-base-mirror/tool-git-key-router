@@ -10,6 +10,9 @@ public sealed class GitProfilesControl : UserControl, IAsyncRefreshable
     private readonly Action<string> _status;
     private readonly DataGridView _profilesGrid = UiHelpers.CreateGrid();
     private readonly DataGridView _rulesGrid = UiHelpers.CreateGrid();
+    private readonly SplitContainer _split;
+    private bool _splitLayoutInitialized;
+    private bool _updatingSplitLayout;
     private AppConfig _config = new();
 
     public GitProfilesControl(ApplicationServices services, Action<string> status)
@@ -30,12 +33,68 @@ public sealed class GitProfilesControl : UserControl, IAsyncRefreshable
         profilesPanel.Controls.Add(_profilesGrid); profilesPanel.Controls.Add(profileToolbar);
         var rulesPanel = new Panel { Dock = DockStyle.Fill, BackColor = UiHelpers.Surface };
         rulesPanel.Controls.Add(_rulesGrid); rulesPanel.Controls.Add(ruleToolbar);
-        var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 285, SplitterWidth = 8, BackColor = UiHelpers.AppBackground, Panel1MinSize = 180, Panel2MinSize = 160 };
-        split.Panel1.Controls.Add(profilesPanel); split.Panel2.Controls.Add(rulesPanel);
-        Controls.Add(split); Controls.Add(header);
+        _split = new SplitContainer
+        {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Horizontal,
+            SplitterWidth = 8,
+            BackColor = UiHelpers.AppBackground
+        };
+        _split.Panel1.Controls.Add(profilesPanel);
+        _split.Panel2.Controls.Add(rulesPanel);
+        _split.SizeChanged += (_, _) => UpdateSplitLayout();
+        Controls.Add(_split);
+        Controls.Add(header);
+        HandleCreated += (_, _) => BeginInvoke(UpdateSplitLayout);
         _profilesGrid.SelectionChanged += (_, _) => RefreshRulesGrid();
         _profilesGrid.CellDoubleClick += async (_, _) => await EditProfileAsync();
         _rulesGrid.CellDoubleClick += async (_, _) => await EditRuleAsync();
+    }
+
+    private void UpdateSplitLayout()
+    {
+        if (_updatingSplitLayout || _split.IsDisposed)
+        {
+            return;
+        }
+
+        var availableHeight = _split.ClientSize.Height - _split.SplitterWidth;
+        if (availableHeight <= 0)
+        {
+            return;
+        }
+
+        const int preferredTopHeight = 285;
+        const int minimumTopHeight = 180;
+        const int minimumBottomHeight = 160;
+
+        _updatingSplitLayout = true;
+        try
+        {
+            _split.Panel1MinSize = 0;
+            _split.Panel2MinSize = 0;
+
+            if (availableHeight < minimumTopHeight + minimumBottomHeight)
+            {
+                _split.SplitterDistance = Math.Max(0, availableHeight / 2);
+                return;
+            }
+
+            var desiredDistance = _splitLayoutInitialized
+                ? _split.SplitterDistance
+                : preferredTopHeight;
+            _split.SplitterDistance = Math.Clamp(
+                desiredDistance,
+                minimumTopHeight,
+                availableHeight - minimumBottomHeight);
+            _split.Panel1MinSize = minimumTopHeight;
+            _split.Panel2MinSize = minimumBottomHeight;
+            _splitLayoutInitialized = true;
+        }
+        finally
+        {
+            _updatingSplitLayout = false;
+        }
     }
 
     public async Task RefreshAsync()
