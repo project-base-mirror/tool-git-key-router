@@ -41,9 +41,8 @@ public sealed class IdentityEditForm : Form
         var serviceChoices = services
             .Select(item => new ServiceChoice(item.Id, $"{item.DisplayName} ({item.HostName})"))
             .ToList();
-        _service.DataSource = serviceChoices;
         _service.DisplayMember = nameof(ServiceChoice.DisplayText);
-        _service.ValueMember = nameof(ServiceChoice.Id);
+        _service.Items.AddRange(serviceChoices.Cast<object>().ToArray());
         _service.SelectedIndex = serviceChoices.Count == 1 ? 0 : -1;
 
         AddRow(table, 0, "Git 服务", _service);
@@ -104,7 +103,8 @@ public sealed class IdentityEditForm : Form
 
     private void LoadValues(GitIdentity identity)
     {
-        _service.SelectedValue = identity.ServiceInstanceId;
+        _service.SelectedIndex = _service.Items.Cast<ServiceChoice>().ToList().FindIndex(item =>
+            string.Equals(item.Id, identity.ServiceInstanceId, StringComparison.OrdinalIgnoreCase));
         _displayName.Text = identity.DisplayName;
         _username.Text = identity.AccountName;
         _hostAlias.Text = identity.HostAlias;
@@ -181,7 +181,7 @@ public sealed class IdentityEditForm : Form
         if (string.IsNullOrWhiteSpace(_displayName.Text)
             || string.IsNullOrWhiteSpace(_username.Text)
             || string.IsNullOrWhiteSpace(_hostAlias.Text)
-            || _service.SelectedValue is not string serviceInstanceId)
+            || _service.SelectedItem is not ServiceChoice selectedService)
         {
             MessageBox.Show(this, "Git 服务、显示名称、账号和 HostAlias 为必填项。", "GitKeyRouter", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             DialogResult = DialogResult.None;
@@ -191,7 +191,7 @@ public sealed class IdentityEditForm : Form
         ResultIdentity = new GitIdentity
         {
             Id = _original.Id,
-            ServiceInstanceId = serviceInstanceId,
+            ServiceInstanceId = selectedService.Id,
             CreatedAt = _original.CreatedAt,
             DisplayName = _displayName.Text.Trim(),
             AccountName = _username.Text.Trim(),

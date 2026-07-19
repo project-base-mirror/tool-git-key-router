@@ -23,9 +23,8 @@ public sealed class GitProfileEditForm : Form
         UiHelpers.ConfigureDialog(this, 680, 380);
         var serviceChoices = new List<Choice> { new(string.Empty, "<不指定>") };
         serviceChoices.AddRange(services.Select(item => new Choice(item.Id, $"{item.DisplayName} ({item.HostName})")));
-        _service.DataSource = serviceChoices;
         _service.DisplayMember = nameof(Choice.DisplayText);
-        _service.ValueMember = nameof(Choice.Id);
+        _service.Items.AddRange(serviceChoices.Cast<object>().ToArray());
         _service.SelectedIndexChanged += (_, _) => RefreshIdentities();
 
         var table = UiHelpers.CreateCompactDialogTable(2, 140);
@@ -53,13 +52,13 @@ public sealed class GitProfileEditForm : Form
             _userEmail.Text = profile.UserEmail;
             _signingKey.Text = profile.SigningKey;
             _enableSigning.Checked = profile.EnableCommitSigning;
-            _service.SelectedValue = profile.DefaultServiceInstanceId;
+            SelectChoice(_service, profile.DefaultServiceInstanceId);
             RefreshIdentities();
-            _identity.SelectedValue = profile.DefaultIdentityId;
+            SelectChoice(_identity, profile.DefaultIdentityId);
         }
         else
         {
-            _service.SelectedIndex = 0;
+            SelectChoice(_service, string.Empty);
             RefreshIdentities();
         }
     }
@@ -68,15 +67,19 @@ public sealed class GitProfileEditForm : Form
 
     private void RefreshIdentities()
     {
-        var selected = _identity.SelectedValue as string ?? _original?.DefaultIdentityId;
-        var serviceId = _service.SelectedValue as string ?? string.Empty;
+        var selected = (_identity.SelectedItem as Choice)?.Id ?? _original?.DefaultIdentityId;
+        var serviceId = (_service.SelectedItem as Choice)?.Id ?? string.Empty;
         var choices = new List<Choice> { new(string.Empty, "<不指定>") };
         choices.AddRange(_identities.Where(item => string.Equals(item.ServiceInstanceId, serviceId, StringComparison.OrdinalIgnoreCase))
             .Select(item => new Choice(item.Id, $"{item.DisplayName} ({item.AccountName} / {item.HostAlias})")));
-        _identity.DataSource = choices;
+        _identity.BeginUpdate();
+        _identity.Items.Clear();
         _identity.DisplayMember = nameof(Choice.DisplayText);
-        _identity.ValueMember = nameof(Choice.Id);
-        _identity.SelectedValue = choices.Any(item => string.Equals(item.Id, selected, StringComparison.OrdinalIgnoreCase)) ? selected : string.Empty;
+        _identity.Items.AddRange(choices.Cast<object>().ToArray());
+        _identity.EndUpdate();
+        SelectChoice(_identity, choices.Any(item => string.Equals(item.Id, selected, StringComparison.OrdinalIgnoreCase))
+            ? selected
+            : string.Empty);
     }
 
     private void SaveClicked(object? sender, EventArgs eventArgs)
@@ -91,9 +94,16 @@ public sealed class GitProfileEditForm : Form
         {
             Id = _original?.Id ?? Guid.NewGuid().ToString("N"), DisplayName = _displayName.Text.Trim(), UserName = _userName.Text.Trim(),
             UserEmail = _userEmail.Text.Trim(), SigningKey = _signingKey.Text.Trim(), EnableCommitSigning = _enableSigning.Checked,
-            DefaultServiceInstanceId = _service.SelectedValue as string ?? string.Empty,
-            DefaultIdentityId = _identity.SelectedValue as string ?? string.Empty, CreatedAt = _original?.CreatedAt ?? DateTimeOffset.UtcNow
+            DefaultServiceInstanceId = (_service.SelectedItem as Choice)?.Id ?? string.Empty,
+            DefaultIdentityId = (_identity.SelectedItem as Choice)?.Id ?? string.Empty, CreatedAt = _original?.CreatedAt ?? DateTimeOffset.UtcNow
         };
+    }
+
+    private static void SelectChoice(ComboBox comboBox, string? id)
+    {
+        var index = comboBox.Items.Cast<Choice>().ToList().FindIndex(item =>
+            string.Equals(item.Id, id ?? string.Empty, StringComparison.OrdinalIgnoreCase));
+        comboBox.SelectedIndex = index;
     }
 
     private sealed record Choice(string Id, string DisplayText);
