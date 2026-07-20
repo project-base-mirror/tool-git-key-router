@@ -154,7 +154,7 @@ jobs:
         run: .\scripts\Prepare-ReleaseAssets.ps1 -Version '${{ steps.release.outputs.version }}'
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: GitKeyRouter-${{ steps.release.outputs.version }}
           path: artifacts/release/*
