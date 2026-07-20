@@ -90,12 +90,18 @@ public sealed class GitProfileEditForm : Form
             DialogResult = DialogResult.None;
             return;
         }
+
         ResultProfile = new GitProfile
         {
-            Id = _original?.Id ?? Guid.NewGuid().ToString("N"), DisplayName = _displayName.Text.Trim(), UserName = _userName.Text.Trim(),
-            UserEmail = _userEmail.Text.Trim(), SigningKey = _signingKey.Text.Trim(), EnableCommitSigning = _enableSigning.Checked,
+            Id = _original?.Id ?? Guid.NewGuid().ToString("N"),
+            DisplayName = _displayName.Text.Trim(),
+            UserName = _userName.Text.Trim(),
+            UserEmail = _userEmail.Text.Trim(),
+            SigningKey = _signingKey.Text.Trim(),
+            EnableCommitSigning = _enableSigning.Checked,
             DefaultServiceInstanceId = (_service.SelectedItem as Choice)?.Id ?? string.Empty,
-            DefaultIdentityId = (_identity.SelectedItem as Choice)?.Id ?? string.Empty, CreatedAt = _original?.CreatedAt ?? DateTimeOffset.UtcNow
+            DefaultIdentityId = (_identity.SelectedItem as Choice)?.Id ?? string.Empty,
+            CreatedAt = _original?.CreatedAt ?? DateTimeOffset.UtcNow
         };
     }
 

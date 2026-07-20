@@ -118,13 +118,23 @@ public sealed class GitProfilesControl : UserControl, IAsyncRefreshable
     public async Task RefreshAsync()
     {
         _config = await _services.ConfigStore.LoadAsync();
-        _profilesGrid.DataSource = _config.GitProfiles.OrderBy(item => item.DisplayName, StringComparer.CurrentCultureIgnoreCase).Select(profile => new ProfileRow
-        {
-            Id = profile.Id, 名称 = profile.DisplayName, UserName = profile.UserName, UserEmail = profile.UserEmail,
-            签名 = profile.EnableCommitSigning ? "启用" : "关闭", 默认服务 = ServiceName(profile.DefaultServiceInstanceId),
-            默认身份 = IdentityName(profile.DefaultIdentityId), 规则数 = _config.GitProfileRules.Count(item => string.Equals(item.ProfileId, profile.Id, StringComparison.OrdinalIgnoreCase))
-        }).ToList();
-        HideIdColumn(_profilesGrid); RefreshRulesGrid();
+        _profilesGrid.DataSource = _config.GitProfiles
+            .OrderBy(item => item.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+            .Select(profile => new ProfileRow
+            {
+                Id = profile.Id,
+                名称 = profile.DisplayName,
+                UserName = profile.UserName,
+                UserEmail = profile.UserEmail,
+                签名 = profile.EnableCommitSigning ? "启用" : "关闭",
+                默认服务 = ServiceName(profile.DefaultServiceInstanceId),
+                默认身份 = IdentityName(profile.DefaultIdentityId),
+                规则数 = _config.GitProfileRules.Count(item =>
+                    string.Equals(item.ProfileId, profile.Id, StringComparison.OrdinalIgnoreCase))
+            })
+            .ToList();
+        HideIdColumn(_profilesGrid);
+        RefreshRulesGrid();
         _status($"已加载 {_config.GitProfiles.Count} 个 Git Profile、{_config.GitProfileRules.Count} 条条件规则");
     }
 
