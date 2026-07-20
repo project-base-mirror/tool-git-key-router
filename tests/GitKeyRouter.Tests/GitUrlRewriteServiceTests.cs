@@ -50,7 +50,7 @@ public sealed class GitUrlRewriteServiceTests
         var result = await service.ApplyPlanAsync(plan, "test");
 
         Assert.True(result.Success);
-        Assert.Single(git.Rules.Where(item => item == rule));
+        Assert.Single(git.Rules, item => item == rule);
     }
 
     [Fact]
