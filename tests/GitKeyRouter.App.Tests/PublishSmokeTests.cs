@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Xml.Linq;
 
@@ -128,6 +129,91 @@ public sealed class PublishSmokeTests
         var expectedHash = Convert.ToHexString(await SHA256.HashDataAsync(hashStream));
         var checksumContent = await File.ReadAllTextAsync(checksumPath);
         Assert.Equal($"{expectedHash}  GitKeyRouter.exe\r\n", checksumContent);
+    }
+
+    [Fact]
+    public async Task PrepareReleaseAssets_CreatesVersionedArchivesAndChecksums()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var scriptPath = Path.Combine(repositoryRoot, "scripts", "Prepare-ReleaseAssets.ps1");
+        var temporaryRoot = Path.Combine(
+            Path.GetTempPath(),
+            "GitKeyRouter.ReleaseTests",
+            Guid.NewGuid().ToString("N"));
+        var publishRoot = Path.Combine(temporaryRoot, "publish");
+        var outputDirectory = Path.Combine(temporaryRoot, "release");
+
+        try
+        {
+            var portableDirectory = Path.Combine(publishRoot, "win-x64");
+            var frameworkDirectory = Path.Combine(publishRoot, "win-x64-framework-dependent");
+            Directory.CreateDirectory(portableDirectory);
+            Directory.CreateDirectory(frameworkDirectory);
+            await File.WriteAllBytesAsync(
+                Path.Combine(portableDirectory, "GitKeyRouter.exe"),
+                [0x4D, 0x5A, 0x01, 0x02]);
+            await File.WriteAllBytesAsync(
+                Path.Combine(frameworkDirectory, "GitKeyRouter.exe"),
+                [0x4D, 0x5A, 0x03, 0x04]);
+
+            var result = await RunProcessAsync(
+                "powershell.exe",
+                [
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    scriptPath,
+                    "-Version",
+                    "0.3.0",
+                    "-PublishRoot",
+                    publishRoot,
+                    "-OutputDirectory",
+                    outputDirectory
+                ],
+                repositoryRoot,
+                TimeSpan.FromSeconds(30),
+                captureOutput: true);
+
+            Assert.True(
+                result.ExitCode == 0,
+                $"Release asset preparation failed.{Environment.NewLine}{result.StandardOutput}{Environment.NewLine}{result.StandardError}");
+
+            var portableZip = Path.Combine(
+                outputDirectory,
+                "GitKeyRouter-v0.3.0-win-x64-portable.zip");
+            var frameworkZip = Path.Combine(
+                outputDirectory,
+                "GitKeyRouter-v0.3.0-win-x64-framework-dependent.zip");
+            var checksumPath = Path.Combine(outputDirectory, "SHA256SUMS.txt");
+
+            Assert.True(File.Exists(portableZip));
+            Assert.True(File.Exists(frameworkZip));
+            Assert.True(File.Exists(checksumPath));
+
+            foreach (var archivePath in new[] { portableZip, frameworkZip })
+            {
+                using var archive = ZipFile.OpenRead(archivePath);
+                var entryNames = archive.Entries.Select(entry => entry.FullName).ToHashSet(StringComparer.Ordinal);
+                Assert.Contains("GitKeyRouter.exe", entryNames);
+                Assert.Contains("LICENSE.txt", entryNames);
+                Assert.Contains("README.txt", entryNames);
+            }
+
+            var checksumLines = await File.ReadAllLinesAsync(checksumPath);
+            Assert.Equal(2, checksumLines.Length);
+            foreach (var archivePath in new[] { portableZip, frameworkZip })
+            {
+                await using var stream = File.OpenRead(archivePath);
+                var hash = Convert.ToHexString(await SHA256.HashDataAsync(stream));
+                Assert.Contains($"{hash}  {Path.GetFileName(archivePath)}", checksumLines);
+            }
+        }
+        finally
+        {
+            Directory.Delete(temporaryRoot, recursive: true);
+        }
     }
 
     private static IReadOnlyDictionary<string, string> LoadProfile(string path)
