@@ -3,11 +3,7 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>true</SelfContained>
-    <PublishTrimmed>false</PublishTrimmed>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <UseAppHost>false</UseAppHost>
     <AssemblyName>GitKeyRouter</AssemblyName>
     <RootNamespace>GitKeyRouter.App</RootNamespace>
   </PropertyGroup>
@@ -15,4 +11,21 @@
     <ProjectReference Include="..\GitKeyRouter.Core\GitKeyRouter.Core.csproj" />
     <ProjectReference Include="..\GitKeyRouter.Infrastructure\GitKeyRouter.Infrastructure.csproj" />
   </ItemGroup>
+  <Target Name="ValidateSingleFilePublishConfiguration" BeforeTargets="PrepareForPublish" Condition="'$(PublishSingleFile)' == 'true'">
+    <Error Condition="'$(GitKeyRouterPublishFlavor)' != 'self-contained' and '$(GitKeyRouterPublishFlavor)' != 'framework-dependent'" Text="GitKeyRouterPublishFlavor must be self-contained or framework-dependent." />
+    <Error Condition="'$(RuntimeIdentifier)' == ''" Text="Single-file publishing requires a RuntimeIdentifier." />
+    <Error Condition="'$(UseAppHost)' != 'true'" Text="Single-file publishing requires UseAppHost=true." />
+    <Error Condition="'$(GitKeyRouterPublishFlavor)' == 'self-contained' and '$(SelfContained)' != 'true'" Text="The self-contained profile requires SelfContained=true." />
+    <Error Condition="'$(GitKeyRouterPublishFlavor)' == 'self-contained' and '$(IncludeNativeLibrariesForSelfExtract)' != 'true'" Text="Native runtime libraries must be bundled for a true one-file publish." />
+    <Error Condition="'$(GitKeyRouterPublishFlavor)' == 'framework-dependent' and '$(SelfContained)' != 'false'" Text="The framework-dependent profile requires SelfContained=false." />
+    <Error Condition="'$(PublishTrimmed)' == 'true'" Text="WinForms publishing must not enable trimming." />
+    <Error Condition="'$(CopyOutputSymbolsToPublishDirectory)' != 'false'" Text="Symbol files must not be copied to the single-file publish directory." />
+  </Target>
+  <Target Name="RemoveReferencedSymbolsFromSingleFilePublish" AfterTargets="Publish" Condition="'$(PublishSingleFile)' == 'true' and '$(CopyOutputSymbolsToPublishDirectory)' == 'false'">
+    <ItemGroup>
+      <PublishedSymbolFiles Include="$(PublishDir)**\*.pdb" />
+    </ItemGroup>
+    <Delete Files="@(PublishedSymbolFiles)" />
+    <Message Condition="'@(PublishedSymbolFiles)' != ''" Importance="normal" Text="Removed symbol files from single-file publish output: @(PublishedSymbolFiles, ', ')" />
+  </Target>
 </Project>
