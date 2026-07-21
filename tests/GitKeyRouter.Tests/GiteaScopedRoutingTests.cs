@@ -123,7 +123,12 @@ public sealed class GiteaScopedRoutingTests
         Assert.Contains(rules, rule => rule.BaseUrl == "git@github-camus:camus0109/");
         Assert.Contains(rules, rule => rule.BaseUrl == "git@github-fgc:fgc0109/");
         Assert.DoesNotContain(rules, rule => rule.InsteadOfUrl == "https://github.com/");
-        Assert.False(OwnerRouteValidator.Validate(Route(github, camus, GitRouteScope.Service), config, null, null).IsValid);
+        Assert.False(OwnerRouteValidator.Validate(
+            Route(github, camus, GitRouteScope.Service),
+            config,
+            null,
+            null,
+            GitProviderAdapterRegistry.CreateDefault()).IsValid);
     }
 
     [Fact]
