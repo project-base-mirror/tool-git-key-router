@@ -17,7 +17,7 @@ public sealed class OwnerRoutesControl : UserControl, IAsyncRefreshable
     {
         _services = services;
         _status = status;
-        var header = UiHelpers.CreatePageHeader("仓库路由", "按 Git 服务和 Owner / Namespace 将仓库稳定映射到对应 SSH 身份");
+        var header = UiHelpers.CreatePageHeader("仓库路由", "按整个服务、Owner 或单仓库映射 SSH 身份；仓库级优先于 Owner，Owner 优先于服务级");
         var toolbar = UiHelpers.CreateToolbar();
         toolbar.Controls.Add(UiHelpers.Button("新建", async (_, _) => await CreateAsync()));
         toolbar.Controls.Add(UiHelpers.Button("编辑", async (_, _) => await EditAsync()));
@@ -41,9 +41,15 @@ public sealed class OwnerRoutesControl : UserControl, IAsyncRefreshable
     public async Task RefreshAsync()
     {
         var config = await _services.ConfigStore.LoadAsync();
+        foreach (var route in config.RepositoryRoutes)
+        {
+            route.Normalize();
+        }
+
         _routes = config.RepositoryRoutes
             .OrderBy(item => ServiceName(config.GitServices, item.ServiceInstanceId), StringComparer.CurrentCultureIgnoreCase)
-            .ThenBy(item => item.NamespacePath, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.Scope)
+            .ThenBy(item => item.RoutePath, StringComparer.OrdinalIgnoreCase)
             .ToList();
         _identities = config.Identities;
         _gitServices = config.GitServices;
@@ -57,7 +63,7 @@ public sealed class OwnerRoutesControl : UserControl, IAsyncRefreshable
             comparisons = [];
         }
 
-        _grid.DataSource = _routes.Select(route =>
+        _grid.DataSource = _routes.Select((route, index) =>
         {
             var identity = _identities.FirstOrDefault(item => string.Equals(item.Id, route.IdentityId, StringComparison.OrdinalIgnoreCase));
             var related = comparisons.Where(item =>
@@ -65,9 +71,11 @@ public sealed class OwnerRoutesControl : UserControl, IAsyncRefreshable
                 && string.Equals(item.NamespacePath, route.NamespacePath, StringComparison.OrdinalIgnoreCase)).ToList();
             return new RouteRow
             {
+                Index = index,
                 ServiceInstanceId = route.ServiceInstanceId,
                 Git服务 = ServiceName(_gitServices, route.ServiceInstanceId),
-                命名空间 = route.NamespacePath,
+                范围 = route.Scope.ToString(),
+                路径 = route.DisplayPath,
                 IdentityId = route.IdentityId,
                 身份 = identity?.DisplayName ?? "<缺失>",
                 HostAlias = identity?.HostAlias ?? "<缺失>",
@@ -83,6 +91,10 @@ public sealed class OwnerRoutesControl : UserControl, IAsyncRefreshable
         if (_grid.Columns[nameof(RouteRow.ServiceInstanceId)] is { } serviceIdColumn)
         {
             serviceIdColumn.Visible = false;
+        }
+        if (_grid.Columns[nameof(RouteRow.Index)] is { } indexColumn)
+        {
+            indexColumn.Visible = false;
         }
 
         _status($"已加载 {_routes.Count} 条仓库路由");
@@ -147,12 +159,12 @@ public sealed class OwnerRoutesControl : UserControl, IAsyncRefreshable
             return;
         }
 
-        if (MessageBox.Show(this, $"删除仓库路由“{ServiceName(_gitServices, route.ServiceInstanceId)} / {route.NamespacePath}”？\r\nGit 全局配置不会在此步骤中自动删除。", "确认删除", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+        if (MessageBox.Show(this, $"删除仓库路由“{ServiceName(_gitServices, route.ServiceInstanceId)} / {route.DisplayPath}”？\r\nGit 全局配置不会在此步骤中自动删除。", "确认删除", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
         {
             return;
         }
 
-        var result = await _services.OwnerRouteService.DeleteAsync(route.ServiceInstanceId, route.NamespacePath);
+        var result = await _services.OwnerRouteService.DeleteByIdAsync(route.Id);
         if (!result.Success)
         {
             UiHelpers.ShowErrors(this, result);
@@ -177,9 +189,9 @@ public sealed class OwnerRoutesControl : UserControl, IAsyncRefreshable
         }
 
         await ApplyPlanAsync(
-            await _services.GitUrlRewriteService.BuildDeleteRoutePlanAsync(route.ServiceInstanceId, route.NamespacePath),
-            $"删除 {route.NamespacePath} 的 Git rewrite",
-            $"Delete Git URL rewrites for route: {route.ServiceInstanceId}/{route.NamespacePath}");
+            await _services.GitUrlRewriteService.BuildDeleteRouteByIdPlanAsync(route.Id),
+            $"删除 {route.DisplayPath} 的 Git rewrite",
+            $"Delete Git URL rewrites for route: {route.ServiceInstanceId}/{route.DisplayPath}");
     }
 
     private async Task ApplyPlanAsync(GitRewritePlan plan, string title, string reason)
@@ -232,15 +244,13 @@ public sealed class OwnerRoutesControl : UserControl, IAsyncRefreshable
 
     private RepositoryRoute? SelectedRoute()
     {
-        if (_grid.CurrentRow?.DataBoundItem is not RouteRow row)
+        if (_grid.CurrentRow?.DataBoundItem is not RouteRow row || row.Index < 0 || row.Index >= _routes.Count)
         {
             MessageBox.Show(this, "请先选择一条仓库路由。", "GitKeyRouter", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return null;
         }
 
-        return _routes.FirstOrDefault(item =>
-            string.Equals(item.ServiceInstanceId, row.ServiceInstanceId, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(item.NamespacePath, row.命名空间, StringComparison.OrdinalIgnoreCase));
+        return _routes[row.Index];
     }
 
     private static string ServiceName(IEnumerable<GitServiceInstance> services, string serviceInstanceId)
@@ -249,9 +259,11 @@ public sealed class OwnerRoutesControl : UserControl, IAsyncRefreshable
 
     private sealed class RouteRow
     {
+        public int Index { get; init; }
         public string ServiceInstanceId { get; init; } = string.Empty;
         public string Git服务 { get; init; } = string.Empty;
-        public string 命名空间 { get; init; } = string.Empty;
+        public string 范围 { get; init; } = string.Empty;
+        public string 路径 { get; init; } = string.Empty;
         public string IdentityId { get; init; } = string.Empty;
         public string 身份 { get; init; } = string.Empty;
         public string HostAlias { get; init; } = string.Empty;
