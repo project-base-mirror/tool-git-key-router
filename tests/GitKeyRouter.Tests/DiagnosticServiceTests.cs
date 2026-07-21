@@ -54,6 +54,69 @@ public sealed class DiagnosticServiceTests
     }
 
     [Fact]
+    public async Task ReportsCrossServiceGiteaKeySharingAsNormalInformation()
+    {
+        using var directory = new TemporaryDirectory();
+        var paths = new TestAppPaths(directory.Path);
+        Directory.CreateDirectory(paths.SshDirectory);
+        var privateKey = Path.Combine(paths.SshDirectory, "id_ed25519_gitea");
+        var publicKey = privateKey + ".pub";
+        await File.WriteAllTextAsync(privateKey, "-----BEGIN OPENSSH PRIVATE KEY-----\nsecret");
+        await File.WriteAllTextAsync(publicKey, OpenSsh);
+        var local = GitServiceService.CreateTemplate("Gitea Local");
+        var cloud = GitServiceService.CreateTemplate("Gitea Cloud");
+        var identities = new[]
+        {
+            new GitIdentity
+            {
+                Id = "gitea-local",
+                ServiceInstanceId = local.Id,
+                DisplayName = "Gitea Local",
+                AccountName = "fgc0109",
+                HostAlias = "gitea-local",
+                PrivateKeyPath = privateKey,
+                PublicKeyPath = publicKey
+            },
+            new GitIdentity
+            {
+                Id = "gitea-cloud",
+                ServiceInstanceId = cloud.Id,
+                DisplayName = "Gitea Cloud",
+                AccountName = "fgc0109",
+                HostAlias = "gitea-cloud",
+                PrivateKeyPath = privateKey,
+                PublicKeyPath = publicKey
+            }
+        };
+        var configStore = new InMemoryAppConfigStore
+        {
+            Config = new AppConfig
+            {
+                GitServices = [GitServiceInstance.CreateGitHubCom(), local, cloud],
+                Identities = identities.ToList()
+            }
+        };
+        var fileSystem = new PhysicalFileSystem();
+        var backup = new NoOpBackupService();
+        var providers = GitProviderAdapterRegistry.CreateDefault();
+        var diagnostics = new DiagnosticService(
+            configStore,
+            paths,
+            fileSystem,
+            new FixedToolchainService("git.exe", "ssh-keygen.exe", "ssh.exe"),
+            new SshConfigService(fileSystem, paths, backup, providers),
+            new GitUrlRewriteService(configStore, new FakeGitUrlRewriteStore(), backup, providers),
+            new TestClock(),
+            providers);
+
+        var report = await diagnostics.RunAsync();
+
+        Assert.Contains(report.Items, item => item.Code == "PRIVATE_KEY_PATH_SHARED" && item.Severity == DiagnosticSeverity.Normal);
+        Assert.Contains(report.Items, item => item.Code == "PUBLIC_KEY_PATH_SHARED" && item.Severity == DiagnosticSeverity.Normal);
+        Assert.DoesNotContain(report.Items, item => item.Code.Contains("SAME_SERVICE_ACCOUNTS", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task ReportsManagedSshBlockThatTargetsTheWrongServiceEndpoint()
     {
         using var directory = new TemporaryDirectory();
