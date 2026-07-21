@@ -203,10 +203,14 @@ public sealed class CliApplication
         var url = GetOption(args, "--url")
             ?? $"{service.WebBaseUrl.TrimEnd('/')}/{namespacePath}/__route_preview__.git";
         var preview = await _services.GitUrlRewriteService.PreviewAsync(url, cancellationToken).ConfigureAwait(false);
-        Console.WriteLine($"Original:  {preview.OriginalUrl}");
-        Console.WriteLine($"Matched:   {preview.MatchedPrefix ?? "<none>"}");
-        Console.WriteLine($"Base URL:  {preview.MatchedBaseUrl ?? "<none>"}");
-        Console.WriteLine($"Rewritten: {preview.RewrittenUrl}");
+        Console.WriteLine($"Original:          {preview.OriginalUrl}");
+        Console.WriteLine($"Actual matched:    {preview.ActualMatchedPrefix ?? "<none>"}");
+        Console.WriteLine($"Actual base URL:   {preview.ActualMatchedBaseUrl ?? "<none>"}");
+        Console.WriteLine($"Actual rewritten:  {preview.ActualRewrittenUrl ?? preview.OriginalUrl}");
+        Console.WriteLine($"Expected matched:  {preview.ExpectedMatchedPrefix ?? "<none>"}");
+        Console.WriteLine($"Expected base URL: {preview.ExpectedMatchedBaseUrl ?? "<none>"}");
+        Console.WriteLine($"Expected rewrite:  {preview.ExpectedRewrittenUrl ?? preview.RewrittenUrl}");
+        Console.WriteLine($"Expected status:   {preview.ExpectationStatus}");
 
         if (!args.Contains("--connect", StringComparer.OrdinalIgnoreCase))
         {
@@ -367,6 +371,7 @@ public sealed class CliApplication
         var lines = new List<string> { "Git URL rewrite changes:" };
         lines.AddRange(plan.Removes.Select(rule => $"- {rule.ConfigKey} = {rule.InsteadOfUrl}"));
         lines.AddRange(plan.Adds.Select(rule => $"+ {rule.ConfigKey} = {rule.InsteadOfUrl}"));
+        lines.AddRange(plan.RepositoryRouteIdsToRemove.Select(routeId => $"- config.RepositoryRoutes[{routeId}] (legacy account-as-Owner route)"));
         if (!plan.HasChanges)
         {
             lines.Add("No changes.");

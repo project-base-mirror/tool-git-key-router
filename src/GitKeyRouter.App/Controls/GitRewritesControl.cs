@@ -100,6 +100,13 @@ public sealed class GitRewritesControl : UserControl, IAsyncRefreshable
 
     private async Task ApplyPlanAsync(GitRewritePlan plan, string title)
     {
+        if (!plan.HasChanges)
+        {
+            _status("无需修改；Git URL rewrite 已与期望配置一致");
+            MessageBox.Show(this, "无需修改。当前 Git URL rewrite 已与期望配置一致。", "GitKeyRouter", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
         using var diff = new DiffPreviewForm(title, UiHelpers.FormatGitPlan(plan));
         if (diff.ShowDialog(this) != DialogResult.OK)
         {
@@ -122,6 +129,10 @@ public sealed class GitRewritesControl : UserControl, IAsyncRefreshable
         }
 
         await RefreshAsync();
+        if (!string.IsNullOrWhiteSpace(_urlInput.Text))
+        {
+            await PreviewUrlAsync();
+        }
     }
 
     private async Task DeleteSelectedAsync()
@@ -162,6 +173,13 @@ public sealed class GitRewritesControl : UserControl, IAsyncRefreshable
         await Task.WhenAll(parseTask, previewTask);
         var parsed = parseTask.Result;
         var preview = previewTask.Result;
+        var expectationMessage = preview.ExpectationStatus switch
+        {
+            UrlRewriteExpectationStatus.Applied => "期望路由已应用，当前 Git 全局配置与服务配置一致。",
+            UrlRewriteExpectationStatus.Missing => "期望路由存在，但当前 Git 全局配置缺失。可点击“应用缺失配置”或“修复当前全部路由”。",
+            UrlRewriteExpectationStatus.Conflict => "期望路由存在，但当前 Git 全局配置指向其他目标。可点击“修复当前全部路由”。",
+            _ => "未能从当前 GitKeyRouter 配置推导出期望路由。"
+        };
         _previewOutput.Text = string.Join("\r\n",
         [
             $"原始 URL：{preview.OriginalUrl}",
@@ -169,9 +187,14 @@ public sealed class GitRewritesControl : UserControl, IAsyncRefreshable
             $"URL 格式：{parsed?.PatternKind.ToString() ?? "<未识别>"}",
             $"命名空间：{parsed?.NamespacePath ?? "<未识别>"}",
             $"仓库名称：{parsed?.RepositoryName ?? "<未识别>"}",
-            $"匹配前缀：{preview.MatchedPrefix ?? "<无>"}",
-            $"目标 Base：{preview.MatchedBaseUrl ?? "<无>"}",
-            $"重写结果：{preview.RewrittenUrl}"
+            $"当前匹配前缀：{preview.ActualMatchedPrefix ?? "<无>"}",
+            $"当前目标 Base：{preview.ActualMatchedBaseUrl ?? "<无>"}",
+            $"当前重写结果：{preview.ActualRewrittenUrl ?? preview.OriginalUrl}",
+            $"匹配前缀：{preview.ExpectedMatchedPrefix ?? "<无>"}",
+            $"目标 Base：{preview.ExpectedMatchedBaseUrl ?? "<无>"}",
+            $"重写结果：{preview.ExpectedRewrittenUrl ?? preview.RewrittenUrl}",
+            $"期望路由状态：{preview.ExpectationStatus}",
+            expectationMessage
         ]);
     }
 

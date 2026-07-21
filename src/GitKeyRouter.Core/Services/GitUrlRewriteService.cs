@@ -242,6 +242,48 @@ public sealed class GitUrlRewriteService
         return plan;
     }
 
+    public async Task<GitRewritePlan> BuildServiceRepairPlanAsync(
+        string serviceInstanceId,
+        CancellationToken cancellationToken = default)
+    {
+        var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        config.Normalize();
+        var service = config.FindService(serviceInstanceId)
+            ?? throw new InvalidOperationException($"Git service '{serviceInstanceId}' was not found.");
+        var prefixes = _providers.Get(service.ProviderKind).GetSupportedRemotePatterns(service)
+            .Select(item => item.Prefix)
+            .ToList();
+        var expected = BuildExpectedEntries(config)
+            .Where(item => string.Equals(item.Service.Id, service.Id, StringComparison.OrdinalIgnoreCase)
+                && !IsLegacyAccountOwnerEntry(item))
+            .Select(item => item.Rule)
+            .ToList();
+        var actual = await _store.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        var plan = BuildReconcilePlan(expected, actual);
+        var legacy = await BuildLegacyAccountOwnerMigrationPlanAsync(cancellationToken).ConfigureAwait(false);
+
+        foreach (var rule in legacy.Removes.Where(rule => prefixes.Any(prefix =>
+                     rule.InsteadOfUrl.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))))
+        {
+            AddUnique(plan.Removes, rule);
+        }
+
+        foreach (var rule in legacy.Adds.Where(rule => prefixes.Any(prefix =>
+                     rule.InsteadOfUrl.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))))
+        {
+            AddUnique(plan.Adds, rule);
+        }
+
+        foreach (var routeId in legacy.RepositoryRouteIdsToRemove.Where(routeId => config.RepositoryRoutes.Any(route =>
+                     string.Equals(route.Id, routeId, StringComparison.OrdinalIgnoreCase)
+                     && string.Equals(route.ServiceInstanceId, service.Id, StringComparison.OrdinalIgnoreCase))))
+        {
+            plan.RepositoryRouteIdsToRemove.Add(routeId);
+        }
+
+        return plan;
+    }
+
     public async Task<GitRewritePlan> BuildLegacyAccountOwnerMigrationPlanAsync(CancellationToken cancellationToken = default)
     {
         var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
@@ -464,6 +506,41 @@ public sealed class GitUrlRewriteService
             .Where(item => !IsLegacyAccountOwnerEntry(item))
             .Select(item => item.Rule)
             .ToList();
+
+    private static GitRewritePlan BuildReconcilePlan(
+        IReadOnlyList<GitUrlRewriteRule> expected,
+        IReadOnlyList<GitUrlRewriteRule> actual)
+    {
+        var plan = new GitRewritePlan();
+        foreach (var expectedRule in expected)
+        {
+            var samePrefix = actual.Where(item =>
+                    string.Equals(item.InsteadOfUrl, expectedRule.InsteadOfUrl, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            var exactCount = samePrefix.Count(item => RuleEquals(item, expectedRule));
+            if (exactCount == 1 && samePrefix.Count == 1)
+            {
+                continue;
+            }
+
+            foreach (var rule in samePrefix)
+            {
+                AddUnique(plan.Removes, rule);
+            }
+
+            AddUnique(plan.Adds, expectedRule);
+        }
+
+        return plan;
+    }
+
+    private static void AddUnique(List<GitUrlRewriteRule> rules, GitUrlRewriteRule rule)
+    {
+        if (!rules.Any(item => RuleEquals(item, rule)))
+        {
+            rules.Add(rule);
+        }
+    }
 
     private static bool RuleEquals(GitUrlRewriteRule left, GitUrlRewriteRule right)
         => string.Equals(left.BaseUrl, right.BaseUrl, StringComparison.OrdinalIgnoreCase)

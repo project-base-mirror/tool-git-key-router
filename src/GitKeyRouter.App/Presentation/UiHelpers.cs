@@ -437,6 +437,11 @@ public static class UiHelpers
             builder.Append("+ ").Append(rule.ConfigKey).Append(" = ").AppendLine(rule.InsteadOfUrl);
         }
 
+        foreach (var routeId in plan.RepositoryRouteIdsToRemove)
+        {
+            builder.Append("- config.RepositoryRoutes[").Append(routeId).AppendLine("] (legacy account-as-Owner route)");
+        }
+
         if (!plan.HasChanges)
         {
             builder.AppendLine("No changes.");
