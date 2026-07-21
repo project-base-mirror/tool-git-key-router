@@ -469,6 +469,43 @@ public sealed class GitUrlRewriteService
     public Task<ProcessResult> TestRemoteAsync(string originalUrl, CancellationToken cancellationToken = default)
         => _store.TestRemoteAsync(originalUrl, cancellationToken);
 
+    public async Task<GitRemoteConnectionResult> TestRemoteRouteAsync(
+        string originalUrl,
+        CancellationToken cancellationToken = default)
+    {
+        var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        var match = _remoteUrlParser.Parse(originalUrl, config.GitServices);
+        var service = match is null ? null : config.FindService(match.ServiceInstanceId);
+        var process = await _store.TestRemoteAsync(originalUrl, cancellationToken).ConfigureAwait(false);
+        var output = process.StandardOutput + Environment.NewLine + process.StandardError;
+        var passwordFallback = output.Contains("password:", StringComparison.OrdinalIgnoreCase)
+            || output.Contains("password for", StringComparison.OrdinalIgnoreCase)
+            || output.Contains("keyboard-interactive", StringComparison.OrdinalIgnoreCase);
+        var providerAuthenticated = service is not null
+            && _providers.Get(service.ProviderKind).IsAuthenticationSuccess(process);
+        var traceAuthenticated = output.Contains("Authenticated to ", StringComparison.OrdinalIgnoreCase)
+            || output.Contains("Authentication succeeded", StringComparison.OrdinalIgnoreCase);
+        var authenticated = !passwordFallback && (process.Succeeded || providerAuthenticated || traceAuthenticated);
+        var classification = passwordFallback
+            ? "SSH authentication fell back to a password prompt."
+            : authenticated && process.Succeeded
+                ? "Git remote access and SSH key authentication succeeded."
+                : authenticated
+                    ? "SSH key authentication succeeded; the Git command returned a non-zero exit code."
+                    : process.TimedOut
+                        ? "Git remote access timed out."
+                        : "Git remote access did not confirm SSH key authentication.";
+
+        return new GitRemoteConnectionResult
+        {
+            Service = service,
+            Process = process,
+            AuthenticationSucceeded = authenticated,
+            PasswordFallbackDetected = passwordFallback,
+            Classification = classification
+        };
+    }
+
     public async Task<GitRemoteUrlMatch?> ParseRemoteUrlAsync(
         string remoteUrl,
         CancellationToken cancellationToken = default)

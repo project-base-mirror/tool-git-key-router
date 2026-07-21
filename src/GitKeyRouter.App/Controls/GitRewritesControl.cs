@@ -216,9 +216,9 @@ public sealed class GitRewritesControl : UserControl, IAsyncRefreshable
         }
 
         _status("正在执行 git ls-remote...");
-        var result = await _services.GitUrlRewriteService.TestRemoteAsync(_urlInput.Text.Trim());
-        CommandResultForm.ShowProcess(this, "git ls-remote 结果", result);
-        _status(result.Succeeded ? "Git 实际连接测试成功" : "Git 实际连接测试失败");
+        var result = await _services.GitUrlRewriteService.TestRemoteRouteAsync(_urlInput.Text.Trim());
+        CommandResultForm.ShowProcess(this, $"git ls-remote - {result.Classification}", result.Process);
+        _status(result.AuthenticationSucceeded ? "SSH 公钥认证已确认" : result.Classification);
     }
 
     private GitRewriteComparison? SelectedComparison()

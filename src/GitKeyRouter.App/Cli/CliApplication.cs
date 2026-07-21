@@ -223,9 +223,11 @@ public sealed class CliApplication
             return 3;
         }
 
-        var result = await _services.GitUrlRewriteService.TestRemoteAsync(url, cancellationToken).ConfigureAwait(false);
-        PrintProcess(result);
-        return result.Succeeded ? 0 : 2;
+        var result = await _services.GitUrlRewriteService.TestRemoteRouteAsync(url, cancellationToken).ConfigureAwait(false);
+        Console.WriteLine($"Connection: {result.Classification}");
+        Console.WriteLine($"Password fallback: {result.PasswordFallbackDetected}");
+        PrintProcess(result.Process);
+        return result.AuthenticationSucceeded ? 0 : 2;
     }
 
     private async Task<int> ParseUrlAsync(string[] args, CancellationToken cancellationToken)
