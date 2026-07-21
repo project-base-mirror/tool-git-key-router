@@ -54,6 +54,34 @@ public sealed class PublishSmokeTests
     }
 
     [Fact]
+    public async Task ManualPublishScript_HasValidPowerShellSyntax()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var scriptPath = Path.Combine(repositoryRoot, "scripts", "Publish-WinX64.ps1");
+        var quotedScriptPath = scriptPath.Replace("'", "''", StringComparison.Ordinal);
+        var parseCommand = $$"""
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile('{{quotedScriptPath}}', [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+                $errors | ForEach-Object { [Console]::Error.WriteLine($_.Message) }
+                exit 1
+            }
+            """;
+
+        var result = await RunProcessAsync(
+            "powershell.exe",
+            ["-NoProfile", "-NonInteractive", "-Command", parseCommand],
+            repositoryRoot,
+            TimeSpan.FromSeconds(30),
+            captureOutput: true);
+
+        Assert.True(
+            result.ExitCode == 0,
+            $"Publish-WinX64.ps1 has invalid syntax.{Environment.NewLine}{result.StandardOutput}{Environment.NewLine}{result.StandardError}");
+    }
+
+    [Fact]
     public async Task ReleasePublish_ProducesBothExecutablesAndVersionedAssets()
     {
         var repositoryRoot = FindRepositoryRoot();

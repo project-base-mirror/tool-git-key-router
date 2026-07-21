@@ -28,7 +28,7 @@ function Invoke-DotNet {
 
     & dotnet @Arguments
     if ($LASTEXITCODE -ne 0) {
-        throw "dotnet command failed with exit code $LASTEXITCODE: dotnet $($Arguments -join ' ')"
+        throw "dotnet command failed with exit code ${LASTEXITCODE}: dotnet $($Arguments -join ' ')"
     }
 }
 
@@ -53,16 +53,16 @@ function Publish-Variant {
         '-o', $PublishDir
     )
 
-    $validationArguments = @(
-        '-PublishDir', $PublishDir,
-        '-ChecksumFileName', $ChecksumFileName
-    )
-
-    if ($SkipPublishedAppSmokeTest) {
-        $validationArguments += '-SkipLaunch'
+    $validationParameters = @{
+        PublishDir = $PublishDir
+        ChecksumFileName = $ChecksumFileName
     }
 
-    & $validationScript @validationArguments
+    if ($SkipPublishedAppSmokeTest) {
+        $validationParameters.SkipLaunch = $true
+    }
+
+    & $validationScript @validationParameters
     Write-Host "Published $Profile to: $PublishDir"
 }
 
