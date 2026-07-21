@@ -59,10 +59,132 @@ public sealed partial class DiagnosticService
             return report;
         }
 
+        AddServiceAndRouteChecks(report, config);
         await AddIdentityChecksAsync(report, config, cancellationToken).ConfigureAwait(false);
         await AddSshConfigChecksAsync(report, config, cancellationToken).ConfigureAwait(false);
-        await AddGitChecksAsync(report, cancellationToken).ConfigureAwait(false);
+        await AddGitChecksAsync(report, config, cancellationToken).ConfigureAwait(false);
         return report;
+    }
+
+    private void AddServiceAndRouteChecks(DiagnosticReport report, AppConfig config)
+    {
+        foreach (var route in config.RepositoryRoutes)
+        {
+            route.Normalize();
+        }
+
+        foreach (var duplicate in config.GitServices
+                     .GroupBy(item => item.WebBaseUrl.Trim().TrimEnd('/'), StringComparer.OrdinalIgnoreCase)
+                     .Where(group => !string.IsNullOrWhiteSpace(group.Key) && group.Count() > 1))
+        {
+            Add(report, "SERVICE_WEB_SOURCE_DUPLICATE", "Git services", "WebBaseUrl is declared by multiple services",
+                $"Source: {duplicate.Key}{Environment.NewLine}Services: {string.Join(", ", duplicate.Select(item => item.DisplayName))}",
+                DiagnosticSeverity.Error, "Give every independent Git service a unique WebBaseUrl.");
+        }
+
+        foreach (var duplicate in config.GitServices
+                     .GroupBy(item => item.HostName.Trim(), StringComparer.OrdinalIgnoreCase)
+                     .Where(group => !string.IsNullOrWhiteSpace(group.Key) && group.Count() > 1))
+        {
+            Add(report, "SERVICE_SSH_SOURCE_DUPLICATE", "Git services", "SSH host source is declared by multiple services",
+                $"Source: {duplicate.Key}{Environment.NewLine}Services: {string.Join(", ", duplicate.Select(item => item.DisplayName))}",
+                DiagnosticSeverity.Error, "Give every independent Git service a unique SSH host source.");
+        }
+
+        foreach (var service in config.GitServices)
+        {
+            var defaultIdentity = string.IsNullOrWhiteSpace(service.DefaultIdentityId)
+                ? null
+                : config.Identities.FirstOrDefault(item => string.Equals(item.Id, service.DefaultIdentityId, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(service.DefaultIdentityId) && defaultIdentity is null)
+            {
+                Add(report, "SERVICE_DEFAULT_IDENTITY_MISSING", "Git services", $"Default identity: {service.DisplayName}",
+                    $"Identity '{service.DefaultIdentityId}' does not exist.", DiagnosticSeverity.Error,
+                    "Select an identity that exists and belongs to this service.");
+            }
+            else if (defaultIdentity is not null
+                && !string.Equals(defaultIdentity.ServiceInstanceId, service.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                Add(report, "SERVICE_DEFAULT_IDENTITY_MISMATCH", "Git services", $"Default identity belongs to another service: {service.DisplayName}",
+                    $"Identity '{defaultIdentity.DisplayName}' belongs to '{defaultIdentity.ServiceInstanceId}'.", DiagnosticSeverity.Error,
+                    "Select a default identity from the same Git service.");
+            }
+
+            var serviceRoutes = config.RepositoryRoutes.Where(route => route.Enabled
+                && route.Scope == GitRouteScope.Service
+                && string.Equals(route.ServiceInstanceId, service.Id, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (service.ProviderKind == GitProviderKind.Gitea)
+            {
+                Add(report, $"GITEA_SSH_USER_{service.Id}", "Git services", $"Gitea SSH user: {service.DisplayName}",
+                    $"SSH User is '{service.SshUser}'. In Gitea, 'git' is the shared SSH service account; the real web user is identified by the submitted public key, not by AccountName.",
+                    string.Equals(service.SshUser, "git", StringComparison.OrdinalIgnoreCase) ? DiagnosticSeverity.Normal : DiagnosticSeverity.Warning,
+                    string.Equals(service.SshUser, "git", StringComparison.OrdinalIgnoreCase) ? null : "Use SSH User 'git' unless this Gitea instance is explicitly configured otherwise.");
+                if (defaultIdentity is not null && serviceRoutes.Count == 0)
+                {
+                    Add(report, "GITEA_DEFAULT_ROUTE_MISSING", "Routes", $"Gitea default identity has no service route: {service.DisplayName}",
+                        $"Default identity: {defaultIdentity.DisplayName} ({defaultIdentity.HostAlias})", DiagnosticSeverity.Error,
+                        "Save the service again or create an enabled service-level route for the default identity.");
+                }
+            }
+            else if (service.ProviderKind == GitProviderKind.GitHub
+                && (defaultIdentity is not null || serviceRoutes.Count > 0))
+            {
+                Add(report, "GITHUB_SERVICE_ROUTE_FORBIDDEN", "Routes", "GitHub is configured with a service-level identity",
+                    "A github.com-wide rewrite would force every Owner through one SSH key and break multi-account routing.",
+                    DiagnosticSeverity.Error, "Remove the service-level default and configure explicit Owner routes.");
+            }
+
+            if ((service.SshPort ?? 22) == 22)
+            {
+                Add(report, $"SSH_DEFAULT_PORT_{service.Id}", "Git services", $"Default SSH port: {service.DisplayName}",
+                    "Port 22 is used. SCP-style clone URLs remain git@host:owner/repository.git and require no explicit port.", DiagnosticSeverity.Normal);
+            }
+        }
+
+        foreach (var duplicate in config.RepositoryRoutes.Where(item => item.Enabled)
+                     .GroupBy(item => $"{item.ServiceInstanceId}\n{item.Scope}\n{item.RoutePath}", StringComparer.OrdinalIgnoreCase)
+                     .Where(group => group.Count() > 1))
+        {
+            var route = duplicate.First();
+            Add(report, $"ROUTE_{route.Scope.ToString().ToUpperInvariant()}_DUPLICATE", "Routes", $"Duplicate {route.Scope} route",
+                $"{route.ServiceInstanceId}/{route.DisplayPath}", DiagnosticSeverity.Error,
+                "Keep only one enabled route for each service, scope, and route path.");
+        }
+
+        foreach (var serviceGroup in config.RepositoryRoutes.Where(item => item.Enabled)
+                     .GroupBy(item => item.ServiceInstanceId, StringComparer.OrdinalIgnoreCase))
+        {
+            var serviceRoute = serviceGroup.FirstOrDefault(item => item.Scope == GitRouteScope.Service);
+            var overrides = serviceGroup.Where(item => item.Scope != GitRouteScope.Service).ToList();
+            if (serviceRoute is not null && overrides.Count > 0)
+            {
+                Add(report, "ROUTE_SCOPE_COVERAGE", "Routes", "Scoped routes override a service default",
+                    $"Service: {serviceGroup.Key}{Environment.NewLine}Service identity: {serviceRoute.IdentityId}{Environment.NewLine}Overrides: {string.Join(", ", overrides.Select(item => $"{item.Scope}:{item.DisplayPath}"))}",
+                    DiagnosticSeverity.Normal,
+                    "Git uses the longest matching insteadOf prefix: Repository overrides Owner, and Owner overrides Service.");
+            }
+        }
+
+        foreach (var service in config.GitServices.Where(item => item.ProviderKind == GitProviderKind.Gitea
+                     && !string.IsNullOrWhiteSpace(item.DefaultIdentityId)))
+        {
+            var identity = config.Identities.FirstOrDefault(item => string.Equals(item.Id, service.DefaultIdentityId, StringComparison.OrdinalIgnoreCase));
+            if (identity is null)
+            {
+                continue;
+            }
+
+            foreach (var route in config.RepositoryRoutes.Where(item => item.Enabled
+                         && item.Scope == GitRouteScope.Owner
+                         && string.Equals(item.ServiceInstanceId, service.Id, StringComparison.OrdinalIgnoreCase)
+                         && string.Equals(item.Owner, identity.AccountName, StringComparison.OrdinalIgnoreCase)))
+            {
+                Add(report, "LEGACY_ACCOUNT_AS_OWNER_ROUTE", "Routes", "Legacy account-as-Owner route",
+                    $"Service: {service.DisplayName}{Environment.NewLine}AccountName/Owner: {identity.AccountName}{Environment.NewLine}HostAlias: {identity.HostAlias}",
+                    DiagnosticSeverity.Warning,
+                    "Preview 'Convert legacy account route' and replace it with a service-level Gitea route after confirmation.");
+            }
+        }
     }
 
     private void AddEnvironmentItems(DiagnosticReport report)
@@ -108,10 +230,15 @@ public sealed partial class DiagnosticService
                      .GroupBy(item => NormalizePath(item.PrivateKeyPath), StringComparer.OrdinalIgnoreCase)
                      .Where(group => group.Count() > 1))
         {
-            Add(report, "PRIVATE_KEY_PATH_SHARED", "Keys", "Private key path is shared by multiple identities",
+            var sameServiceDifferentAccounts = duplicate
+                .GroupBy(item => item.ServiceInstanceId, StringComparer.OrdinalIgnoreCase)
+                .Any(group => group.Select(item => item.AccountName).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1);
+            Add(report, sameServiceDifferentAccounts ? "PRIVATE_KEY_SAME_SERVICE_ACCOUNTS" : "PRIVATE_KEY_PATH_SHARED", "Keys", "Private key path is shared by multiple identities",
                 $"Path: {duplicate.Key}{Environment.NewLine}Identities: {string.Join(", ", duplicate.Select(item => item.DisplayName))}",
-                DiagnosticSeverity.Warning,
-                "Use a separate key for each account unless sharing is intentional.");
+                sameServiceDifferentAccounts ? DiagnosticSeverity.Error : DiagnosticSeverity.Normal,
+                sameServiceDifferentAccounts
+                    ? "Do not assign the same key to different accounts in one Git service."
+                    : "This is allowed when independent services intentionally trust the same key pair.");
         }
 
         foreach (var duplicate in config.Identities
@@ -119,10 +246,15 @@ public sealed partial class DiagnosticService
                      .GroupBy(item => NormalizePath(item.PublicKeyPath), StringComparer.OrdinalIgnoreCase)
                      .Where(group => group.Count() > 1))
         {
-            Add(report, "PUBLIC_KEY_PATH_SHARED", "Keys", "Public key path is shared by multiple identities",
+            var sameServiceDifferentAccounts = duplicate
+                .GroupBy(item => item.ServiceInstanceId, StringComparer.OrdinalIgnoreCase)
+                .Any(group => group.Select(item => item.AccountName).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1);
+            Add(report, sameServiceDifferentAccounts ? "PUBLIC_KEY_SAME_SERVICE_ACCOUNTS" : "PUBLIC_KEY_PATH_SHARED", "Keys", "Public key path is shared by multiple identities",
                 $"Path: {duplicate.Key}{Environment.NewLine}Identities: {string.Join(", ", duplicate.Select(item => item.DisplayName))}",
-                DiagnosticSeverity.Warning,
-                "Confirm that these identities are intended to use the same key pair.");
+                sameServiceDifferentAccounts ? DiagnosticSeverity.Error : DiagnosticSeverity.Normal,
+                sameServiceDifferentAccounts
+                    ? "Do not assign the same public key to different accounts in one Git service."
+                    : "This is an informational shared-key relationship across independent services.");
         }
 
         var publicKeyMaterial = new Dictionary<string, List<(GitIdentity Identity, string Path)>>(StringComparer.Ordinal);
@@ -176,22 +308,27 @@ public sealed partial class DiagnosticService
                      group.Select(item => item.Identity.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1
                      && group.Select(item => NormalizePath(item.Path)).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1))
         {
-            Add(report, "PUBLIC_KEY_MATERIAL_REUSED", "Keys", "Different files contain the same public key",
+            var sameServiceDifferentAccounts = duplicate
+                .GroupBy(item => item.Identity.ServiceInstanceId, StringComparer.OrdinalIgnoreCase)
+                .Any(group => group.Select(item => item.Identity.AccountName).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1);
+            Add(report, sameServiceDifferentAccounts ? "PUBLIC_KEY_MATERIAL_SAME_SERVICE_ACCOUNTS" : "PUBLIC_KEY_MATERIAL_REUSED", "Keys", "Different files contain the same public key",
                 string.Join(Environment.NewLine, duplicate.Select(item => $"{item.Identity.DisplayName}: {item.Path}")),
-                DiagnosticSeverity.Warning,
-                "These accounts use copies of the same key pair. Generate separate keys unless this is intentional.");
+                sameServiceDifferentAccounts ? DiagnosticSeverity.Error : DiagnosticSeverity.Normal,
+                sameServiceDifferentAccounts
+                    ? "Generate separate keys for different accounts in the same Git service."
+                    : "Copies of one key across independent services are allowed when intentional.");
         }
 
         foreach (var group in config.RepositoryRoutes.Where(item => item.Enabled)
                      .GroupBy(
-                         item => $"{item.ServiceInstanceId}\n{item.NamespacePath}",
+                         item => $"{item.ServiceInstanceId}\n{item.Scope}\n{item.RoutePath}",
                          StringComparer.OrdinalIgnoreCase)
                      .Where(group => group.Select(item => item.IdentityId).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1))
         {
             var route = group.First();
             Add(report, "NAMESPACE_MULTIPLE_IDENTITIES", "Routes", "Namespace points to multiple identities",
-                $"{route.ServiceInstanceId}/{route.NamespacePath}", DiagnosticSeverity.Error,
-                "Keep only one enabled identity route for each service namespace.");
+                $"{route.ServiceInstanceId}/{route.DisplayPath}", DiagnosticSeverity.Error,
+                "Keep only one enabled identity route for each service scope and path.");
         }
 
         foreach (var identity in config.Identities)
@@ -279,7 +416,7 @@ public sealed partial class DiagnosticService
         }
     }
 
-    private async Task AddGitChecksAsync(DiagnosticReport report, CancellationToken cancellationToken)
+    private async Task AddGitChecksAsync(DiagnosticReport report, AppConfig config, CancellationToken cancellationToken)
     {
         try
         {
