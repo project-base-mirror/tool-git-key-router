@@ -59,8 +59,10 @@ public sealed class OwnerRouteService
             $"Save repository route: {route.ServiceInstanceId}/{route.NamespacePath}",
             cancellationToken).ConfigureAwait(false);
         var existing = config.RepositoryRoutes.FirstOrDefault(item =>
-            string.Equals(item.ServiceInstanceId, originalServiceInstanceId ?? route.ServiceInstanceId, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(item.NamespacePath, originalNamespacePath ?? route.NamespacePath, StringComparison.OrdinalIgnoreCase));
+            string.Equals(item.Id, route.Id, StringComparison.OrdinalIgnoreCase))
+            ?? config.RepositoryRoutes.FirstOrDefault(item =>
+                string.Equals(item.ServiceInstanceId, originalServiceInstanceId ?? route.ServiceInstanceId, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(item.NamespacePath, originalNamespacePath ?? route.NamespacePath, StringComparison.OrdinalIgnoreCase));
         if (existing is null)
         {
             config.RepositoryRoutes.Add(route);
@@ -99,6 +101,24 @@ public sealed class OwnerRouteService
 
         await _backupService.CreateSnapshotAsync(
             $"Delete repository route: {serviceInstanceId}/{namespacePath}",
+            cancellationToken).ConfigureAwait(false);
+        config.RepositoryRoutes.Remove(route);
+        await _configStore.SaveAsync(config, cancellationToken).ConfigureAwait(false);
+        return OperationResult.Ok("Repository route deleted from application configuration.");
+    }
+
+    public async Task<OperationResult> DeleteByIdAsync(string routeId, CancellationToken cancellationToken = default)
+    {
+        var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        var route = config.RepositoryRoutes.FirstOrDefault(item =>
+            string.Equals(item.Id, routeId, StringComparison.OrdinalIgnoreCase));
+        if (route is null)
+        {
+            return OperationResult.Fail("Repository route was not found.");
+        }
+
+        await _backupService.CreateSnapshotAsync(
+            $"Delete repository route: {route.ServiceInstanceId}/{route.DisplayPath}",
             cancellationToken).ConfigureAwait(false);
         config.RepositoryRoutes.Remove(route);
         await _configStore.SaveAsync(config, cancellationToken).ConfigureAwait(false);

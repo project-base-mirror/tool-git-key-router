@@ -17,6 +17,7 @@ public sealed class GitServiceEditForm : Form
     private readonly CheckBox _allowInsecureHttp = new() { Text = "同时接受 HTTP URL（不安全）", AutoSize = true };
     private readonly ComboBox _defaultIdentity = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly GitServiceInstance? _original;
+    private string _suggestedId = string.Empty;
 
     public GitServiceEditForm(GitServiceInstance? service = null, IReadOnlyList<GitIdentity>? identities = null)
     {
@@ -89,7 +90,9 @@ public sealed class GitServiceEditForm : Form
             return;
         }
 
-        LoadService(GitServiceService.CreateTemplate(template));
+        var service = GitServiceService.CreateTemplate(template);
+        _suggestedId = service.Id;
+        LoadService(service);
     }
 
     private void LoadService(GitServiceInstance service)
@@ -127,7 +130,7 @@ public sealed class GitServiceEditForm : Form
 
         ResultService = new GitServiceInstance
         {
-            Id = _original?.Id ?? string.Empty,
+            Id = _original?.Id ?? _suggestedId,
             DisplayName = _displayName.Text.Trim(),
             ProviderKind = _provider.SelectedItem is GitProviderKind kind ? kind : GitProviderKind.Generic,
             HostName = _hostName.Text.Trim(),
