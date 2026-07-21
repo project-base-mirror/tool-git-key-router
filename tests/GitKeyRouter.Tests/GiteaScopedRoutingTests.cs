@@ -184,6 +184,247 @@ public sealed class GiteaScopedRoutingTests
         Assert.Contains(store.Rules, rule => rule.InsteadOfUrl == "https://git.policoil.top/");
     }
 
+    [Theory]
+    [InlineData("git@git.policoil.top:project-base/proto-tool-pb-extra.git", "git@git.policoil.top:")]
+    [InlineData("https://git.policoil.top/project-base/proto-tool-pb-extra.git", "https://git.policoil.top/")]
+    [InlineData("ssh://git@git.policoil.top/project-base/proto-tool-pb-extra.git", "ssh://git@git.policoil.top/")]
+    [InlineData("git+ssh://git@git.policoil.top/project-base/proto-tool-pb-extra.git", "git+ssh://git@git.policoil.top/")]
+    public async Task CloudPreview_RewritesEverySupportedUrlFormat(string originalUrl, string expectedPrefix)
+    {
+        var service = GitServiceService.CreateTemplate("Gitea Cloud");
+        var identity = Identity("gitea-cloud", service.Id, "gitea-cloud");
+        service.DefaultIdentityId = identity.Id;
+        var configStore = new InMemoryAppConfigStore
+        {
+            Config = new AppConfig
+            {
+                GitServices = [GitServiceInstance.CreateGitHubCom(), service],
+                Identities = [identity]
+            }
+        };
+        var store = new FakeGitUrlRewriteStore();
+        configStore.Config.Normalize();
+        store.Rules.AddRange(OwnerRouteService.BuildExpectedRules(configStore.Config));
+        var rewrites = new GitUrlRewriteService(configStore, store, new NoOpBackupService());
+
+        var preview = await rewrites.PreviewAsync(originalUrl);
+
+        Assert.Equal(expectedPrefix, preview.ExpectedMatchedPrefix);
+        Assert.Equal("git@gitea-cloud:", preview.ExpectedMatchedBaseUrl);
+        Assert.Equal("git@gitea-cloud:project-base/proto-tool-pb-extra.git", preview.ExpectedRewrittenUrl);
+        Assert.Equal(UrlRewriteExpectationStatus.Applied, preview.ExpectationStatus);
+    }
+
+    [Theory]
+    [InlineData("project-base", "proto-tool-pb-extra.git")]
+    [InlineData("game-riki", "server.git")]
+    [InlineData("game-hhmx", "client.git")]
+    public async Task ServiceRoute_CoversEveryOrganization(string owner, string repository)
+    {
+        var service = GitServiceService.CreateTemplate("Gitea Cloud");
+        var identity = Identity("gitea-cloud", service.Id, "gitea-cloud");
+        service.DefaultIdentityId = identity.Id;
+        var configStore = new InMemoryAppConfigStore
+        {
+            Config = new AppConfig
+            {
+                GitServices = [GitServiceInstance.CreateGitHubCom(), service],
+                Identities = [identity]
+            }
+        };
+        configStore.Config.Normalize();
+        var store = new FakeGitUrlRewriteStore();
+        store.Rules.AddRange(OwnerRouteService.BuildExpectedRules(configStore.Config));
+        var rewrites = new GitUrlRewriteService(configStore, store, new NoOpBackupService());
+
+        var preview = await rewrites.PreviewAsync($"git@git.policoil.top:{owner}/{repository}");
+
+        Assert.Equal($"git@gitea-cloud:{owner}/{repository}", preview.RewrittenUrl);
+        Assert.DoesNotContain("fgc0109/", preview.MatchedBaseUrl ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Preview_ShowsExpectedRouteWhenGlobalGitConfigIsMissing()
+    {
+        var service = GitServiceService.CreateTemplate("Gitea Cloud");
+        var identity = Identity("gitea-cloud", service.Id, "gitea-cloud");
+        service.DefaultIdentityId = identity.Id;
+        var configStore = new InMemoryAppConfigStore
+        {
+            Config = new AppConfig
+            {
+                GitServices = [GitServiceInstance.CreateGitHubCom(), service],
+                Identities = [identity]
+            }
+        };
+        var rewrites = new GitUrlRewriteService(configStore, new FakeGitUrlRewriteStore(), new NoOpBackupService());
+
+        var preview = await rewrites.PreviewAsync("git@git.policoil.top:project-base/proto-tool-pb-extra.git");
+
+        Assert.Null(preview.ActualMatchedPrefix);
+        Assert.Equal("git@git.policoil.top:", preview.ExpectedMatchedPrefix);
+        Assert.Equal("git@gitea-cloud:", preview.ExpectedMatchedBaseUrl);
+        Assert.Equal("git@gitea-cloud:project-base/proto-tool-pb-extra.git", preview.ExpectedRewrittenUrl);
+        Assert.Equal(UrlRewriteExpectationStatus.Missing, preview.ExpectationStatus);
+    }
+
+    [Fact]
+    public void Normalize_DerivesServiceRouteWithoutTreatingAccountNameAsOwner()
+    {
+        var service = GitServiceService.CreateTemplate("Gitea Cloud");
+        var identity = Identity("gitea-cloud", service.Id, "gitea-cloud");
+        service.DefaultIdentityId = identity.Id;
+        var config = new AppConfig
+        {
+            GitServices = [GitServiceInstance.CreateGitHubCom(), service],
+            Identities = [identity]
+        };
+
+        config.Normalize();
+
+        var route = Assert.Single(config.RepositoryRoutes, item => item.ServiceInstanceId == service.Id);
+        Assert.Equal(GitRouteScope.Service, route.Scope);
+        Assert.Equal(string.Empty, route.NamespacePath);
+        Assert.DoesNotContain(config.RepositoryRoutes, item => item.Scope == GitRouteScope.Owner);
+    }
+
+    [Fact]
+    public async Task LegacyMigration_RemovesOnlyGiteaAccountRouteAndKeepsGitHubOwnerRoute()
+    {
+        var gitea = GitServiceService.CreateTemplate("Gitea Cloud");
+        var giteaIdentity = Identity("gitea-cloud", gitea.Id, "gitea-cloud");
+        gitea.DefaultIdentityId = giteaIdentity.Id;
+        var github = GitServiceInstance.CreateGitHubCom();
+        var githubIdentity = Identity("github-fgc", github.Id, "fgc0109");
+        var legacyRoute = Route(gitea, giteaIdentity, GitRouteScope.Owner, "fgc0109");
+        legacyRoute.Id = "legacy-gitea-owner";
+        var githubRoute = Route(github, githubIdentity, GitRouteScope.Owner, "fgc0109");
+        githubRoute.Id = "github-owner";
+        var configStore = new InMemoryAppConfigStore
+        {
+            Config = new AppConfig
+            {
+                GitServices = [github, gitea],
+                Identities = [githubIdentity, giteaIdentity],
+                RepositoryRoutes = [legacyRoute, githubRoute]
+            }
+        };
+        var store = new FakeGitUrlRewriteStore();
+        store.Rules.AddRange(GitProviderAdapterRegistry.CreateDefault().Get(GitProviderKind.Gitea)
+            .BuildRewriteRules(gitea, giteaIdentity, legacyRoute));
+        store.Rules.AddRange(GitProviderAdapterRegistry.CreateDefault().Get(GitProviderKind.GitHub)
+            .BuildRewriteRules(github, githubIdentity, githubRoute));
+        var rewrites = new GitUrlRewriteService(configStore, store, new NoOpBackupService());
+
+        var plan = await rewrites.BuildLegacyAccountOwnerMigrationPlanAsync();
+
+        Assert.Contains("legacy-gitea-owner", plan.RepositoryRouteIdsToRemove);
+        Assert.DoesNotContain("github-owner", plan.RepositoryRouteIdsToRemove);
+        Assert.DoesNotContain(plan.Removes, rule => rule.InsteadOfUrl.Contains("github.com", StringComparison.OrdinalIgnoreCase));
+        Assert.True((await rewrites.ApplyPlanAsync(plan, "migrate legacy Gitea route")).Success);
+        Assert.Contains(configStore.Config.RepositoryRoutes, route => route.Id == "github-owner");
+        Assert.DoesNotContain(configStore.Config.RepositoryRoutes, route => route.Id == "legacy-gitea-owner");
+        Assert.Contains(configStore.Config.RepositoryRoutes, route => route.ServiceInstanceId == gitea.Id && route.Scope == GitRouteScope.Service);
+        Assert.Contains(store.Rules, rule => rule.BaseUrl == "git@fgc0109:fgc0109/" && rule.InsteadOfUrl.Contains("github.com", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task ServiceRepairPlan_DoesNotCrossLocalCloudOrGitHubSources()
+    {
+        var cloud = GitServiceService.CreateTemplate("Gitea Cloud");
+        var local = GitServiceService.CreateTemplate("Gitea Local");
+        var cloudIdentity = Identity("gitea-cloud", cloud.Id, "gitea-cloud");
+        var localIdentity = Identity("gitea-local", local.Id, "gitea-local");
+        cloud.DefaultIdentityId = cloudIdentity.Id;
+        local.DefaultIdentityId = localIdentity.Id;
+        var configStore = new InMemoryAppConfigStore
+        {
+            Config = new AppConfig
+            {
+                GitServices = [GitServiceInstance.CreateGitHubCom(), cloud, local],
+                Identities = [cloudIdentity, localIdentity]
+            }
+        };
+        var store = new FakeGitUrlRewriteStore();
+        store.Rules.Add(new GitUrlRewriteRule("git@gitea-local:", "git@git.policoil.top:"));
+        store.Rules.Add(new GitUrlRewriteRule("git@fgc0109:fgc0109/", "https://github.com/fgc0109/"));
+        var rewrites = new GitUrlRewriteService(configStore, store, new NoOpBackupService());
+
+        var plan = await rewrites.BuildServiceRepairPlanAsync(cloud.Id);
+
+        Assert.Contains(plan.Removes, rule => rule.BaseUrl == "git@gitea-local:" && rule.InsteadOfUrl == "git@git.policoil.top:");
+        Assert.Contains(plan.Adds, rule => rule.BaseUrl == "git@gitea-cloud:" && rule.InsteadOfUrl == "git@git.policoil.top:");
+        Assert.DoesNotContain(plan.Adds.Concat(plan.Removes), rule => rule.InsteadOfUrl.Contains("gitea.lan.policoil.top", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(plan.Adds.Concat(plan.Removes), rule => rule.InsteadOfUrl.Contains("github.com", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task RemoteTest_AcceptsAuthenticatedNonZeroExitCodeWithoutPasswordFallback()
+    {
+        var service = GitServiceService.CreateTemplate("Gitea Cloud");
+        var identity = Identity("gitea-cloud", service.Id, "gitea-cloud");
+        service.DefaultIdentityId = identity.Id;
+        var configStore = new InMemoryAppConfigStore
+        {
+            Config = new AppConfig
+            {
+                GitServices = [GitServiceInstance.CreateGitHubCom(), service],
+                Identities = [identity]
+            }
+        };
+        var store = new FakeGitUrlRewriteStore
+        {
+            RemoteResult = new ProcessResult
+            {
+                ExecutablePath = "git.exe",
+                Arguments = ["ls-remote"],
+                ExitCode = 1,
+                StandardError = "Authenticated to git.policoil.top using publickey. Gitea: successfully authenticated"
+            }
+        };
+        var rewrites = new GitUrlRewriteService(configStore, store, new NoOpBackupService());
+
+        var result = await rewrites.TestRemoteRouteAsync("git@git.policoil.top:project-base/proto-tool-pb-extra.git");
+
+        Assert.True(result.AuthenticationSucceeded);
+        Assert.False(result.PasswordFallbackDetected);
+        Assert.Equal(service.Id, result.Service?.Id);
+        Assert.Contains("non-zero", result.Classification, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RemoteTest_RejectsPasswordFallbackEvenWhenEndpointWasReached()
+    {
+        var service = GitServiceService.CreateTemplate("Gitea Cloud");
+        var identity = Identity("gitea-cloud", service.Id, "gitea-cloud");
+        service.DefaultIdentityId = identity.Id;
+        var configStore = new InMemoryAppConfigStore
+        {
+            Config = new AppConfig
+            {
+                GitServices = [GitServiceInstance.CreateGitHubCom(), service],
+                Identities = [identity]
+            }
+        };
+        var store = new FakeGitUrlRewriteStore
+        {
+            RemoteResult = new ProcessResult
+            {
+                ExecutablePath = "git.exe",
+                Arguments = ["ls-remote"],
+                ExitCode = 1,
+                StandardError = "git@git.policoil.top's password:"
+            }
+        };
+        var rewrites = new GitUrlRewriteService(configStore, store, new NoOpBackupService());
+
+        var result = await rewrites.TestRemoteRouteAsync("git@git.policoil.top:project-base/proto-tool-pb-extra.git");
+
+        Assert.False(result.AuthenticationSucceeded);
+        Assert.True(result.PasswordFallbackDetected);
+        Assert.Contains("password", result.Classification, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static GitIdentity Identity(string id, string serviceId, string alias, string account = "fgc0109")
         => new()
         {

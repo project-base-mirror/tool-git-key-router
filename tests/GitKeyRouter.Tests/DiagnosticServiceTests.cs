@@ -183,7 +183,10 @@ public sealed class DiagnosticServiceTests
         var report = await diagnostics.RunAsync();
 
         var mismatch = Assert.Single(report.Items, item => item.Code == "SSH_BLOCK_SERVICE_MISMATCH");
-        Assert.Contains("git.home.example:2222", mismatch.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("HostName git.home.example", mismatch.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Port 2222", mismatch.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Current managed block", mismatch.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Diff:", mismatch.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     private static GitHubIdentity Identity(

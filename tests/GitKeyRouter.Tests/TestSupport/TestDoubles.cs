@@ -77,6 +77,8 @@ internal sealed class FakeGitUrlRewriteStore : IGitUrlRewriteStore
 {
     public List<GitUrlRewriteRule> Rules { get; } = [];
 
+    public ProcessResult? RemoteResult { get; set; }
+
     public string? GitExecutablePath => "git.exe";
 
     public Task<IReadOnlyList<GitUrlRewriteRule>> GetAllAsync(CancellationToken cancellationToken = default)
@@ -111,7 +113,7 @@ internal sealed class FakeGitUrlRewriteStore : IGitUrlRewriteStore
     }
 
     public Task<ProcessResult> TestRemoteAsync(string originalUrl, CancellationToken cancellationToken = default)
-        => Task.FromResult(Success("ls-remote", originalUrl, "HEAD"));
+        => Task.FromResult(RemoteResult ?? Success("ls-remote", originalUrl, "HEAD"));
 
     private static ProcessResult Success(params string[] args)
         => new()

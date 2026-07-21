@@ -141,4 +141,106 @@ public sealed class ConfigurationMigrationTests
         Assert.Empty(config.GitProfiles);
         Assert.Empty(config.GitProfileRules);
     }
+
+    [Fact]
+    public async Task Schema3Migration_InfersGiteaDefaultsAndExposesServiceRoutes()
+    {
+        using var temp = new TemporaryDirectory();
+        var paths = new TestAppPaths(temp.Path);
+        Directory.CreateDirectory(paths.AppDataDirectory);
+        var schema3 = """
+        {
+          "SchemaVersion": 3,
+          "GitServices": [
+            {
+              "Id": "git.policoil.top",
+              "DisplayName": "Gitea-Cloud",
+              "ProviderKind": "Gitea",
+              "HostName": "git.policoil.top",
+              "SshUser": "git",
+              "WebBaseUrl": "https://git.policoil.top"
+            },
+            {
+              "Id": "gitea.lan.policoil.top",
+              "DisplayName": "Gitea-Local",
+              "ProviderKind": "Gitea",
+              "HostName": "gitea.lan.policoil.top",
+              "SshUser": "git",
+              "WebBaseUrl": "https://gitea.lan.policoil.top"
+            }
+          ],
+          "Identities": [
+            {
+              "Id": "cloud-identity",
+              "ServiceInstanceId": "git.policoil.top",
+              "DisplayName": "fgc0109",
+              "AccountName": "fgc0109",
+              "HostAlias": "gitea-cloud",
+              "PrivateKeyPath": "C:\\keys\\shared",
+              "PublicKeyPath": "C:\\keys\\shared.pub"
+            },
+            {
+              "Id": "local-identity",
+              "ServiceInstanceId": "gitea.lan.policoil.top",
+              "DisplayName": "gitea-local",
+              "AccountName": "fgc0109",
+              "HostAlias": "gitea-local",
+              "PrivateKeyPath": "C:\\keys\\shared",
+              "PublicKeyPath": "C:\\keys\\shared.pub"
+            }
+          ],
+          "RepositoryRoutes": [
+            {
+              "Id": "legacy-cloud",
+              "ServiceInstanceId": "git.policoil.top",
+              "NamespacePath": "fgc0109",
+              "IdentityId": "cloud-identity",
+              "Enabled": true
+            },
+            {
+              "Id": "legacy-local",
+              "ServiceInstanceId": "gitea.lan.policoil.top",
+              "NamespacePath": "fgc0109",
+              "IdentityId": "local-identity",
+              "Enabled": true
+            }
+          ]
+        }
+        """;
+        await File.WriteAllTextAsync(paths.ConfigPath, schema3);
+
+        var configStore = new JsonAppConfigStore(paths, new PhysicalFileSystem());
+        var config = await configStore.LoadAsync();
+        var cloud = Assert.Single(config.GitServices, item => item.Id == "git.policoil.top");
+        var local = Assert.Single(config.GitServices, item => item.Id == "gitea.lan.policoil.top");
+
+        Assert.Equal("cloud-identity", cloud.DefaultIdentityId);
+        Assert.Equal("local-identity", local.DefaultIdentityId);
+        Assert.Contains(config.RepositoryRoutes, route => route.Id == "legacy-cloud" && route.Scope == GitRouteScope.Owner);
+        Assert.Contains(config.RepositoryRoutes, route => route.Id == "legacy-local" && route.Scope == GitRouteScope.Owner);
+        Assert.Contains(config.RepositoryRoutes, route => route.Scope == GitRouteScope.Service && route.IdentityId == "cloud-identity");
+        Assert.Contains(config.RepositoryRoutes, route => route.Scope == GitRouteScope.Service && route.IdentityId == "local-identity");
+
+        var git = new FakeGitUrlRewriteStore();
+        foreach (var legacyRoute in config.RepositoryRoutes.Where(route => route.Scope == GitRouteScope.Owner))
+        {
+            var service = config.FindService(legacyRoute.ServiceInstanceId)!;
+            var identity = config.Identities.Single(item => item.Id == legacyRoute.IdentityId);
+            git.Rules.AddRange(GitProviderAdapterRegistry.CreateDefault().Get(GitProviderKind.Gitea)
+                .BuildRewriteRules(service, identity, legacyRoute));
+        }
+
+        var rewrites = new GitUrlRewriteService(configStore, git, new NoOpBackupService());
+        var preview = await rewrites.PreviewAsync("git@git.policoil.top:project-base/proto-tool-pb-extra.git");
+        var comparisons = await rewrites.CompareAsync();
+
+        Assert.Equal("git@git.policoil.top:", preview.ExpectedMatchedPrefix);
+        Assert.Equal("git@gitea-cloud:", preview.ExpectedMatchedBaseUrl);
+        Assert.Equal("git@gitea-cloud:project-base/proto-tool-pb-extra.git", preview.ExpectedRewrittenUrl);
+        Assert.Equal(UrlRewriteExpectationStatus.Missing, preview.ExpectationStatus);
+        Assert.Contains(comparisons, comparison => comparison.Status == GitRewriteStatus.LegacyAccountOwner
+            && comparison.ExpectedBaseUrl == "git@gitea-cloud:fgc0109/");
+        Assert.Contains(comparisons, comparison => comparison.Status == GitRewriteStatus.Missing
+            && comparison.ExpectedBaseUrl == "git@gitea-cloud:");
+    }
 }
