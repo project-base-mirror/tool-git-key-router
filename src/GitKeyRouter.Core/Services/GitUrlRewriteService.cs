@@ -217,26 +217,24 @@ public sealed class GitUrlRewriteService
         var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
         var expected = BuildCurrentExpectedRules(config);
         var actual = await _store.GetAllAsync(cancellationToken).ConfigureAwait(false);
-        var plan = new GitRewritePlan();
-
-        foreach (var expectedRule in expected)
+        var plan = BuildReconcilePlan(expected, actual);
+        var legacy = await BuildLegacyAccountOwnerMigrationPlanAsync(cancellationToken).ConfigureAwait(false);
+        foreach (var rule in legacy.Removes)
         {
-            var samePrefix = actual.Where(item => string.Equals(item.InsteadOfUrl, expectedRule.InsteadOfUrl, StringComparison.OrdinalIgnoreCase)).ToList();
-            var exactCount = samePrefix.Count(item => RuleEquals(item, expectedRule));
-            if (exactCount == 1 && samePrefix.Count == 1)
-            {
-                continue;
-            }
+            AddUnique(plan.Removes, rule);
+        }
 
-            foreach (var rule in samePrefix)
-            {
-                if (!plan.Removes.Any(item => RuleEquals(item, rule)))
-                {
-                    plan.Removes.Add(rule);
-                }
-            }
+        foreach (var rule in legacy.Adds)
+        {
+            AddUnique(plan.Adds, rule);
+        }
 
-            plan.Adds.Add(expectedRule);
+        foreach (var routeId in legacy.RepositoryRouteIdsToRemove)
+        {
+            if (!plan.RepositoryRouteIdsToRemove.Contains(routeId, StringComparer.OrdinalIgnoreCase))
+            {
+                plan.RepositoryRouteIdsToRemove.Add(routeId);
+            }
         }
 
         return plan;

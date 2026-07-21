@@ -233,6 +233,7 @@ public sealed class ConfigurationMigrationTests
         var rewrites = new GitUrlRewriteService(configStore, git, new NoOpBackupService());
         var preview = await rewrites.PreviewAsync("git@git.policoil.top:project-base/proto-tool-pb-extra.git");
         var comparisons = await rewrites.CompareAsync();
+        var repair = await rewrites.BuildReconcilePlanAsync();
 
         Assert.Equal("git@git.policoil.top:", preview.ExpectedMatchedPrefix);
         Assert.Equal("git@gitea-cloud:", preview.ExpectedMatchedBaseUrl);
@@ -242,5 +243,18 @@ public sealed class ConfigurationMigrationTests
             && comparison.ExpectedBaseUrl == "git@gitea-cloud:fgc0109/");
         Assert.Contains(comparisons, comparison => comparison.Status == GitRewriteStatus.Missing
             && comparison.ExpectedBaseUrl == "git@gitea-cloud:");
+        Assert.Equal(8, repair.Removes.Count);
+        Assert.Equal(8, repair.Adds.Count);
+        Assert.Contains("legacy-cloud", repair.RepositoryRouteIdsToRemove);
+        Assert.Contains("legacy-local", repair.RepositoryRouteIdsToRemove);
+
+        Assert.True((await rewrites.ApplyPlanAsync(repair, "confirm Schema 3 migration")).Success);
+        var secondRepair = await rewrites.BuildReconcilePlanAsync();
+        Assert.False(secondRepair.HasChanges);
+        Assert.DoesNotContain(git.Rules, rule => rule.BaseUrl.Contains(":fgc0109/", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(git.Rules, rule => rule.BaseUrl == "git@gitea-cloud:"
+            && rule.InsteadOfUrl == "git@git.policoil.top:");
+        Assert.Contains(git.Rules, rule => rule.BaseUrl == "git@gitea-local:"
+            && rule.InsteadOfUrl == "git@gitea.lan.policoil.top:");
     }
 }

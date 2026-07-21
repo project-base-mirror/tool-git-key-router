@@ -158,7 +158,9 @@ public sealed partial class DiagnosticService
                      .GroupBy(item => item.ServiceInstanceId, StringComparer.OrdinalIgnoreCase))
         {
             var serviceRoute = serviceGroup.FirstOrDefault(item => item.Scope == GitRouteScope.Service);
-            var overrides = serviceGroup.Where(item => item.Scope != GitRouteScope.Service).ToList();
+            var overrides = serviceGroup.Where(item => item.Scope != GitRouteScope.Service
+                    && !IsLegacyAccountOwnerRoute(config, item))
+                .ToList();
             if (serviceRoute is not null && overrides.Count > 0)
             {
                 Add(report, "ROUTE_SCOPE_COVERAGE", "Routes", "Scoped routes override a service default",
@@ -177,10 +179,8 @@ public sealed partial class DiagnosticService
                 continue;
             }
 
-            foreach (var route in config.RepositoryRoutes.Where(item => item.Enabled
-                         && item.Scope == GitRouteScope.Owner
-                         && string.Equals(item.ServiceInstanceId, service.Id, StringComparison.OrdinalIgnoreCase)
-                         && string.Equals(item.Owner, identity.AccountName, StringComparison.OrdinalIgnoreCase)))
+            foreach (var route in config.RepositoryRoutes.Where(item => IsLegacyAccountOwnerRoute(config, item)
+                         && string.Equals(item.ServiceInstanceId, service.Id, StringComparison.OrdinalIgnoreCase)))
             {
                 Add(report, "LEGACY_ACCOUNT_AS_OWNER_ROUTE", "Routes", "Legacy account-as-Owner route",
                     $"Service: {service.DisplayName}{Environment.NewLine}AccountName/Owner: {identity.AccountName}{Environment.NewLine}HostAlias: {identity.HostAlias}",
@@ -188,6 +188,28 @@ public sealed partial class DiagnosticService
                     "Preview 'Convert legacy account route' and replace it with a service-level Gitea route after confirmation.");
             }
         }
+    }
+
+    private static bool IsLegacyAccountOwnerRoute(AppConfig config, RepositoryRoute route)
+    {
+        if (!route.Enabled || route.Scope != GitRouteScope.Owner)
+        {
+            return false;
+        }
+
+        var service = config.FindService(route.ServiceInstanceId);
+        if (service?.ProviderKind != GitProviderKind.Gitea
+            || string.IsNullOrWhiteSpace(service.DefaultIdentityId)
+            || !string.Equals(route.IdentityId, service.DefaultIdentityId, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var identity = config.Identities.FirstOrDefault(item =>
+            string.Equals(item.Id, route.IdentityId, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(item.ServiceInstanceId, service.Id, StringComparison.OrdinalIgnoreCase));
+        return identity is not null
+            && string.Equals(route.Owner ?? route.NamespacePath, identity.AccountName, StringComparison.OrdinalIgnoreCase);
     }
 
     private void AddEnvironmentItems(DiagnosticReport report)
