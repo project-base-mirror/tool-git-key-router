@@ -27,6 +27,8 @@ public static class AppConfigMigrator
             RepositoryRoutes = ownerRoutes.Select(route => new RepositoryRoute
             {
                 ServiceInstanceId = GitServiceInstance.GitHubComId,
+                Scope = GitRouteScope.Owner,
+                Owner = route.GitHubOwner,
                 NamespacePath = route.GitHubOwner,
                 IdentityId = route.IdentityId,
                 Enabled = route.Enabled

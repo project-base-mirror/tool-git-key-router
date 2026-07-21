@@ -4,7 +4,7 @@ namespace GitKeyRouter.Core.Models;
 
 public sealed class AppConfig
 {
-    public const int CurrentSchemaVersion = 3;
+    public const int CurrentSchemaVersion = 4;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
 
@@ -50,12 +50,21 @@ public sealed class AppConfig
             }
         }
 
+        foreach (var service in GitServices)
+        {
+            service.HostName = service.HostName.Trim();
+            service.WebBaseUrl = service.WebBaseUrl.TrimEnd('/');
+            service.SshPort ??= 22;
+        }
+
         foreach (var route in RepositoryRoutes)
         {
             if (string.IsNullOrWhiteSpace(route.ServiceInstanceId))
             {
                 route.ServiceInstanceId = GitServiceInstance.GitHubComId;
             }
+
+            route.Normalize();
         }
     }
 }
