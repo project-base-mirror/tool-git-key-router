@@ -96,9 +96,12 @@ public sealed class IdentityEditForm : Form
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
         _privateKeyPath.Items.AddRange(paths.Cast<object>().ToArray());
-        _keyDiscoveryNote.Text = paths.Length > 0
+        var discovery = paths.Length > 0
             ? $"已自动从 {_sshDirectory} 发现 {paths.Length} 个可能的私钥，可直接下拉选择。程序只保存路径，不复制或显示私钥内容。"
             : $"未在 {_sshDirectory} 发现可识别的私钥；仍可手动输入路径或稍后生成密钥。程序只保存路径。";
+        _keyDiscoveryNote.Text = discovery
+            + Environment.NewLine
+            + "登录账号只表示 Git 服务中的网页身份，不等于仓库 Owner。多个不同服务身份可以共用同一套私钥和公钥。";
     }
 
     private void LoadValues(GitIdentity identity)

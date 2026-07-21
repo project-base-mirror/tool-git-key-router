@@ -10,6 +10,7 @@ public sealed class GitServicesControl : UserControl, IAsyncRefreshable
     private readonly Action<string> _status;
     private readonly DataGridView _grid = UiHelpers.CreateGrid();
     private IReadOnlyList<GitServiceInstance> _items = [];
+    private IReadOnlyList<GitIdentity> _identities = [];
 
     public GitServicesControl(ApplicationServices services, Action<string> status)
     {
@@ -30,7 +31,9 @@ public sealed class GitServicesControl : UserControl, IAsyncRefreshable
 
     public async Task RefreshAsync()
     {
+        var config = await _services.ConfigStore.LoadAsync();
         _items = await _services.GitServiceService.ListAsync();
+        _identities = config.Identities;
         _grid.DataSource = _items.Select(item => new ServiceRow
         {
             Id = item.Id,
@@ -40,6 +43,10 @@ public sealed class GitServicesControl : UserControl, IAsyncRefreshable
             SSH端口 = item.SshPort?.ToString() ?? "默认",
             SSH用户 = item.SshUser,
             Web地址 = item.WebBaseUrl,
+            默认身份 = _identities.FirstOrDefault(identity => string.Equals(identity.Id, item.DefaultIdentityId, StringComparison.OrdinalIgnoreCase))?.DisplayName ?? "<无>",
+            服务级路由 = config.RepositoryRoutes.Any(route => route.Enabled
+                && route.Scope == GitRouteScope.Service
+                && string.Equals(route.ServiceInstanceId, item.Id, StringComparison.OrdinalIgnoreCase)) ? "已启用" : "未启用",
             内置 = item.IsBuiltIn ? "是" : "否"
         }).ToList();
         _status($"已加载 {_items.Count} 个 Git 服务");
@@ -47,7 +54,7 @@ public sealed class GitServicesControl : UserControl, IAsyncRefreshable
 
     private async Task CreateAsync()
     {
-        using var form = new GitServiceEditForm();
+        using var form = new GitServiceEditForm(identities: _identities);
         if (form.ShowDialog(this) != DialogResult.OK || form.ResultService is null)
         {
             return;
@@ -64,7 +71,7 @@ public sealed class GitServicesControl : UserControl, IAsyncRefreshable
             return;
         }
 
-        using var form = new GitServiceEditForm(selected);
+        using var form = new GitServiceEditForm(selected, _identities);
         if (form.ShowDialog(this) != DialogResult.OK || form.ResultService is null)
         {
             return;
@@ -154,6 +161,8 @@ public sealed class GitServicesControl : UserControl, IAsyncRefreshable
         public string SSH端口 { get; init; } = string.Empty;
         public string SSH用户 { get; init; } = string.Empty;
         public string Web地址 { get; init; } = string.Empty;
+        public string 默认身份 { get; init; } = string.Empty;
+        public string 服务级路由 { get; init; } = string.Empty;
         public string 内置 { get; init; } = string.Empty;
     }
 }

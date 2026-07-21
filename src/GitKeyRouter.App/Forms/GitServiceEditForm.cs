@@ -10,21 +10,30 @@ public sealed class GitServiceEditForm : Form
     private readonly TextBox _displayName = new();
     private readonly ComboBox _provider = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly TextBox _hostName = new();
-    private readonly NumericUpDown _sshPort = new() { Minimum = 0, Maximum = 65535, Value = 0 };
+    private readonly NumericUpDown _sshPort = new() { Minimum = 1, Maximum = 65535, Value = 22 };
     private readonly TextBox _sshUser = new() { Text = "git" };
     private readonly TextBox _webBaseUrl = new();
     private readonly CheckBox _extendedSshUrls = new() { Text = "生成 ssh:// 与 git+ssh:// rewrite", AutoSize = true };
     private readonly CheckBox _allowInsecureHttp = new() { Text = "同时接受 HTTP URL（不安全）", AutoSize = true };
+    private readonly ComboBox _defaultIdentity = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly GitServiceInstance? _original;
 
-    public GitServiceEditForm(GitServiceInstance? service = null)
+    public GitServiceEditForm(GitServiceInstance? service = null, IReadOnlyList<GitIdentity>? identities = null)
     {
         _original = service;
         Text = service is null ? "新建 Git 服务" : "编辑 Git 服务";
-        UiHelpers.ConfigureDialog(this, 680, 420);
+        UiHelpers.ConfigureDialog(this, 680, 460);
 
-        _template.Items.AddRange(["GitLab.com", "自建 GitLab", "自建 Gitea", "通用 Git 服务"]);
+        _template.Items.AddRange(["Gitea Local", "Gitea Cloud", "GitLab.com", "自建 GitLab", "自建 Gitea", "通用 Git 服务"]);
         _provider.Items.AddRange(Enum.GetValues<GitProviderKind>().Cast<object>().ToArray());
+        _defaultIdentity.DisplayMember = nameof(IdentityChoice.DisplayText);
+        _defaultIdentity.Items.Add(new IdentityChoice(null, "<无默认身份>"));
+        _defaultIdentity.Items.AddRange((identities ?? [])
+            .Where(item => service is null || string.Equals(item.ServiceInstanceId, service.Id, StringComparison.OrdinalIgnoreCase))
+            .Select(item => new IdentityChoice(item.Id, $"{item.DisplayName} ({item.AccountName} / {item.HostAlias})"))
+            .Cast<object>()
+            .ToArray());
+        _defaultIdentity.SelectedIndex = 0;
         _template.SelectedIndexChanged += (_, _) => ApplyTemplate();
 
         var table = UiHelpers.CreateCompactDialogTable(2, 140);
@@ -32,11 +41,12 @@ public sealed class GitServiceEditForm : Form
         UiHelpers.AddCompactDialogRow(table, 1, "显示名称", _displayName);
         UiHelpers.AddCompactDialogRow(table, 2, "服务类型", _provider);
         UiHelpers.AddCompactDialogRow(table, 3, "域名 / 主机名", _hostName);
-        UiHelpers.AddCompactDialogRow(table, 4, "SSH 端口（0=默认）", _sshPort);
+        UiHelpers.AddCompactDialogRow(table, 4, "SSH 端口", _sshPort);
         UiHelpers.AddCompactDialogRow(table, 5, "SSH 用户", _sshUser);
         UiHelpers.AddCompactDialogRow(table, 6, "Web Base URL", _webBaseUrl);
-        UiHelpers.AddCompactDialogRow(table, 7, "扩展 URL", _extendedSshUrls);
-        UiHelpers.AddCompactDialogRow(table, 8, "HTTP 兼容", _allowInsecureHttp);
+        UiHelpers.AddCompactDialogRow(table, 7, "默认身份", _defaultIdentity);
+        UiHelpers.AddCompactDialogRow(table, 8, "扩展 URL", _extendedSshUrls);
+        UiHelpers.AddCompactDialogRow(table, 9, "HTTP 兼容", _allowInsecureHttp);
 
         var save = UiHelpers.CreateDialogButton("保存", DialogResult.OK, primary: true);
         var cancel = UiHelpers.CreateDialogButton("取消", DialogResult.Cancel);
@@ -95,6 +105,12 @@ public sealed class GitServiceEditForm : Form
         _webBaseUrl.Text = service.WebBaseUrl;
         _extendedSshUrls.Checked = service.EnableExtendedSshUrlRewrites;
         _allowInsecureHttp.Checked = service.AllowInsecureHttp;
+        _defaultIdentity.SelectedIndex = _defaultIdentity.Items.Cast<IdentityChoice>().ToList().FindIndex(item =>
+            string.Equals(item.Id, service.DefaultIdentityId, StringComparison.OrdinalIgnoreCase));
+        if (_defaultIdentity.SelectedIndex < 0)
+        {
+            _defaultIdentity.SelectedIndex = 0;
+        }
     }
 
     private void SaveClicked(object? sender, EventArgs eventArgs)
@@ -115,12 +131,15 @@ public sealed class GitServiceEditForm : Form
             DisplayName = _displayName.Text.Trim(),
             ProviderKind = _provider.SelectedItem is GitProviderKind kind ? kind : GitProviderKind.Generic,
             HostName = _hostName.Text.Trim(),
-            SshPort = _sshPort.Value == 0 ? null : (int)_sshPort.Value,
+            SshPort = (int)_sshPort.Value,
             SshUser = _sshUser.Text.Trim(),
             WebBaseUrl = _webBaseUrl.Text.Trim(),
             EnableExtendedSshUrlRewrites = _extendedSshUrls.Checked,
             AllowInsecureHttp = _allowInsecureHttp.Checked,
+            DefaultIdentityId = (_defaultIdentity.SelectedItem as IdentityChoice)?.Id,
             IsBuiltIn = _original?.IsBuiltIn == true
         };
     }
+
+    private sealed record IdentityChoice(string? Id, string DisplayText);
 }
