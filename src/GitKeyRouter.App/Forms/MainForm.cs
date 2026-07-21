@@ -20,11 +20,12 @@ public sealed class MainForm : Form
     private readonly Dictionary<string, Func<UserControl>> _pageFactories;
     private readonly Dictionary<string, UserControl> _pages = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Button> _navigationButtons = new(StringComparer.OrdinalIgnoreCase);
+    private static string DisplayVersion => typeof(MainForm).Assembly.GetName().Version?.ToString(3) ?? "Unknown";
 
     public MainForm(ApplicationServices services)
     {
         _services = services;
-        Text = $"GitKeyRouter {typeof(MainForm).Assembly.GetName().Version}";
+        Text = $"GitKeyRouter {DisplayVersion}";
         StartPosition = FormStartPosition.CenterScreen;
         Width = 1280;
         Height = 820;
@@ -261,7 +262,7 @@ public sealed class MainForm : Form
         page.BackColor = UiHelpers.AppBackground;
         _contentPanel.Controls.Add(page);
         _contentPanel.ResumeLayout();
-        Text = $"GitKeyRouter - {pageName}";
+        Text = $"GitKeyRouter {DisplayVersion} - {pageName}";
         SetStatus($"正在刷新：{pageName}");
         try
         {

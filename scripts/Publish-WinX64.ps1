@@ -2,7 +2,11 @@
 param(
     [switch]$SkipFormat,
     [switch]$SkipTests,
-    [switch]$SkipPublishedAppSmokeTest
+    [switch]$SkipPublishedAppSmokeTest,
+    [switch]$SkipReleaseAssets,
+
+    [ValidateSet('All', 'SelfContained', 'FrameworkDependent')]
+    [string]$Variant = 'All'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -12,6 +16,8 @@ $project = Join-Path $root 'src\GitKeyRouter.App\GitKeyRouter.App.csproj'
 $selfContainedPublishDir = Join-Path $root 'artifacts\publish\win-x64'
 $frameworkDependentPublishDir = Join-Path $root 'artifacts\publish\win-x64-framework-dependent'
 $validationScript = Join-Path $PSScriptRoot 'Test-WinX64Publish.ps1'
+$releaseScript = Join-Path $PSScriptRoot 'Prepare-ReleaseAssets.ps1'
+$versionProps = Join-Path $root 'Directory.Build.props'
 
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
     throw '.NET 8 SDK was not found. This script will not install it automatically.'
@@ -75,15 +81,36 @@ try {
         Invoke-DotNet -Arguments @('test', $solution, '-c', 'Release', '--no-build')
     }
 
-    Publish-Variant `
-        -Profile 'win-x64-single-file' `
-        -PublishDir $selfContainedPublishDir `
-        -ChecksumFileName 'GitKeyRouter-win-x64.sha256'
+    if ($Variant -in @('All', 'SelfContained')) {
+        Publish-Variant `
+            -Profile 'win-x64-single-file' `
+            -PublishDir $selfContainedPublishDir `
+            -ChecksumFileName 'GitKeyRouter-win-x64.sha256'
+    }
 
-    Publish-Variant `
-        -Profile 'win-x64-framework-dependent' `
-        -PublishDir $frameworkDependentPublishDir `
-        -ChecksumFileName 'GitKeyRouter-win-x64-framework-dependent.sha256'
+    if ($Variant -in @('All', 'FrameworkDependent')) {
+        Publish-Variant `
+            -Profile 'win-x64-framework-dependent' `
+            -PublishDir $frameworkDependentPublishDir `
+            -ChecksumFileName 'GitKeyRouter-win-x64-framework-dependent.sha256'
+    }
+
+    if ($Variant -eq 'All' -and -not $SkipReleaseAssets) {
+        [xml]$props = Get-Content -LiteralPath $versionProps -Raw
+        $version = [string]$props.Project.PropertyGroup.Version
+        if ([string]::IsNullOrWhiteSpace($version)) {
+            throw "Version was not found in: $versionProps"
+        }
+
+        & $releaseScript -Version $version
+        if ($LASTEXITCODE -ne 0) {
+            throw "Release asset preparation failed with exit code $LASTEXITCODE."
+        }
+    }
+
+    Write-Host "Publish completed. Variant: $Variant"
+    Write-Host "Self-contained: $selfContainedPublishDir"
+    Write-Host "Framework-dependent: $frameworkDependentPublishDir"
 }
 finally {
     Pop-Location

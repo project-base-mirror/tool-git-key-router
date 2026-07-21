@@ -5,7 +5,7 @@ GitKeyRouter 是一个面向 Windows 10 / Windows 11 的本地桌面工具，用
 - GitHub.com、GitLab.com、自建 GitLab、Gitea 和通用 Git 服务实例
 - 每个服务下的多个 SSH 身份、账号和密钥路径
 - `%USERPROFILE%\.ssh\config` 中按服务生成的 HostAlias
-- 按“Git 服务 + Owner / Namespace”路由的 `url.*.insteadOf` 全局 Git 配置
+- Gitea 服务级默认身份路由，以及 GitHub 多账号 Owner / Repository 路由的 `url.*.insteadOf` 全局 Git 配置
 - 按目录或远程 URL 自动选择 `user.name`、`user.email` 和签名密钥的 Git Profiles
 - 配置修改前的 diff、命令输出、备份和选择性恢复
 - GUI 与 DevRunner 可调用的简单 CLI
@@ -124,7 +124,7 @@ id_ed25519_account.pem.pub         # PEM / PKCS8
 
 在对应 Git 服务账户中打开 SSH Keys 页面，创建新 Key，并使用“复制公钥”复制标记为 OpenSSH 格式的公钥。RFC4716、PEM、私钥或结构损坏的文本不会被该按钮复制。
 
-GitKeyRouter 0.2 不调用 GitHub、GitLab 或 Gitea API，也不会替用户上传公钥。
+GitKeyRouter 不调用 GitHub、GitLab 或 Gitea API，也不会替用户上传公钥。
 
 ### 5. 同步 SSH Config
 
@@ -149,9 +149,20 @@ Host github-camus
 
 普通同步不会重写完整 SSH Config。只有用户主动进入“编辑原始文本”并确认完整 diff 时，才会执行完整文本替换。
 
-### 6. 创建仓库路由
+### 6. 配置默认身份与仓库路由
 
-示例：
+Gitea 的 `AccountName` 只表示网页登录账号，不代表仓库 Owner。为 Gitea 服务选择 `DefaultIdentityId` 后，GitKeyRouter 会生成覆盖整个实例的服务级路由。例如远程 Gitea：
+
+```text
+url.git@gitea-cloud:.insteadOf = git@git.policoil.top:
+url.git@gitea-cloud:.insteadOf = ssh://git@git.policoil.top/
+url.git@gitea-cloud:.insteadOf = git+ssh://git@git.policoil.top/
+url.git@gitea-cloud:.insteadOf = https://git.policoil.top/
+```
+
+因此 `project-base/*`、`game-riki/*` 和 `game-hhmx/*` 都会保留原始 Owner，并统一使用 `gitea-cloud` HostAlias。两个独立 Gitea 服务可以共用密钥文件，但必须使用独立服务 Id、HostAlias 和 HostName。
+
+GitHub 继续按 Owner 路由，不允许设置覆盖整个 `github.com` 的默认身份。示例：
 
 ```text
 camus0109/*
@@ -208,6 +219,7 @@ OpenSSH 再根据 `Host github-camus` 选择对应私钥。
 - `Duplicate`：相同 Base URL 和 insteadOf 重复
 - `Conflict`：同一个 insteadOf 前缀指向其他 Base URL
 - `Extra`：当前 Git 中存在，但不属于启用仓库路由
+- `LegacyAccountOwner`：旧版 Gitea“登录账号即仓库 Owner”路由，等待用户确认迁移
 
 支持：
 
@@ -231,7 +243,7 @@ git config --global --fixed-value --unset-all <key> <exact-value>
 
 ### 本地预览
 
-只读取当前 Git rewrite 并按最长前缀规则计算，不访问网络。
+同时读取当前 Git rewrite 和 GitKeyRouter 根据服务配置推导的期望 rewrite，并分别显示实际匹配、期望匹配、缺失/冲突状态和最终预期重写结果；预览不访问网络。
 
 ### 实际连接测试
 
@@ -356,7 +368,7 @@ CLI 诊断退出码：
 
 ```json
 {
-  "SchemaVersion": 3,
+  "SchemaVersion": 4,
   "GitServices": [
     {
       "Id": "github.com",
@@ -397,7 +409,7 @@ CLI 诊断退出码：
 
 ## 配置升级
 
-0.3 使用 Schema 3。读取 Schema 1 配置时仍会自动映射到内置 GitHub.com 服务；Schema 2 配置会保留全部服务、身份和仓库路由，并补充空的 Git Profiles 集合。身份、HostAlias、SSH managed block 和原有 GitHub rewrite 输出保持兼容；下次保存时写为 Schema 3。修改配置前仍会创建快照。
+当前使用 Schema 4。读取旧配置时会保留全部服务、身份、密钥路径、仓库路由和 Git Profiles；对于配置了默认身份但缺少服务路由的非 GitHub 服务，会在规范化时派生服务级路由。旧 Gitea 账号级 rewrite 不会自动删除，只有用户确认迁移后才转换。GitHub Owner 路由保持兼容。修改配置前仍会创建快照。
 
 ## 输入校验
 
@@ -435,11 +447,15 @@ dotnet publish .\src\GitKeyRouter.App\GitKeyRouter.App.csproj `
   -p:EnableCompressionInSingleFile=true
 ```
 
-也可以运行：
+也可以在解决方案根目录双击或从终端运行：
 
-```powershell
-.\scripts\Publish-WinX64.ps1
+```text
+Publish-WinX64.bat
+Publish-WinX64-SelfContained.bat
+Publish-WinX64-FrameworkDependent.bat
 ```
+
+三者都调用 `scripts\Publish-WinX64.ps1`，保持同一套格式化、构建、测试、发布和 EXE 校验逻辑。`Publish-WinX64.bat` 还会生成 `artifacts\release` 下的版本化 ZIP 与 `SHA256SUMS.txt`。
 
 暂时跳过测试：
 
@@ -450,7 +466,9 @@ dotnet publish .\src\GitKeyRouter.App\GitKeyRouter.App.csproj `
 最终发布目录：
 
 ```text
-artifacts\publish\win-x64\
+artifacts\publish\win-x64\                         # 自包含版，包含 GitKeyRouter.exe
+artifacts\publish\win-x64-framework-dependent\     # 依赖框架版，包含 GitKeyRouter.exe
+artifacts\release\                                    # v0.4.1 ZIP 和 SHA256SUMS.txt
 ```
 
 ## 测试隔离
@@ -496,8 +514,9 @@ GIT_CONFIG_GLOBAL=<temporary-file>
 
 在“Git 重写配置”检查：
 
-- 对应 Git 服务和 Namespace 路由是否启用
-- HTTPS / SSH insteadOf 是否为 `Correct`
+- Gitea 服务是否选择了属于本服务的默认身份
+- 当前实际规则与期望服务级规则是否一致
+- HTTPS / SSH insteadOf 是否为 `Correct`，或是否显示缺失/旧路由迁移状态
 - 是否存在更长或冲突的前缀
 - 输入 URL 是否包含与 Namespace 对应的完整路径前缀
 
