@@ -6,7 +6,9 @@ namespace GitKeyRouter.App.Forms;
 public sealed class OwnerRouteEditForm : Form
 {
     private readonly ComboBox _service = new() { DropDownStyle = ComboBoxStyle.DropDownList };
-    private readonly TextBox _namespace = new() { PlaceholderText = "例如：openai、team/platform 或组织路径" };
+    private readonly ComboBox _scope = new() { DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly TextBox _owner = new() { PlaceholderText = "例如：project-base、camus0109" };
+    private readonly TextBox _repository = new() { PlaceholderText = "例如：proto-tool-pb-extra.git" };
     private readonly ComboBox _identity = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly CheckBox _enabled = new() { Text = "启用", Checked = true, AutoSize = true };
     private readonly RepositoryRoute? _original;
@@ -20,7 +22,7 @@ public sealed class OwnerRouteEditForm : Form
         _original = route;
         _identities = identities;
         Text = route is null ? "新建仓库路由" : "编辑仓库路由";
-        UiHelpers.ConfigureDialog(this, 620, 260);
+        UiHelpers.ConfigureDialog(this, 620, 340);
 
         var serviceChoices = services
             .Select(item => new ServiceChoice(item.Id, $"{item.DisplayName} ({item.HostName})"))
@@ -29,12 +31,17 @@ public sealed class OwnerRouteEditForm : Form
         _service.Items.AddRange(serviceChoices.Cast<object>().ToArray());
         _service.SelectedIndexChanged += (_, _) => RefreshIdentityChoices();
         _service.SelectedIndex = serviceChoices.Count == 1 ? 0 : -1;
+        _scope.Items.AddRange(Enum.GetValues<GitRouteScope>().Cast<object>().ToArray());
+        _scope.SelectedItem = GitRouteScope.Owner;
+        _scope.SelectedIndexChanged += (_, _) => RefreshScopeFields();
 
         var table = UiHelpers.CreateCompactDialogTable(2, 130);
         UiHelpers.AddCompactDialogRow(table, 0, "Git 服务", _service);
-        UiHelpers.AddCompactDialogRow(table, 1, "Owner / Namespace", _namespace);
-        UiHelpers.AddCompactDialogRow(table, 2, "目标身份", _identity);
-        UiHelpers.AddCompactDialogRow(table, 3, "状态", _enabled);
+        UiHelpers.AddCompactDialogRow(table, 1, "路由范围", _scope);
+        UiHelpers.AddCompactDialogRow(table, 2, "Owner", _owner);
+        UiHelpers.AddCompactDialogRow(table, 3, "Repository", _repository);
+        UiHelpers.AddCompactDialogRow(table, 4, "目标身份", _identity);
+        UiHelpers.AddCompactDialogRow(table, 5, "状态", _enabled);
 
         var save = UiHelpers.CreateDialogButton("保存", DialogResult.OK, primary: true);
         var cancel = UiHelpers.CreateDialogButton("取消", DialogResult.Cancel);
@@ -52,11 +59,16 @@ public sealed class OwnerRouteEditForm : Form
             _service.SelectedIndex = serviceChoices.FindIndex(item =>
                 string.Equals(item.Id, route.ServiceInstanceId, StringComparison.OrdinalIgnoreCase));
             RefreshIdentityChoices();
-            _namespace.Text = route.NamespacePath;
+            route.Normalize();
+            _scope.SelectedItem = route.Scope;
+            _owner.Text = route.Owner;
+            _repository.Text = route.Repository;
             _identity.SelectedIndex = _identity.Items.Cast<IdentityChoice>().ToList().FindIndex(item =>
                 string.Equals(item.Id, route.IdentityId, StringComparison.OrdinalIgnoreCase));
             _enabled.Checked = route.Enabled;
         }
+
+        RefreshScopeFields();
     }
 
     public RepositoryRoute? ResultRoute { get; private set; }
@@ -67,22 +79,28 @@ public sealed class OwnerRouteEditForm : Form
 
     private void SaveClicked(object? sender, EventArgs eventArgs)
     {
+        var scope = _scope.SelectedItem is GitRouteScope selectedScope ? selectedScope : GitRouteScope.Owner;
         if (_service.SelectedItem is not ServiceChoice selectedService
-            || string.IsNullOrWhiteSpace(_namespace.Text)
-            || _identity.SelectedItem is not IdentityChoice selectedIdentity)
+            || _identity.SelectedItem is not IdentityChoice selectedIdentity
+            || scope != GitRouteScope.Service && string.IsNullOrWhiteSpace(_owner.Text)
+            || scope == GitRouteScope.Repository && string.IsNullOrWhiteSpace(_repository.Text))
         {
-            MessageBox.Show(this, "Git 服务、Owner / Namespace 和目标身份为必填项。", "GitKeyRouter", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(this, "Git 服务和目标身份为必填项；Owner/Repository 按所选范围填写。Owner 不会从登录账号自动推导。", "GitKeyRouter", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             DialogResult = DialogResult.None;
             return;
         }
 
         ResultRoute = new RepositoryRoute
         {
+            Id = _original?.Id ?? Guid.NewGuid().ToString("N"),
             ServiceInstanceId = selectedService.Id,
-            NamespacePath = _namespace.Text.Trim().Trim('/'),
+            Scope = scope,
+            Owner = scope == GitRouteScope.Service ? null : _owner.Text.Trim().Trim('/'),
+            Repository = scope == GitRouteScope.Repository ? _repository.Text.Trim().Trim('/') : null,
             IdentityId = selectedIdentity.Id,
             Enabled = _enabled.Checked
         };
+        ResultRoute.Normalize();
     }
 
     private void RefreshIdentityChoices()
@@ -108,6 +126,15 @@ public sealed class OwnerRouteEditForm : Form
         {
             _identity.SelectedIndex = choices.Count == 1 ? 0 : -1;
         }
+    }
+
+    private void RefreshScopeFields()
+    {
+        var scope = _scope.SelectedItem is GitRouteScope selected ? selected : GitRouteScope.Owner;
+        _owner.Enabled = scope is GitRouteScope.Owner or GitRouteScope.Repository;
+        _owner.Visible = _owner.Enabled;
+        _repository.Enabled = scope == GitRouteScope.Repository;
+        _repository.Visible = _repository.Enabled;
     }
 
     private sealed record ServiceChoice(string Id, string DisplayText);
