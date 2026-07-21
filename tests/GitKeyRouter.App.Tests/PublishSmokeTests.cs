@@ -32,6 +32,118 @@ public sealed class PublishSmokeTests
     }
 
     [Fact]
+    public async Task ManualPublishBatchFiles_RouteToExpectedVariants()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var expected = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Publish-WinX64.bat"] = "-Variant All",
+            ["Publish-WinX64-SelfContained.bat"] = "-Variant SelfContained",
+            ["Publish-WinX64-FrameworkDependent.bat"] = "-Variant FrameworkDependent"
+        };
+
+        foreach (var (fileName, variantArgument) in expected)
+        {
+            var path = Path.Combine(repositoryRoot, fileName);
+            Assert.True(File.Exists(path), $"Manual publisher was not found: {path}");
+            var content = await File.ReadAllTextAsync(path);
+            Assert.Contains("scripts\\Publish-WinX64.ps1", content, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains(variantArgument, content, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("exit /b %RC%", content, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public async Task ReleasePublish_ProducesBothExecutablesAndVersionedAssets()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var solutionPath = Path.Combine(repositoryRoot, "GitKeyRouter.sln");
+        var projectPath = Path.Combine(repositoryRoot, "src", "GitKeyRouter.App", "GitKeyRouter.App.csproj");
+        var publishRoot = Path.Combine(repositoryRoot, "artifacts", "publish");
+        var releaseDirectory = Path.Combine(repositoryRoot, "artifacts", "release");
+        var prepareReleaseScript = Path.Combine(repositoryRoot, "scripts", "Prepare-ReleaseAssets.ps1");
+        var versionDocument = XDocument.Load(Path.Combine(repositoryRoot, "Directory.Build.props"));
+        var version = versionDocument.Descendants("Version").Single().Value;
+
+        var formatResult = await RunProcessAsync(
+            "dotnet",
+            ["format", solutionPath],
+            repositoryRoot,
+            TimeSpan.FromMinutes(3),
+            captureOutput: true);
+        Assert.True(
+            formatResult.ExitCode == 0,
+            $"dotnet format failed.{Environment.NewLine}{formatResult.StandardOutput}{Environment.NewLine}{formatResult.StandardError}");
+
+        var variants = new[]
+        {
+            new { Profile = "win-x64-single-file", Directory = "win-x64", MaximumMiB = 200L },
+            new { Profile = "win-x64-framework-dependent", Directory = "win-x64-framework-dependent", MaximumMiB = 25L }
+        };
+
+        foreach (var variant in variants)
+        {
+            var publishDirectory = Path.Combine(publishRoot, variant.Directory);
+            if (Directory.Exists(publishDirectory))
+            {
+                Directory.Delete(publishDirectory, recursive: true);
+            }
+
+            var publishResult = await RunProcessAsync(
+                "dotnet",
+                [
+                    "publish", projectPath, "-c", "Release", "-r", "win-x64",
+                    $"-p:PublishProfile={variant.Profile}", "-o", publishDirectory
+                ],
+                repositoryRoot,
+                TimeSpan.FromMinutes(5),
+                captureOutput: true);
+            Assert.True(
+                publishResult.ExitCode == 0,
+                $"dotnet publish failed for {variant.Profile}.{Environment.NewLine}{publishResult.StandardOutput}{Environment.NewLine}{publishResult.StandardError}");
+
+            var entries = Directory.GetFileSystemEntries(publishDirectory);
+            var executablePath = Path.Combine(publishDirectory, "GitKeyRouter.exe");
+            Assert.Single(entries);
+            Assert.True(File.Exists(executablePath), $"Published EXE was not found: {executablePath}");
+            Assert.DoesNotContain(entries, path => path.EndsWith(".pdb", StringComparison.OrdinalIgnoreCase));
+            Assert.InRange(new FileInfo(executablePath).Length, 1, variant.MaximumMiB * 1024 * 1024);
+
+            await using (var stream = File.OpenRead(executablePath))
+            {
+                Assert.Equal(0x4D, stream.ReadByte());
+                Assert.Equal(0x5A, stream.ReadByte());
+            }
+
+            var versionResult = await RunProcessAsync(
+                executablePath,
+                ["--version"],
+                repositoryRoot,
+                TimeSpan.FromSeconds(30),
+                captureOutput: true);
+            Assert.Equal(0, versionResult.ExitCode);
+            Assert.Contains(version, versionResult.StandardOutput, StringComparison.OrdinalIgnoreCase);
+        }
+
+        var releaseResult = await RunProcessAsync(
+            "powershell.exe",
+            [
+                "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                "-File", prepareReleaseScript, "-Version", version,
+                "-PublishRoot", publishRoot, "-OutputDirectory", releaseDirectory
+            ],
+            repositoryRoot,
+            TimeSpan.FromMinutes(2),
+            captureOutput: true);
+        Assert.True(
+            releaseResult.ExitCode == 0,
+            $"Release packaging failed.{Environment.NewLine}{releaseResult.StandardOutput}{Environment.NewLine}{releaseResult.StandardError}");
+        Assert.True(File.Exists(Path.Combine(releaseDirectory, $"GitKeyRouter-v{version}-win-x64-portable.zip")));
+        Assert.True(File.Exists(Path.Combine(releaseDirectory, $"GitKeyRouter-v{version}-win-x64-framework-dependent.zip")));
+        Assert.True(File.Exists(Path.Combine(releaseDirectory, "SHA256SUMS.txt")));
+    }
+
+    [Fact]
     public async Task FrameworkDependentPublish_ProducesLaunchableCompactExecutable()
     {
         var repositoryRoot = FindRepositoryRoot();
