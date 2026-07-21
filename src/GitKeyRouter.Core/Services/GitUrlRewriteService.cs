@@ -30,6 +30,7 @@ public sealed class GitUrlRewriteService
         var expectedEntries = BuildExpectedEntries(config);
         var expected = expectedEntries.Select(item => item.Rule).ToList();
         var actual = await _store.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        var legacyRules = FindLegacyAccountOwnerRules(config, actual);
         var comparisons = new List<GitRewriteComparison>();
 
         foreach (var entry in expectedEntries)
@@ -37,13 +38,15 @@ public sealed class GitUrlRewriteService
             var expectedRule = entry.Rule;
             var exact = actual.Where(item => RuleEquals(item, expectedRule)).ToList();
             var samePrefix = actual.Where(item => string.Equals(item.InsteadOfUrl, expectedRule.InsteadOfUrl, StringComparison.OrdinalIgnoreCase)).ToList();
-            var status = exact.Count switch
-            {
-                0 when samePrefix.Count > 0 => GitRewriteStatus.Conflict,
-                0 => GitRewriteStatus.Missing,
-                1 when samePrefix.Count == 1 => GitRewriteStatus.Correct,
-                _ => GitRewriteStatus.Duplicate
-            };
+            var status = IsLegacyAccountOwnerEntry(entry)
+                ? GitRewriteStatus.LegacyAccountOwner
+                : exact.Count switch
+                {
+                    0 when samePrefix.Count > 0 => GitRewriteStatus.Conflict,
+                    0 => GitRewriteStatus.Missing,
+                    1 when samePrefix.Count == 1 => GitRewriteStatus.Correct,
+                    _ => GitRewriteStatus.Duplicate
+                };
 
             comparisons.Add(new GitRewriteComparison
             {
@@ -66,7 +69,9 @@ public sealed class GitUrlRewriteService
             {
                 ExpectedBaseUrl = extra.BaseUrl,
                 InsteadOfUrl = extra.InsteadOfUrl,
-                Status = GitRewriteStatus.Extra,
+                Status = legacyRules.Any(item => RuleEquals(item, extra))
+                    ? GitRewriteStatus.LegacyAccountOwner
+                    : GitRewriteStatus.Extra,
                 ActualMatchCount = 1,
                 ActualRules = [extra]
             });
@@ -84,7 +89,7 @@ public sealed class GitUrlRewriteService
     public async Task<GitRewritePlan> BuildApplyMissingPlanAsync(CancellationToken cancellationToken = default)
     {
         var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
-        var expected = OwnerRouteService.BuildExpectedRules(config);
+        var expected = BuildCurrentExpectedRules(config);
         var actual = await _store.GetAllAsync(cancellationToken).ConfigureAwait(false);
         var plan = new GitRewritePlan();
         foreach (var rule in expected)
@@ -188,7 +193,7 @@ public sealed class GitUrlRewriteService
     public async Task<GitRewritePlan> BuildRegeneratePlanAsync(CancellationToken cancellationToken = default)
     {
         var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
-        var expected = OwnerRouteService.BuildExpectedRules(config);
+        var expected = BuildCurrentExpectedRules(config);
         var actual = await _store.GetAllAsync(cancellationToken).ConfigureAwait(false);
         var plan = new GitRewritePlan();
         foreach (var expectedRule in expected)
@@ -210,7 +215,7 @@ public sealed class GitUrlRewriteService
     public async Task<GitRewritePlan> BuildReconcilePlanAsync(CancellationToken cancellationToken = default)
     {
         var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
-        var expected = OwnerRouteService.BuildExpectedRules(config);
+        var expected = BuildCurrentExpectedRules(config);
         var actual = await _store.GetAllAsync(cancellationToken).ConfigureAwait(false);
         var plan = new GitRewritePlan();
 
@@ -241,6 +246,7 @@ public sealed class GitUrlRewriteService
     {
         var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
         var actual = await _store.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        config.Normalize();
         var plan = new GitRewritePlan();
         foreach (var service in config.GitServices.Where(item => item.ProviderKind == GitProviderKind.Gitea
                      && !string.IsNullOrWhiteSpace(item.DefaultIdentityId)))
@@ -253,6 +259,17 @@ public sealed class GitUrlRewriteService
                 continue;
             }
 
+            var legacyConfigRoutes = config.RepositoryRoutes.Where(item => item.Enabled
+                    && item.Scope == GitRouteScope.Owner
+                    && string.Equals(item.ServiceInstanceId, service.Id, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(item.IdentityId, identity.Id, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(item.Owner ?? item.NamespacePath, identity.AccountName, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            foreach (var route in legacyConfigRoutes)
+            {
+                plan.RepositoryRouteIdsToRemove.Add(route.Id);
+            }
+
             var legacyRoute = new RepositoryRoute
             {
                 ServiceInstanceId = service.Id,
@@ -263,7 +280,7 @@ public sealed class GitUrlRewriteService
             var detected = _providers.Get(service.ProviderKind).BuildRewriteRules(service, identity, legacyRoute)
                 .Where(rule => actual.Any(item => RuleEquals(item, rule)))
                 .ToList();
-            if (detected.Count == 0)
+            if (detected.Count == 0 && legacyConfigRoutes.Count == 0)
             {
                 continue;
             }
@@ -332,7 +349,7 @@ public sealed class GitUrlRewriteService
             }
         }
 
-        if (reconciliations.Count == 0)
+        if (reconciliations.Count == 0 && plan.RepositoryRouteIdsToRemove.Count == 0)
         {
             return OperationResult<IReadOnlyList<ProcessResult>>.Ok([], "Git URL rewrite rules already match.");
         }
@@ -360,32 +377,50 @@ public sealed class GitUrlRewriteService
             }
         }
 
+        if (plan.RepositoryRouteIdsToRemove.Count > 0)
+        {
+            var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+            config.RepositoryRoutes.RemoveAll(route => plan.RepositoryRouteIdsToRemove.Contains(route.Id, StringComparer.OrdinalIgnoreCase));
+            config.Normalize();
+            await _configStore.SaveAsync(config, cancellationToken).ConfigureAwait(false);
+        }
+
         return OperationResult<IReadOnlyList<ProcessResult>>.Ok(results, "Git URL rewrite rules were reconciled idempotently.");
     }
 
     public async Task<UrlRewritePreview> PreviewAsync(string originalUrl, CancellationToken cancellationToken = default)
     {
+        var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        var expected = BuildCurrentExpectedRules(config);
         var actual = await _store.GetAllAsync(cancellationToken).ConfigureAwait(false);
-        var match = actual
-            .Where(rule => originalUrl.StartsWith(rule.InsteadOfUrl, StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(rule => rule.InsteadOfUrl.Length)
-            .FirstOrDefault();
-
-        if (match is null)
-        {
-            return new UrlRewritePreview
-            {
-                OriginalUrl = originalUrl,
-                RewrittenUrl = originalUrl
-            };
-        }
+        var actualMatch = FindLongestMatch(originalUrl, actual);
+        var expectedMatch = FindLongestMatch(originalUrl, expected);
+        var displayMatch = expectedMatch ?? actualMatch;
+        var expectedApplied = expectedMatch is not null && actual.Any(item => RuleEquals(item, expectedMatch));
+        var expectedPrefixTargets = expectedMatch is null
+            ? new List<GitUrlRewriteRule>()
+            : actual.Where(item => string.Equals(item.InsteadOfUrl, expectedMatch.InsteadOfUrl, StringComparison.OrdinalIgnoreCase)).ToList();
+        var expectationStatus = expectedMatch is null
+            ? UrlRewriteExpectationStatus.None
+            : expectedApplied
+                ? UrlRewriteExpectationStatus.Applied
+                : expectedPrefixTargets.Count > 0
+                    ? UrlRewriteExpectationStatus.Conflict
+                    : UrlRewriteExpectationStatus.Missing;
 
         return new UrlRewritePreview
         {
             OriginalUrl = originalUrl,
-            MatchedPrefix = match.InsteadOfUrl,
-            MatchedBaseUrl = match.BaseUrl,
-            RewrittenUrl = match.BaseUrl + originalUrl[match.InsteadOfUrl.Length..]
+            MatchedPrefix = displayMatch?.InsteadOfUrl,
+            MatchedBaseUrl = displayMatch?.BaseUrl,
+            RewrittenUrl = Rewrite(originalUrl, displayMatch),
+            ActualMatchedPrefix = actualMatch?.InsteadOfUrl,
+            ActualMatchedBaseUrl = actualMatch?.BaseUrl,
+            ActualRewrittenUrl = actualMatch is null ? null : Rewrite(originalUrl, actualMatch),
+            ExpectedMatchedPrefix = expectedMatch?.InsteadOfUrl,
+            ExpectedMatchedBaseUrl = expectedMatch?.BaseUrl,
+            ExpectedRewrittenUrl = expectedMatch is null ? null : Rewrite(originalUrl, expectedMatch),
+            ExpectationStatus = expectationStatus
         };
     }
 
@@ -402,6 +437,7 @@ public sealed class GitUrlRewriteService
 
     private IReadOnlyList<ExpectedRouteRule> BuildExpectedEntries(AppConfig config)
     {
+        config.Normalize();
         var result = new List<ExpectedRouteRule>();
         foreach (var route in config.RepositoryRoutes.Where(item => item.Enabled))
         {
@@ -423,9 +459,61 @@ public sealed class GitUrlRewriteService
         return result;
     }
 
+    private IReadOnlyList<GitUrlRewriteRule> BuildCurrentExpectedRules(AppConfig config)
+        => BuildExpectedEntries(config)
+            .Where(item => !IsLegacyAccountOwnerEntry(item))
+            .Select(item => item.Rule)
+            .ToList();
+
     private static bool RuleEquals(GitUrlRewriteRule left, GitUrlRewriteRule right)
         => string.Equals(left.BaseUrl, right.BaseUrl, StringComparison.OrdinalIgnoreCase)
             && string.Equals(left.InsteadOfUrl, right.InsteadOfUrl, StringComparison.OrdinalIgnoreCase);
+
+    private static GitUrlRewriteRule? FindLongestMatch(string originalUrl, IEnumerable<GitUrlRewriteRule> rules)
+        => rules.Where(rule => originalUrl.StartsWith(rule.InsteadOfUrl, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(rule => rule.InsteadOfUrl.Length)
+            .FirstOrDefault();
+
+    private static string Rewrite(string originalUrl, GitUrlRewriteRule? rule)
+        => rule is null ? originalUrl : rule.BaseUrl + originalUrl[rule.InsteadOfUrl.Length..];
+
+    private static bool IsLegacyAccountOwnerEntry(ExpectedRouteRule entry)
+        => entry.Service.ProviderKind == GitProviderKind.Gitea
+            && entry.Route.Scope == GitRouteScope.Owner
+            && string.Equals(entry.Service.DefaultIdentityId, entry.Identity.Id, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(entry.Route.Owner ?? entry.Route.NamespacePath, entry.Identity.AccountName, StringComparison.OrdinalIgnoreCase);
+
+    private IReadOnlyList<GitUrlRewriteRule> FindLegacyAccountOwnerRules(
+        AppConfig config,
+        IReadOnlyList<GitUrlRewriteRule> actual)
+    {
+        var result = new List<GitUrlRewriteRule>();
+        foreach (var service in config.GitServices.Where(item => item.ProviderKind == GitProviderKind.Gitea
+                     && !string.IsNullOrWhiteSpace(item.DefaultIdentityId)))
+        {
+            var identity = config.Identities.FirstOrDefault(item =>
+                string.Equals(item.Id, service.DefaultIdentityId, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(item.ServiceInstanceId, service.Id, StringComparison.OrdinalIgnoreCase));
+            if (identity is null || string.IsNullOrWhiteSpace(identity.AccountName))
+            {
+                continue;
+            }
+
+            var legacyRoute = new RepositoryRoute
+            {
+                ServiceInstanceId = service.Id,
+                IdentityId = identity.Id,
+                Scope = GitRouteScope.Owner,
+                Owner = identity.AccountName
+            };
+            foreach (var expectedLegacy in _providers.Get(service.ProviderKind).BuildRewriteRules(service, identity, legacyRoute))
+            {
+                result.AddRange(actual.Where(item => RuleEquals(item, expectedLegacy)));
+            }
+        }
+
+        return result;
+    }
 
     private sealed record ExpectedRouteRule(
         RepositoryRoute Route,

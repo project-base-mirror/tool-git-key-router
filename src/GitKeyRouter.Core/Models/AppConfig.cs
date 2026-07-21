@@ -30,6 +30,7 @@ public sealed class AppConfig
 
     public void Normalize()
     {
+        var sourceSchemaVersion = SchemaVersion;
         SchemaVersion = CurrentSchemaVersion;
         GitServices ??= [];
         Identities ??= [];
@@ -67,7 +68,38 @@ public sealed class AppConfig
             route.Normalize();
         }
 
+        if (sourceSchemaVersion < 4)
+        {
+            InferLegacyGiteaDefaultIdentities();
+        }
+
         SynchronizeDefaultServiceRoutes();
+    }
+
+    private void InferLegacyGiteaDefaultIdentities()
+    {
+        foreach (var service in GitServices.Where(item =>
+                     item.ProviderKind == GitProviderKind.Gitea
+                     && string.IsNullOrWhiteSpace(item.DefaultIdentityId)))
+        {
+            var candidates = RepositoryRoutes
+                .Where(route => route.Enabled
+                    && route.Scope == GitRouteScope.Owner
+                    && string.Equals(route.ServiceInstanceId, service.Id, StringComparison.OrdinalIgnoreCase))
+                .Select(route => Identities.FirstOrDefault(identity =>
+                    string.Equals(identity.Id, route.IdentityId, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(identity.ServiceInstanceId, service.Id, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(identity.AccountName, route.Owner ?? route.NamespacePath, StringComparison.OrdinalIgnoreCase)))
+                .Where(identity => identity is not null)
+                .Select(identity => identity!.Id)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (candidates.Count == 1)
+            {
+                service.DefaultIdentityId = candidates[0];
+            }
+        }
     }
 
     public void SynchronizeDefaultServiceRoutes()
