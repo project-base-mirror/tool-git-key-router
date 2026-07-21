@@ -58,7 +58,8 @@ public abstract class StandardGitProviderAdapter : IGitProviderAdapter
         builder.Append(SshConfigService.BeginPrefix).Append(identity.HostAlias).Append(newline);
         builder.Append("Host ").Append(identity.HostAlias).Append(newline);
         builder.Append("    HostName ").Append(service.HostName).Append(newline);
-        if (service.SshPort is > 0)
+        if (service.SshPort is > 0
+            && (service.SshPort != 22 || service.ProviderKind == GitProviderKind.Gitea))
         {
             builder.Append("    Port ").Append(service.SshPort.Value).Append(newline);
         }
