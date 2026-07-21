@@ -82,6 +82,12 @@ internal sealed class FakeGitUrlRewriteStore : IGitUrlRewriteStore
     public Task<IReadOnlyList<GitUrlRewriteRule>> GetAllAsync(CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<GitUrlRewriteRule>>(Rules.ToList());
 
+    public Task<IReadOnlyList<string>> GetValuesAsync(string configKey, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<string>>(Rules
+            .Where(item => string.Equals(item.ConfigKey, configKey, StringComparison.OrdinalIgnoreCase))
+            .Select(item => item.InsteadOfUrl)
+            .ToList());
+
     public Task<OperationResult<IReadOnlyList<string>>> GetGlobalConfigOriginsAsync(CancellationToken cancellationToken = default)
         => Task.FromResult(OperationResult<IReadOnlyList<string>>.Ok(["C:/Users/test/.gitconfig"]));
 
@@ -96,6 +102,12 @@ internal sealed class FakeGitUrlRewriteStore : IGitUrlRewriteStore
         Rules.RemoveAll(item => string.Equals(item.BaseUrl, rule.BaseUrl, StringComparison.OrdinalIgnoreCase)
             && string.Equals(item.InsteadOfUrl, rule.InsteadOfUrl, StringComparison.OrdinalIgnoreCase));
         return Task.FromResult(Success("config", "--unset-all", rule.ConfigKey, rule.InsteadOfUrl));
+    }
+
+    public Task<ProcessResult> RemoveAllForKeyAsync(string configKey, CancellationToken cancellationToken = default)
+    {
+        Rules.RemoveAll(item => string.Equals(item.ConfigKey, configKey, StringComparison.OrdinalIgnoreCase));
+        return Task.FromResult(Success("config", "--unset-all", configKey));
     }
 
     public Task<ProcessResult> TestRemoteAsync(string originalUrl, CancellationToken cancellationToken = default)

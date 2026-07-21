@@ -39,6 +39,23 @@ public sealed class GitUrlRewriteStore : IGitUrlRewriteStore
         return Parse(result.StandardOutput);
     }
 
+    public async Task<IReadOnlyList<string>> GetValuesAsync(string configKey, CancellationToken cancellationToken = default)
+    {
+        var git = await RequireGitAsync(cancellationToken).ConfigureAwait(false);
+        var result = await RunGitAsync(git, ["config", "--global", "--get-all", configKey], cancellationToken).ConfigureAwait(false);
+        if (result.ExitCode == 1 && string.IsNullOrWhiteSpace(result.StandardOutput))
+        {
+            return [];
+        }
+
+        if (!result.Succeeded)
+        {
+            throw new InvalidOperationException($"Unable to read global Git config key '{configKey}'. Exit code: {result.ExitCode}. {result.StandardError}");
+        }
+
+        return result.StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).ToList();
+    }
+
     public async Task<OperationResult<IReadOnlyList<string>>> GetGlobalConfigOriginsAsync(CancellationToken cancellationToken = default)
     {
         var git = await RequireGitAsync(cancellationToken).ConfigureAwait(false);
@@ -76,6 +93,12 @@ public sealed class GitUrlRewriteStore : IGitUrlRewriteStore
     {
         var git = await RequireGitAsync(cancellationToken).ConfigureAwait(false);
         return await RunGitAsync(git, ["config", "--global", "--fixed-value", "--unset-all", rule.ConfigKey, rule.InsteadOfUrl], cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ProcessResult> RemoveAllForKeyAsync(string configKey, CancellationToken cancellationToken = default)
+    {
+        var git = await RequireGitAsync(cancellationToken).ConfigureAwait(false);
+        return await RunGitAsync(git, ["config", "--global", "--unset-all", configKey], cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<ProcessResult> TestRemoteAsync(string originalUrl, CancellationToken cancellationToken = default)

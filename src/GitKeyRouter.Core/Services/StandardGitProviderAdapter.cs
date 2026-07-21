@@ -38,7 +38,8 @@ public abstract class StandardGitProviderAdapter : IGitProviderAdapter
     protected static bool ShouldGenerateRewrite(
         GitServiceInstance service,
         GitRemoteUrlPattern pattern)
-        => pattern.Kind == GitRemoteUrlPatternKind.Scp
+        => service.ProviderKind == GitProviderKind.Gitea
+            || pattern.Kind == GitRemoteUrlPatternKind.Scp
             || pattern.Kind == GitRemoteUrlPatternKind.Web && !pattern.IsInsecureHttp
             || service.EnableExtendedSshUrlRewrites;
 

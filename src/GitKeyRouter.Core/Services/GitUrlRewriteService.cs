@@ -214,6 +214,63 @@ public sealed class GitUrlRewriteService
         return plan;
     }
 
+    public async Task<GitRewritePlan> BuildLegacyAccountOwnerMigrationPlanAsync(CancellationToken cancellationToken = default)
+    {
+        var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        var actual = await _store.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        var plan = new GitRewritePlan();
+        foreach (var service in config.GitServices.Where(item => item.ProviderKind == GitProviderKind.Gitea
+                     && !string.IsNullOrWhiteSpace(item.DefaultIdentityId)))
+        {
+            var identity = config.Identities.FirstOrDefault(item =>
+                string.Equals(item.Id, service.DefaultIdentityId, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(item.ServiceInstanceId, service.Id, StringComparison.OrdinalIgnoreCase));
+            if (identity is null || string.IsNullOrWhiteSpace(identity.AccountName))
+            {
+                continue;
+            }
+
+            var legacyRoute = new RepositoryRoute
+            {
+                ServiceInstanceId = service.Id,
+                IdentityId = identity.Id,
+                Scope = GitRouteScope.Owner,
+                Owner = identity.AccountName
+            };
+            var detected = _providers.Get(service.ProviderKind).BuildRewriteRules(service, identity, legacyRoute)
+                .Where(rule => actual.Any(item => RuleEquals(item, rule)))
+                .ToList();
+            if (detected.Count == 0)
+            {
+                continue;
+            }
+
+            foreach (var rule in detected)
+            {
+                if (!plan.Removes.Any(item => RuleEquals(item, rule)))
+                {
+                    plan.Removes.Add(rule);
+                }
+            }
+
+            var serviceRoute = new RepositoryRoute
+            {
+                ServiceInstanceId = service.Id,
+                IdentityId = identity.Id,
+                Scope = GitRouteScope.Service
+            };
+            foreach (var rule in _providers.Get(service.ProviderKind).BuildRewriteRules(service, identity, serviceRoute))
+            {
+                if (!actual.Any(item => RuleEquals(item, rule)) && !plan.Adds.Any(item => RuleEquals(item, rule)))
+                {
+                    plan.Adds.Add(rule);
+                }
+            }
+        }
+
+        return plan;
+    }
+
     public async Task<OperationResult<IReadOnlyList<ProcessResult>>> ApplyPlanAsync(
         GitRewritePlan plan,
         string reason,
@@ -224,29 +281,63 @@ public sealed class GitUrlRewriteService
             return OperationResult<IReadOnlyList<ProcessResult>>.Ok([], "Git URL rewrite rules already match.");
         }
 
+        var reconciliations = new List<(string Key, IReadOnlyList<string> Desired)>();
+        var keys = plan.Adds.Concat(plan.Removes)
+            .Select(item => item.ConfigKey)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+        foreach (var key in keys)
+        {
+            var current = await _store.GetValuesAsync(key, cancellationToken).ConfigureAwait(false);
+            var removed = plan.Removes.Where(item => string.Equals(item.ConfigKey, key, StringComparison.OrdinalIgnoreCase))
+                .Select(item => item.InsteadOfUrl)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var desired = current.Where(value => !removed.Contains(value))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            foreach (var value in plan.Adds.Where(item => string.Equals(item.ConfigKey, key, StringComparison.OrdinalIgnoreCase))
+                         .Select(item => item.InsteadOfUrl))
+            {
+                if (!desired.Contains(value, StringComparer.OrdinalIgnoreCase))
+                {
+                    desired.Add(value);
+                }
+            }
+
+            if (!current.SequenceEqual(desired, StringComparer.OrdinalIgnoreCase))
+            {
+                reconciliations.Add((key, desired));
+            }
+        }
+
+        if (reconciliations.Count == 0)
+        {
+            return OperationResult<IReadOnlyList<ProcessResult>>.Ok([], "Git URL rewrite rules already match.");
+        }
+
         await _backupService.CreateSnapshotAsync(reason, cancellationToken).ConfigureAwait(false);
         var results = new List<ProcessResult>();
-        foreach (var rule in plan.Removes)
+        foreach (var reconciliation in reconciliations)
         {
-            var result = await _store.RemoveAllAsync(rule, cancellationToken).ConfigureAwait(false);
-            results.Add(result);
-            if (!result.Succeeded && result.ExitCode != 5)
+            var unset = await _store.RemoveAllForKeyAsync(reconciliation.Key, cancellationToken).ConfigureAwait(false);
+            results.Add(unset);
+            if (!unset.Succeeded && unset.ExitCode is not (1 or 5))
             {
-                return OperationResult<IReadOnlyList<ProcessResult>>.Fail("Failed while removing a Git URL rewrite.", result.StandardError);
+                return OperationResult<IReadOnlyList<ProcessResult>>.Fail("Failed while resetting a managed Git URL rewrite key.", unset.StandardError);
+            }
+
+            var baseUrl = reconciliation.Key[4..^".insteadOf".Length];
+            foreach (var value in reconciliation.Desired)
+            {
+                var add = await _store.AddAsync(new GitUrlRewriteRule(baseUrl, value), cancellationToken).ConfigureAwait(false);
+                results.Add(add);
+                if (!add.Succeeded)
+                {
+                    return OperationResult<IReadOnlyList<ProcessResult>>.Fail("Failed while adding a Git URL rewrite.", add.StandardError);
+                }
             }
         }
 
-        foreach (var rule in plan.Adds)
-        {
-            var result = await _store.AddAsync(rule, cancellationToken).ConfigureAwait(false);
-            results.Add(result);
-            if (!result.Succeeded)
-            {
-                return OperationResult<IReadOnlyList<ProcessResult>>.Fail("Failed while adding a Git URL rewrite.", result.StandardError);
-            }
-        }
-
-        return OperationResult<IReadOnlyList<ProcessResult>>.Ok(results, "Git URL rewrite rules were updated.");
+        return OperationResult<IReadOnlyList<ProcessResult>>.Ok(results, "Git URL rewrite rules were reconciled idempotently.");
     }
 
     public async Task<UrlRewritePreview> PreviewAsync(string originalUrl, CancellationToken cancellationToken = default)
