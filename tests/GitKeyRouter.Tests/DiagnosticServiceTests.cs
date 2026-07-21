@@ -10,7 +10,7 @@ public sealed class DiagnosticServiceTests
     private const string OpenSsh = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f first@example.com";
 
     [Fact]
-    public async Task ReportsSharedPrivatePathAndCopiedPublicKeyMaterial()
+    public async Task ReportsSameServiceKeyReuseAcrossAccountsAsError()
     {
         using var directory = new TemporaryDirectory();
         var paths = new TestAppPaths(directory.Path);
@@ -47,9 +47,9 @@ public sealed class DiagnosticServiceTests
 
         var report = await service.RunAsync();
 
-        Assert.Contains(report.Items, item => item.Code == "PRIVATE_KEY_PATH_SHARED");
-        Assert.Contains(report.Items, item => item.Code == "PUBLIC_KEY_MATERIAL_REUSED");
-        var copiedKeyWarning = Assert.Single(report.Items, item => item.Code == "PUBLIC_KEY_MATERIAL_REUSED");
+        Assert.Contains(report.Items, item => item.Code == "PRIVATE_KEY_SAME_SERVICE_ACCOUNTS" && item.Severity == DiagnosticSeverity.Error);
+        Assert.Contains(report.Items, item => item.Code == "PUBLIC_KEY_MATERIAL_SAME_SERVICE_ACCOUNTS" && item.Severity == DiagnosticSeverity.Error);
+        var copiedKeyWarning = Assert.Single(report.Items, item => item.Code == "PUBLIC_KEY_MATERIAL_SAME_SERVICE_ACCOUNTS");
         Assert.DoesNotContain("AAAAC3", copiedKeyWarning.Message, StringComparison.Ordinal);
     }
 

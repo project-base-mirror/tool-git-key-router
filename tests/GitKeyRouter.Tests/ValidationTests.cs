@@ -48,7 +48,7 @@ public sealed class ValidationTests
     }
 
     [Fact]
-    public void Identity_AllowsSameAccountAcrossServicesButRejectsDuplicateWithinService()
+    public void Identity_AllowsAccountNameReuseBecauseAccountIsNotRepositoryOwnership()
     {
         var gitLab = new GitServiceInstance
         {
@@ -88,7 +88,7 @@ public sealed class ValidationTests
         Assert.True(IdentityValidator.Validate(gitLabIdentity, config).IsValid);
 
         gitLabIdentity.ServiceInstanceId = GitServiceInstance.GitHubComId;
-        Assert.False(IdentityValidator.Validate(gitLabIdentity, config).IsValid);
+        Assert.True(IdentityValidator.Validate(gitLabIdentity, config).IsValid);
     }
 
     [Fact]
