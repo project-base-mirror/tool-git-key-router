@@ -25,11 +25,12 @@ public abstract class StandardGitProviderAdapter : IGitProviderAdapter
         GitIdentity identity,
         RepositoryRoute route)
     {
-        var namespacePath = route.NamespacePath.Trim('/');
-        var baseUrl = $"{service.SshUser}@{identity.HostAlias}:{namespacePath}/";
+        route.Normalize();
+        var suffix = BuildRouteSuffix(route);
+        var baseUrl = $"{service.SshUser}@{identity.HostAlias}:{suffix}";
         return GetSupportedRemotePatterns(service)
             .Where(pattern => ShouldGenerateRewrite(service, pattern))
-            .Select(pattern => new GitUrlRewriteRule(baseUrl, $"{pattern.Prefix}{namespacePath}/"))
+            .Select(pattern => new GitUrlRewriteRule(baseUrl, pattern.Prefix + suffix))
             .Distinct()
             .ToList();
     }
@@ -56,7 +57,7 @@ public abstract class StandardGitProviderAdapter : IGitProviderAdapter
         builder.Append(SshConfigService.BeginPrefix).Append(identity.HostAlias).Append(newline);
         builder.Append("Host ").Append(identity.HostAlias).Append(newline);
         builder.Append("    HostName ").Append(service.HostName).Append(newline);
-        if (service.SshPort is > 0 and not 22)
+        if (service.SshPort is > 0)
         {
             builder.Append("    Port ").Append(service.SshPort.Value).Append(newline);
         }
@@ -76,4 +77,13 @@ public abstract class StandardGitProviderAdapter : IGitProviderAdapter
         var output = result.StandardOutput + "\n" + result.StandardError;
         return result.Succeeded || _successPhrases.Any(phrase => output.Contains(phrase, StringComparison.OrdinalIgnoreCase));
     }
+
+    protected static string BuildRouteSuffix(RepositoryRoute route)
+        => route.Scope switch
+        {
+            GitRouteScope.Service => string.Empty,
+            GitRouteScope.Owner => route.RoutePath + "/",
+            GitRouteScope.Repository => route.RoutePath,
+            _ => string.Empty
+        };
 }

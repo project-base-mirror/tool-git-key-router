@@ -17,13 +17,19 @@ public sealed class GitHubProviderAdapter : IGitProviderAdapter
         GitIdentity identity,
         RepositoryRoute route)
     {
-        var namespacePath = route.NamespacePath.Trim('/');
-        var baseUrl = $"{service.SshUser}@{identity.HostAlias}:{namespacePath}/";
+        route.Normalize();
+        var suffix = route.Scope switch
+        {
+            GitRouteScope.Owner => route.RoutePath + "/",
+            GitRouteScope.Repository => route.RoutePath,
+            _ => string.Empty
+        };
+        var baseUrl = $"{service.SshUser}@{identity.HostAlias}:{suffix}";
         return GetSupportedRemotePatterns(service)
             .Where(pattern => pattern.Kind == GitRemoteUrlPatternKind.Scp
                 || pattern.Kind == GitRemoteUrlPatternKind.Web && !pattern.IsInsecureHttp
                 || service.EnableExtendedSshUrlRewrites)
-            .Select(pattern => new GitUrlRewriteRule(baseUrl, $"{pattern.Prefix}{namespacePath}/"))
+            .Select(pattern => new GitUrlRewriteRule(baseUrl, pattern.Prefix + suffix))
             .Distinct()
             .ToList();
     }

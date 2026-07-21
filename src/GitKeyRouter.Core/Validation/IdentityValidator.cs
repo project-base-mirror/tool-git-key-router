@@ -20,13 +20,6 @@ public static class IdentityValidator
             result.Add("ServiceInstanceId must reference an existing Git service.");
         }
 
-        if (config.Identities.Any(item => !string.Equals(item.Id, identity.Id, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(item.ServiceInstanceId, identity.ServiceInstanceId, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(item.AccountName, identity.AccountName, StringComparison.OrdinalIgnoreCase)))
-        {
-            result.Add($"AccountName '{identity.AccountName}' is already configured for this Git service.");
-        }
-
         var normalizedAlias = NormalizeHost(identity.HostAlias);
         var conflictingService = config.GitServices.FirstOrDefault(service =>
             string.Equals(NormalizeHost(service.HostName), normalizedAlias, StringComparison.OrdinalIgnoreCase));
@@ -93,7 +86,7 @@ public static class IdentityValidator
         if (existing.Any(item => !string.Equals(item.Id, identity.Id, StringComparison.OrdinalIgnoreCase)
             && string.Equals(item.HostAlias, identity.HostAlias, StringComparison.OrdinalIgnoreCase)))
         {
-            result.Add($"HostAlias '{identity.HostAlias}' is already used by another identity.");
+            result.Add($"HostAlias '{identity.HostAlias}' is already used by another identity. Shared key files are allowed, shared aliases are not.");
         }
 
         return result;

@@ -42,6 +42,7 @@ public sealed class OwnerRouteService
         string? originalNamespacePath,
         CancellationToken cancellationToken = default)
     {
+        route.Normalize();
         var config = await _configStore.LoadAsync(cancellationToken).ConfigureAwait(false);
         var validation = OwnerRouteValidator.Validate(
             route,
@@ -67,6 +68,9 @@ public sealed class OwnerRouteService
         else
         {
             existing.ServiceInstanceId = route.ServiceInstanceId;
+            existing.Scope = route.Scope;
+            existing.Owner = route.Owner;
+            existing.Repository = route.Repository;
             existing.NamespacePath = route.NamespacePath;
             existing.IdentityId = route.IdentityId;
             existing.Enabled = route.Enabled;
@@ -110,6 +114,7 @@ public sealed class OwnerRouteService
         var rules = new List<GitUrlRewriteRule>();
         foreach (var route in config.RepositoryRoutes.Where(item => item.Enabled))
         {
+            route.Normalize();
             if (!identities.TryGetValue(route.IdentityId, out var identity))
             {
                 continue;

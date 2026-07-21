@@ -23,6 +23,7 @@ public static class OwnerRouteValidator
         ArgumentNullException.ThrowIfNull(route);
         ArgumentNullException.ThrowIfNull(config);
 
+        route.Normalize();
         var result = new ValidationResult();
         var service = config.FindService(route.ServiceInstanceId);
         if (service is null)
@@ -31,10 +32,22 @@ public static class OwnerRouteValidator
         }
         else
         {
-            var namespaceValidation = providers.Get(service.ProviderKind).ValidateNamespace(route.NamespacePath);
-            foreach (var error in namespaceValidation.Errors)
+            if (route.Scope == GitRouteScope.Service && service.ProviderKind == GitProviderKind.GitHub)
             {
-                result.Add(error);
+                result.Add("GitHub service-level routing is not allowed because it would route every account through one SSH identity.");
+            }
+            else if (route.Scope is GitRouteScope.Owner or GitRouteScope.Repository)
+            {
+                var namespaceValidation = providers.Get(service.ProviderKind).ValidateNamespace(route.Owner ?? route.NamespacePath);
+                foreach (var error in namespaceValidation.Errors)
+                {
+                    result.Add(error);
+                }
+
+                if (route.Scope == GitRouteScope.Repository && string.IsNullOrWhiteSpace(route.Repository))
+                {
+                    result.Add("Repository is required for a repository-level route.");
+                }
             }
         }
 
@@ -50,12 +63,14 @@ public static class OwnerRouteValidator
         }
 
         if (route.Enabled && config.RepositoryRoutes.Any(item => item.Enabled
-            && !(string.Equals(item.ServiceInstanceId, originalServiceInstanceId, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(item.NamespacePath, originalNamespacePath, StringComparison.OrdinalIgnoreCase))
+            && !(string.Equals(item.Id, route.Id, StringComparison.OrdinalIgnoreCase)
+                || (string.Equals(item.ServiceInstanceId, originalServiceInstanceId, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(item.NamespacePath, originalNamespacePath, StringComparison.OrdinalIgnoreCase)))
             && string.Equals(item.ServiceInstanceId, route.ServiceInstanceId, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(item.NamespacePath, route.NamespacePath, StringComparison.OrdinalIgnoreCase)))
+            && item.Scope == route.Scope
+            && string.Equals(item.RoutePath, route.RoutePath, StringComparison.OrdinalIgnoreCase)))
         {
-            result.Add($"Namespace '{route.NamespacePath}' already has an enabled route for this Git service.");
+            result.Add($"Route '{route.DisplayPath}' already has an enabled {route.Scope} rule for this Git service.");
         }
 
         return result;

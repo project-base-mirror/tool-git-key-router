@@ -57,7 +57,8 @@ public sealed class GitServiceService
         service.HostName = service.HostName.Trim();
         service.SshUser = service.SshUser.Trim();
         service.WebBaseUrl = service.WebBaseUrl.TrimEnd('/');
-        var validation = GitServiceValidator.Validate(service, config.GitServices);
+        service.SshPort ??= 22;
+        var validation = GitServiceValidator.Validate(service, config);
         if (!validation.IsValid)
         {
             return OperationResult<GitServiceInstance>.Fail("Git service validation failed.", validation.Errors.ToArray());
@@ -73,6 +74,8 @@ public sealed class GitServiceService
         {
             config.GitServices.Add(service);
         }
+
+        SynchronizeDefaultServiceRoute(config, service);
 
         await _configStore.SaveAsync(config, cancellationToken).ConfigureAwait(false);
         return OperationResult<GitServiceInstance>.Ok(service, "Git service saved.");
@@ -170,7 +173,27 @@ public sealed class GitServiceService
                 WebBaseUrl = "https://gitlab.com"
             },
             "自建 GitLab" => new GitServiceInstance { DisplayName = "自建 GitLab", ProviderKind = GitProviderKind.GitLab, SshUser = "git" },
-            "自建 Gitea" => new GitServiceInstance { DisplayName = "自建 Gitea", ProviderKind = GitProviderKind.Gitea, SshUser = "git" },
+            "Gitea Local" => new GitServiceInstance
+            {
+                Id = "gitea-local",
+                DisplayName = "Gitea Local",
+                ProviderKind = GitProviderKind.Gitea,
+                HostName = "gitea.lan.policoil.top",
+                SshPort = 22,
+                SshUser = "git",
+                WebBaseUrl = "https://gitea.lan.policoil.top"
+            },
+            "Gitea Cloud" => new GitServiceInstance
+            {
+                Id = "gitea-cloud",
+                DisplayName = "Gitea Cloud",
+                ProviderKind = GitProviderKind.Gitea,
+                HostName = "git.policoil.top",
+                SshPort = 22,
+                SshUser = "git",
+                WebBaseUrl = "https://git.policoil.top"
+            },
+            "自建 Gitea" => new GitServiceInstance { DisplayName = "自建 Gitea", ProviderKind = GitProviderKind.Gitea, SshPort = 22, SshUser = "git" },
             _ => new GitServiceInstance { DisplayName = "自定义 Git 服务", ProviderKind = GitProviderKind.Generic, SshUser = "git" }
         };
 
@@ -186,5 +209,32 @@ public sealed class GitServiceService
             .Select(character => char.IsLetterOrDigit(character) || character is '.' or '-' ? character : '-')
             .ToArray()).Trim('-');
         return string.IsNullOrWhiteSpace(normalized) ? Guid.NewGuid().ToString("N") : normalized;
+    }
+
+    private static void SynchronizeDefaultServiceRoute(AppConfig config, GitServiceInstance service)
+    {
+        var routeId = $"service-default:{service.Id}";
+        var existing = config.RepositoryRoutes.FirstOrDefault(item =>
+            string.Equals(item.Id, routeId, StringComparison.OrdinalIgnoreCase));
+        if (string.IsNullOrWhiteSpace(service.DefaultIdentityId) || service.ProviderKind == GitProviderKind.GitHub)
+        {
+            if (existing is not null)
+            {
+                config.RepositoryRoutes.Remove(existing);
+            }
+
+            return;
+        }
+
+        var route = existing ?? new RepositoryRoute { Id = routeId };
+        route.ServiceInstanceId = service.Id;
+        route.IdentityId = service.DefaultIdentityId;
+        route.Scope = GitRouteScope.Service;
+        route.Enabled = true;
+        route.Normalize();
+        if (existing is null)
+        {
+            config.RepositoryRoutes.Add(route);
+        }
     }
 }
