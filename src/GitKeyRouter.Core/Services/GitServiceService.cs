@@ -75,7 +75,7 @@ public sealed class GitServiceService
             config.GitServices.Add(service);
         }
 
-        SynchronizeDefaultServiceRoute(config, service);
+        config.SynchronizeDefaultServiceRoutes();
 
         await _configStore.SaveAsync(config, cancellationToken).ConfigureAwait(false);
         return OperationResult<GitServiceInstance>.Ok(service, "Git service saved.");
@@ -211,30 +211,4 @@ public sealed class GitServiceService
         return string.IsNullOrWhiteSpace(normalized) ? Guid.NewGuid().ToString("N") : normalized;
     }
 
-    private static void SynchronizeDefaultServiceRoute(AppConfig config, GitServiceInstance service)
-    {
-        var routeId = $"service-default:{service.Id}";
-        var existing = config.RepositoryRoutes.FirstOrDefault(item =>
-            string.Equals(item.Id, routeId, StringComparison.OrdinalIgnoreCase));
-        if (string.IsNullOrWhiteSpace(service.DefaultIdentityId) || service.ProviderKind == GitProviderKind.GitHub)
-        {
-            if (existing is not null)
-            {
-                config.RepositoryRoutes.Remove(existing);
-            }
-
-            return;
-        }
-
-        var route = existing ?? new RepositoryRoute { Id = routeId };
-        route.ServiceInstanceId = service.Id;
-        route.IdentityId = service.DefaultIdentityId;
-        route.Scope = GitRouteScope.Service;
-        route.Enabled = true;
-        route.Normalize();
-        if (existing is null)
-        {
-            config.RepositoryRoutes.Add(route);
-        }
-    }
 }

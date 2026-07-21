@@ -21,9 +21,31 @@ public sealed class UrlRewritePreview
 
     public string? MatchedBaseUrl { get; init; }
 
+    public string? ActualMatchedPrefix { get; init; }
+
+    public string? ActualMatchedBaseUrl { get; init; }
+
+    public string? ActualRewrittenUrl { get; init; }
+
+    public string? ExpectedMatchedPrefix { get; init; }
+
+    public string? ExpectedMatchedBaseUrl { get; init; }
+
+    public string? ExpectedRewrittenUrl { get; init; }
+
+    public UrlRewriteExpectationStatus ExpectationStatus { get; init; }
+
     public required string RewrittenUrl { get; init; }
 
     public bool WasRewritten => MatchedPrefix is not null;
+}
+
+public enum UrlRewriteExpectationStatus
+{
+    None,
+    Applied,
+    Missing,
+    Conflict
 }
 
 public sealed class SshTestResult

@@ -66,5 +66,47 @@ public sealed class AppConfig
 
             route.Normalize();
         }
+
+        SynchronizeDefaultServiceRoutes();
+    }
+
+    public void SynchronizeDefaultServiceRoutes()
+    {
+        foreach (var service in GitServices)
+        {
+            var managedRouteId = $"service-default:{service.Id}";
+            var managedRoute = RepositoryRoutes.FirstOrDefault(item =>
+                string.Equals(item.Id, managedRouteId, StringComparison.OrdinalIgnoreCase));
+            var defaultIdentity = string.IsNullOrWhiteSpace(service.DefaultIdentityId)
+                ? null
+                : Identities.FirstOrDefault(item =>
+                    string.Equals(item.Id, service.DefaultIdentityId, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(item.ServiceInstanceId, service.Id, StringComparison.OrdinalIgnoreCase));
+
+            if (service.ProviderKind == GitProviderKind.GitHub || defaultIdentity is null)
+            {
+                if (managedRoute is not null)
+                {
+                    RepositoryRoutes.Remove(managedRoute);
+                }
+
+                continue;
+            }
+
+            var serviceRoute = managedRoute ?? RepositoryRoutes.FirstOrDefault(item =>
+                item.Scope == GitRouteScope.Service
+                && string.Equals(item.ServiceInstanceId, service.Id, StringComparison.OrdinalIgnoreCase));
+            if (serviceRoute is null)
+            {
+                serviceRoute = new RepositoryRoute { Id = managedRouteId };
+                RepositoryRoutes.Add(serviceRoute);
+            }
+
+            serviceRoute.ServiceInstanceId = service.Id;
+            serviceRoute.IdentityId = defaultIdentity.Id;
+            serviceRoute.Scope = GitRouteScope.Service;
+            serviceRoute.Enabled = true;
+            serviceRoute.Normalize();
+        }
     }
 }

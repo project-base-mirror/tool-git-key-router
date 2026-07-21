@@ -130,6 +130,7 @@ public sealed class OwnerRouteService
         GitProviderAdapterRegistry? providers = null)
     {
         providers ??= GitProviderAdapterRegistry.CreateDefault();
+        config.Normalize();
         var identities = config.Identities.ToDictionary(item => item.Id, StringComparer.OrdinalIgnoreCase);
         var rules = new List<GitUrlRewriteRule>();
         foreach (var route in config.RepositoryRoutes.Where(item => item.Enabled))

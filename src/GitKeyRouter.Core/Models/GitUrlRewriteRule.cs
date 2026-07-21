@@ -12,6 +12,7 @@ public enum GitRewriteStatus
     Duplicate,
     Conflict,
     Extra,
+    LegacyAccountOwner,
     Disabled
 }
 
@@ -44,5 +45,7 @@ public sealed class GitRewritePlan
 
     public List<GitUrlRewriteRule> Removes { get; } = [];
 
-    public bool HasChanges => Adds.Count > 0 || Removes.Count > 0;
+    public List<string> RepositoryRouteIdsToRemove { get; } = [];
+
+    public bool HasChanges => Adds.Count > 0 || Removes.Count > 0 || RepositoryRouteIdsToRemove.Count > 0;
 }
