@@ -191,14 +191,14 @@ public sealed class ConfigurationMigrationTests
           ],
           "RepositoryRoutes": [
             {
-              "Id": "legacy-cloud",
+              "Id": "",
               "ServiceInstanceId": "git.policoil.top",
               "NamespacePath": "fgc0109",
               "IdentityId": "cloud-identity",
               "Enabled": true
             },
             {
-              "Id": "legacy-local",
+              "Id": "",
               "ServiceInstanceId": "gitea.lan.policoil.top",
               "NamespacePath": "fgc0109",
               "IdentityId": "local-identity",
@@ -216,8 +216,19 @@ public sealed class ConfigurationMigrationTests
 
         Assert.Equal("cloud-identity", cloud.DefaultIdentityId);
         Assert.Equal("local-identity", local.DefaultIdentityId);
-        Assert.Contains(config.RepositoryRoutes, route => route.Id == "legacy-cloud" && route.Scope == GitRouteScope.Owner);
-        Assert.Contains(config.RepositoryRoutes, route => route.Id == "legacy-local" && route.Scope == GitRouteScope.Owner);
+        var migratedRouteIds = config.RepositoryRoutes
+            .Where(route => route.Scope == GitRouteScope.Owner)
+            .Select(route => route.Id)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
+        Assert.Equal(2, migratedRouteIds.Count);
+        Assert.All(migratedRouteIds, id => Assert.StartsWith("migrated-", id, StringComparison.Ordinal));
+        var reloadedRouteIds = (await configStore.LoadAsync()).RepositoryRoutes
+            .Where(route => route.Scope == GitRouteScope.Owner)
+            .Select(route => route.Id)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToList();
+        Assert.Equal(migratedRouteIds, reloadedRouteIds);
         Assert.Contains(config.RepositoryRoutes, route => route.Scope == GitRouteScope.Service && route.IdentityId == "cloud-identity");
         Assert.Contains(config.RepositoryRoutes, route => route.Scope == GitRouteScope.Service && route.IdentityId == "local-identity");
 
@@ -245,8 +256,7 @@ public sealed class ConfigurationMigrationTests
             && comparison.ExpectedBaseUrl == "git@gitea-cloud:");
         Assert.Equal(8, repair.Removes.Count);
         Assert.Equal(8, repair.Adds.Count);
-        Assert.Contains("legacy-cloud", repair.RepositoryRouteIdsToRemove);
-        Assert.Contains("legacy-local", repair.RepositoryRouteIdsToRemove);
+        Assert.All(migratedRouteIds, id => Assert.Contains(id, repair.RepositoryRouteIdsToRemove));
 
         Assert.True((await rewrites.ApplyPlanAsync(repair, "confirm Schema 3 migration")).Success);
         var secondRepair = await rewrites.BuildReconcilePlanAsync();

@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json.Serialization;
 
 namespace GitKeyRouter.Core.Models;
@@ -60,12 +62,17 @@ public sealed class AppConfig
 
         foreach (var route in RepositoryRoutes)
         {
+            var requiresStableMigrationId = sourceSchemaVersion < 4 && string.IsNullOrWhiteSpace(route.Id);
             if (string.IsNullOrWhiteSpace(route.ServiceInstanceId))
             {
                 route.ServiceInstanceId = GitServiceInstance.GitHubComId;
             }
 
             route.Normalize();
+            if (requiresStableMigrationId)
+            {
+                route.Id = CreateMigratedRouteId(route);
+            }
         }
 
         if (sourceSchemaVersion < 4)
@@ -100,6 +107,18 @@ public sealed class AppConfig
                 service.DefaultIdentityId = candidates[0];
             }
         }
+    }
+
+    private static string CreateMigratedRouteId(RepositoryRoute route)
+    {
+        var descriptor = string.Join(
+            "\n",
+            route.ServiceInstanceId,
+            route.IdentityId,
+            route.Scope,
+            route.RoutePath);
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(descriptor));
+        return $"migrated-{Convert.ToHexString(hash.AsSpan(0, 16)).ToLowerInvariant()}";
     }
 
     public void SynchronizeDefaultServiceRoutes()
