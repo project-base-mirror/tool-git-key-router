@@ -39,6 +39,9 @@ public sealed partial class DiagnosticService
     {
         var report = new DiagnosticReport { GeneratedAt = _clock.UtcNow };
         AddEnvironmentItems(report);
+        Add(report, "APPLICATION_VERSION", "Environment", "GitKeyRouter version",
+            typeof(DiagnosticService).Assembly.GetName().Version?.ToString() ?? "Unknown",
+            DiagnosticSeverity.Normal);
 
         var tools = await _toolchainService.InspectAsync(cancellationToken).ConfigureAwait(false);
         AddTool(report, tools.Git);
@@ -401,8 +404,13 @@ public sealed partial class DiagnosticService
                     .BuildSshManagedBlock(service, identity, DetectNewline(managedBlock.RawText));
                 if (!NormalizeNewlines(managedBlock.RawText).Equals(NormalizeNewlines(expected), StringComparison.Ordinal))
                 {
+                    var blockDiff = TextDiffService.CreateSimpleDiff(
+                        managedBlock.RawText,
+                        expected,
+                        $"current/{identity.HostAlias}",
+                        $"expected/{identity.HostAlias}");
                     Add(report, "SSH_BLOCK_SERVICE_MISMATCH", "SSH Config", $"Managed Host differs: {identity.HostAlias}",
-                        $"Expected service endpoint: {service.SshUser}@{service.HostName}:{service.SshPort ?? 22}",
+                        $"Current managed block:{Environment.NewLine}{managedBlock.RawText.TrimEnd()}{Environment.NewLine}{Environment.NewLine}Expected managed block:{Environment.NewLine}{expected.TrimEnd()}{Environment.NewLine}{Environment.NewLine}Diff:{Environment.NewLine}{blockDiff.TrimEnd()}",
                         DiagnosticSeverity.Error, "Synchronize the identity SSH block after reviewing the diff.");
                 }
             }
@@ -453,6 +461,14 @@ public sealed partial class DiagnosticService
                 var targetAlias = ExtractHostAlias(rule.BaseUrl);
                 var targetIdentity = config.Identities.FirstOrDefault(identity =>
                     string.Equals(identity.HostAlias, targetAlias, StringComparison.OrdinalIgnoreCase));
+                if (!string.IsNullOrWhiteSpace(targetAlias) && targetIdentity is null)
+                {
+                    Add(report, "GIT_REWRITE_TARGET_ALIAS_MISSING", "Git URL rewrite", "Rewrite target HostAlias does not exist",
+                        $"Source: {rule.InsteadOfUrl}{Environment.NewLine}Target Base: {rule.BaseUrl}{Environment.NewLine}HostAlias: {targetAlias}",
+                        DiagnosticSeverity.Error,
+                        "Create the matching managed identity or remove the stale rewrite after reviewing the diff.");
+                }
+
                 if (sourceService is not null && targetIdentity is not null
                     && !string.Equals(sourceService.Id, targetIdentity.ServiceInstanceId, StringComparison.OrdinalIgnoreCase))
                 {
@@ -477,19 +493,25 @@ public sealed partial class DiagnosticService
                 var severity = comparison.Status switch
                 {
                     GitRewriteStatus.Correct => DiagnosticSeverity.Normal,
+                    GitRewriteStatus.LegacyAccountOwner => DiagnosticSeverity.Warning,
                     GitRewriteStatus.Extra => DiagnosticSeverity.Warning,
                     GitRewriteStatus.Missing => DiagnosticSeverity.Error,
                     GitRewriteStatus.Duplicate => DiagnosticSeverity.Error,
                     GitRewriteStatus.Conflict => DiagnosticSeverity.Error,
                     _ => DiagnosticSeverity.Warning
                 };
+                var legacy = comparison.Status == GitRewriteStatus.LegacyAccountOwner;
                 Add(report, $"GIT_REWRITE_{comparison.Status}", "Git URL rewrite",
-                    comparison.NamespacePath is null
+                    legacy
+                        ? "Legacy account-as-Owner route"
+                        : comparison.NamespacePath is null
                         ? comparison.InsteadOfUrl
                         : $"{comparison.ServiceInstanceId}/{comparison.NamespacePath}",
-                    $"Status: {comparison.Status}{Environment.NewLine}Base: {comparison.ExpectedBaseUrl}{Environment.NewLine}insteadOf: {comparison.InsteadOfUrl}{Environment.NewLine}Matches: {comparison.ActualMatchCount}",
+                    $"Status: {(legacy ? "Legacy account-as-owner route" : comparison.Status)}{Environment.NewLine}Base: {comparison.ExpectedBaseUrl}{Environment.NewLine}insteadOf: {comparison.InsteadOfUrl}{Environment.NewLine}Matches: {comparison.ActualMatchCount}",
                     severity,
-                    severity == DiagnosticSeverity.Normal ? null : "Review the Git rewrite diff before applying a repair.");
+                    legacy
+                        ? "Convert this Gitea login-account route to the service-level default route after reviewing the migration diff."
+                        : severity == DiagnosticSeverity.Normal ? null : "Review the Git rewrite diff before applying a repair.");
             }
         }
         catch (Exception exception)

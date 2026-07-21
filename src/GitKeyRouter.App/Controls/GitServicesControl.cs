@@ -1,3 +1,4 @@
+using System.Text;
 using GitKeyRouter.App.Forms;
 using GitKeyRouter.App.Presentation;
 using GitKeyRouter.Core.Models;
@@ -21,6 +22,7 @@ public sealed class GitServicesControl : UserControl, IAsyncRefreshable
         toolbar.Controls.Add(UiHelpers.Button("新建", async (_, _) => await CreateAsync()));
         toolbar.Controls.Add(UiHelpers.Button("编辑", async (_, _) => await EditAsync()));
         toolbar.Controls.Add(UiHelpers.Button("删除", async (_, _) => await DeleteAsync()));
+        toolbar.Controls.Add(UiHelpers.Button("应用服务配置", async (_, _) => await ApplyServiceConfigurationAsync()));
         toolbar.Controls.Add(UiHelpers.Button("测试连接", async (_, _) => await TestConnectionAsync()));
         toolbar.Controls.Add(UiHelpers.Button("刷新", async (_, _) => await RefreshAsync()));
         Controls.Add(_grid);
@@ -119,6 +121,88 @@ public sealed class GitServicesControl : UserControl, IAsyncRefreshable
         }
 
         await RefreshAsync();
+    }
+
+    private async Task ApplyServiceConfigurationAsync()
+    {
+        var selected = SelectedService();
+        if (selected is null)
+        {
+            return;
+        }
+
+        var config = await _services.ConfigStore.LoadAsync();
+        var identity = string.IsNullOrWhiteSpace(selected.DefaultIdentityId)
+            ? null
+            : config.Identities.FirstOrDefault(item =>
+                string.Equals(item.Id, selected.DefaultIdentityId, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(item.ServiceInstanceId, selected.Id, StringComparison.OrdinalIgnoreCase));
+        if (identity is null)
+        {
+            MessageBox.Show(
+                this,
+                "该服务尚未配置属于本服务的默认身份。请先编辑服务并选择默认身份。GitHub 请继续使用 Owner 路由。",
+                "GitKeyRouter",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        var rawSshConfig = await _services.SshConfigService.ReadRawAsync();
+        var sshPreview = _services.SshConfigService.PreviewUpsert(rawSshConfig, selected, identity);
+        var gitPlan = await _services.GitUrlRewriteService.BuildServiceRepairPlanAsync(selected.Id);
+        if (!sshPreview.HasChanges && !gitPlan.HasChanges)
+        {
+            _status($"{selected.DisplayName} 无需修改");
+            MessageBox.Show(this, "无需修改。SSH managed block 与服务级 Git rewrite 均已正确。", "GitKeyRouter", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var changeText = new StringBuilder()
+            .AppendLine($"Git 服务：{selected.DisplayName}")
+            .AppendLine($"默认身份：{identity.DisplayName} ({identity.HostAlias})")
+            .AppendLine()
+            .AppendLine("SSH Config 精确 diff：")
+            .AppendLine(sshPreview.DiffText)
+            .AppendLine()
+            .AppendLine(UiHelpers.FormatGitPlan(gitPlan))
+            .ToString();
+        using var diff = new DiffPreviewForm("应用服务配置", changeText);
+        if (diff.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _status($"正在协调 {selected.DisplayName}...");
+        var sshResult = await _services.SshConfigService.ApplyAsync(
+            sshPreview,
+            $"Apply Git service SSH config: {selected.DisplayName}");
+        if (!sshResult.Success)
+        {
+            UiHelpers.ShowErrors(this, sshResult);
+            return;
+        }
+
+        var gitResult = await _services.GitUrlRewriteService.ApplyPlanAsync(
+            gitPlan,
+            $"Apply Git service routes: {selected.DisplayName}");
+        if (!gitResult.Success)
+        {
+            UiHelpers.ShowErrors(this, gitResult);
+            return;
+        }
+
+        var previewUrl = $"{selected.WebBaseUrl.TrimEnd('/')}/__gitkeyrouter__/__route_preview__.git";
+        var routePreview = await _services.GitUrlRewriteService.PreviewAsync(previewUrl);
+        var diagnostics = await _services.DiagnosticService.RunAsync();
+        await RefreshAsync();
+        _status($"{selected.DisplayName} 服务配置已协调");
+        MessageBox.Show(
+            this,
+            $"服务配置已应用。\r\n\r\nSSH managed block：{(sshPreview.HasChanges ? "已同步" : "无需修改")}\r\nGit rewrite：{(gitPlan.HasChanges ? "已协调" : "无需修改")}\r\n预期重写：{routePreview.ExpectedRewrittenUrl ?? routePreview.RewrittenUrl}\r\n诊断：{diagnostics.ErrorCount} 个错误，{diagnostics.WarningCount} 个警告。",
+            "GitKeyRouter",
+            MessageBoxButtons.OK,
+            diagnostics.ErrorCount == 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
     }
 
     private async Task TestConnectionAsync()
