@@ -436,6 +436,41 @@ public sealed partial class DiagnosticService
                     "Verify git.exe and run diagnostics again.");
             }
 
+            var actualRules = await _gitUrlRewriteService.GetActualRulesAsync(cancellationToken).ConfigureAwait(false);
+            foreach (var conflict in actualRules.GroupBy(item => item.InsteadOfUrl, StringComparer.OrdinalIgnoreCase)
+                         .Where(group => group.Select(item => item.BaseUrl).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1))
+            {
+                Add(report, "GIT_REWRITE_SOURCE_MULTIPLE_IDENTITIES", "Git URL rewrite", "One source prefix routes to multiple identities",
+                    $"Source: {conflict.Key}{Environment.NewLine}Targets: {string.Join(", ", conflict.Select(item => item.BaseUrl).Distinct(StringComparer.OrdinalIgnoreCase))}",
+                    DiagnosticSeverity.Error, "Keep exactly one target for each source prefix.");
+            }
+
+            foreach (var rule in actualRules)
+            {
+                var sourceService = config.GitServices.FirstOrDefault(service =>
+                    _providers.Get(service.ProviderKind).GetSupportedRemotePatterns(service)
+                        .Any(pattern => rule.InsteadOfUrl.StartsWith(pattern.Prefix, StringComparison.OrdinalIgnoreCase)));
+                var targetAlias = ExtractHostAlias(rule.BaseUrl);
+                var targetIdentity = config.Identities.FirstOrDefault(identity =>
+                    string.Equals(identity.HostAlias, targetAlias, StringComparison.OrdinalIgnoreCase));
+                if (sourceService is not null && targetIdentity is not null
+                    && !string.Equals(sourceService.Id, targetIdentity.ServiceInstanceId, StringComparison.OrdinalIgnoreCase))
+                {
+                    Add(report, "GIT_REWRITE_CROSS_SERVICE", "Git URL rewrite", "Git service URL is routed to another service identity",
+                        $"Source service: {sourceService.DisplayName}{Environment.NewLine}Source: {rule.InsteadOfUrl}{Environment.NewLine}Target HostAlias: {targetIdentity.HostAlias} ({targetIdentity.ServiceInstanceId})",
+                        DiagnosticSeverity.Error, "Remove the cross-instance rewrite and generate rules from the matching Git service only.");
+                }
+            }
+
+            var legacyPlan = await _gitUrlRewriteService.BuildLegacyAccountOwnerMigrationPlanAsync(cancellationToken).ConfigureAwait(false);
+            if (legacyPlan.HasChanges)
+            {
+                Add(report, "LEGACY_ACCOUNT_AS_OWNER_GIT_CONFIG", "Git URL rewrite", "Legacy account-as-Owner Git config detected",
+                    $"Rules to remove: {legacyPlan.Removes.Count}{Environment.NewLine}Service-level rules to add: {legacyPlan.Adds.Count}",
+                    DiagnosticSeverity.Warning,
+                    "Preview the migration diff and confirm conversion; diagnostics never remove these rules automatically.");
+            }
+
             var comparisons = await _gitUrlRewriteService.CompareAsync(cancellationToken).ConfigureAwait(false);
             foreach (var comparison in comparisons)
             {
@@ -495,6 +530,18 @@ public sealed partial class DiagnosticService
 
     private static string NormalizeNewlines(string text)
         => text.Replace("\r\n", "\n", StringComparison.Ordinal).TrimEnd('\n');
+
+    private static string? ExtractHostAlias(string baseUrl)
+    {
+        var at = baseUrl.IndexOf('@');
+        if (at < 0 || at == baseUrl.Length - 1)
+        {
+            return null;
+        }
+
+        var end = baseUrl.IndexOfAny([':', '/'], at + 1);
+        return end < 0 ? baseUrl[(at + 1)..] : baseUrl[(at + 1)..end];
+    }
 
     private static void Add(
         DiagnosticReport report,
