@@ -77,7 +77,7 @@ public sealed class ConfigurationMigrationTests
 
         await store.SaveAsync(config);
         var saved = await File.ReadAllTextAsync(paths.ConfigPath);
-        Assert.Contains("\"SchemaVersion\": 3", saved, StringComparison.Ordinal);
+        Assert.Contains($"\"SchemaVersion\": {AppConfig.CurrentSchemaVersion}", saved, StringComparison.Ordinal);
         Assert.Contains("\"GitServices\"", saved, StringComparison.Ordinal);
         Assert.Contains("\"RepositoryRoutes\"", saved, StringComparison.Ordinal);
         Assert.Contains("\"AccountName\": \"camus0109\"", saved, StringComparison.Ordinal);
