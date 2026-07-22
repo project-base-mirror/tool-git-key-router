@@ -2,6 +2,7 @@ using System.Runtime.ExceptionServices;
 using GitKeyRouter.App;
 using GitKeyRouter.App.Controls;
 using GitKeyRouter.App.Forms;
+using GitKeyRouter.App.Presentation;
 using GitKeyRouter.Core.Models;
 
 namespace GitKeyRouter.App.Tests;
@@ -136,6 +137,52 @@ public sealed class WinFormsSmokeTests
             Exercise(new MainForm(services), new Size(1024, 680), new Size(1280, 820));
         });
 
+    [Fact]
+    public void MainPagesExposeHelpAndLanguageSelector()
+        => StaTest.Run(() =>
+        {
+            var services = AppBootstrapper.CreateServices();
+            AppLocalization.SetLanguage(AppLanguage.English);
+            var pages = new UserControl[]
+            {
+                new OverviewControl(services, _ => { }, _ => Task.CompletedTask),
+                new GitServicesControl(services, _ => { }),
+                new IdentitiesControl(services, _ => { }),
+                new GitProfilesControl(services, _ => { }),
+                new OwnerRoutesControl(services, _ => { }),
+                new SshConfigControl(services, _ => { }),
+                new GitRewritesControl(services, _ => { }),
+                new DiagnosticsControl(services, _ => { }),
+                new BackupControl(services, _ => { })
+            };
+
+            try
+            {
+                foreach (var page in pages)
+                {
+                    _ = page.Handle;
+                    Assert.Single(Descendants<Button>(page), button => button.Name == "PageHelpButton");
+                }
+
+                using var main = new MainForm(services);
+                _ = main.Handle;
+                var selector = Assert.Single(
+                    Descendants<ComboBox>(main),
+                    item => item.Name == "UiLanguageSelector");
+                Assert.Equal(2, selector.Items.Count);
+                Assert.Contains("     Git Services", Descendants<Button>(main).Select(button => button.Text));
+            }
+            finally
+            {
+                foreach (var page in pages)
+                {
+                    page.Dispose();
+                }
+
+                AppLocalization.SetLanguage(AppLanguage.SimplifiedChinese);
+            }
+        });
+
     private static void Exercise(Control control, params Size[] sizes)
     {
         using (control)
@@ -146,6 +193,23 @@ public sealed class WinFormsSmokeTests
                 control.Size = size;
                 control.PerformLayout();
                 Application.DoEvents();
+            }
+        }
+    }
+
+    private static IEnumerable<T> Descendants<T>(Control root)
+        where T : Control
+    {
+        foreach (Control child in root.Controls)
+        {
+            if (child is T match)
+            {
+                yield return match;
+            }
+
+            foreach (var descendant in Descendants<T>(child))
+            {
+                yield return descendant;
             }
         }
     }

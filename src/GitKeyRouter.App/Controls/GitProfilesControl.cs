@@ -18,17 +18,22 @@ public sealed class GitProfilesControl : UserControl, IAsyncRefreshable
     public GitProfilesControl(ApplicationServices services, Action<string> status)
     {
         _services = services; _status = status;
-        var header = UiHelpers.CreatePageHeader("Git Profiles", "按目录或远程 URL 自动选择 commit 的 user.name、user.email 与签名密钥");
+        var header = UiHelpers.CreatePageHeader(
+            "Git Profiles",
+            AppLocalization.T("按目录或远程 URL 自动选择 commit 的 user.name、user.email 与签名密钥", "Select commit user.name, user.email, and signing key by directory or remote URL"),
+            AppLocalization.T(
+                "Git Profile 管理提交作者信息，不负责 SSH 登录身份。\r\n\r\n• 上方列表定义 user.name、user.email 和可选签名密钥。\r\n• 下方规则按本地目录或远程 URL 选择 Profile。\r\n• 规则越具体，匹配越明确。\r\n• 使用“预览并应用”检查将写入的 Git includeIf 配置。",
+                "Git Profiles manage commit authorship, not SSH login identities.\r\n\r\n• The upper list defines user.name, user.email, and an optional signing key.\r\n• The lower rules select a profile by local directory or remote URL.\r\n• More specific rules produce clearer matches.\r\n• Use Preview and apply to inspect the Git includeIf configuration before writing it."));
         var profileToolbar = UiHelpers.CreateToolbar();
-        profileToolbar.Controls.Add(UiHelpers.Button("新建 Profile", async (_, _) => await CreateProfileAsync()));
-        profileToolbar.Controls.Add(UiHelpers.Button("编辑 Profile", async (_, _) => await EditProfileAsync()));
-        profileToolbar.Controls.Add(UiHelpers.Button("删除 Profile", async (_, _) => await DeleteProfileAsync()));
-        profileToolbar.Controls.Add(UiHelpers.Button("预览并应用", async (_, _) => await PreviewAndApplyAsync()));
-        profileToolbar.Controls.Add(UiHelpers.Button("刷新", async (_, _) => await RefreshAsync()));
+        profileToolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("新建 Profile", "New profile"), async (_, _) => await CreateProfileAsync()));
+        profileToolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("编辑 Profile", "Edit profile"), async (_, _) => await EditProfileAsync()));
+        profileToolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("删除 Profile", "Delete profile"), async (_, _) => await DeleteProfileAsync()));
+        profileToolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("预览并应用", "Preview and apply"), async (_, _) => await PreviewAndApplyAsync()));
+        profileToolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("刷新", "Refresh"), async (_, _) => await RefreshAsync()));
         var ruleToolbar = UiHelpers.CreateToolbar();
-        ruleToolbar.Controls.Add(UiHelpers.Button("新建规则", async (_, _) => await CreateRuleAsync()));
-        ruleToolbar.Controls.Add(UiHelpers.Button("编辑规则", async (_, _) => await EditRuleAsync()));
-        ruleToolbar.Controls.Add(UiHelpers.Button("删除规则", async (_, _) => await DeleteRuleAsync()));
+        ruleToolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("新建规则", "New rule"), async (_, _) => await CreateRuleAsync()));
+        ruleToolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("编辑规则", "Edit rule"), async (_, _) => await EditRuleAsync()));
+        ruleToolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("删除规则", "Delete rule"), async (_, _) => await DeleteRuleAsync()));
         var profilesPanel = new Panel { Dock = DockStyle.Fill, BackColor = UiHelpers.Surface };
         profilesPanel.Controls.Add(_profilesGrid); profilesPanel.Controls.Add(profileToolbar);
         var rulesPanel = new Panel { Dock = DockStyle.Fill, BackColor = UiHelpers.Surface };

@@ -18,15 +18,20 @@ public sealed class BackupControl : UserControl, IAsyncRefreshable
     {
         _services = services;
         _status = status;
-        var header = UiHelpers.CreatePageHeader("备份与恢复", "创建配置快照，并按需恢复 SSH、Git 或程序配置");
+        var header = UiHelpers.CreatePageHeader(
+            AppLocalization.T("备份与恢复", "Backup and Restore"),
+            AppLocalization.T("创建配置快照，并按需恢复 SSH、Git 或程序配置", "Create configuration snapshots and restore SSH, Git, or application settings independently"),
+            AppLocalization.T(
+                "GitKeyRouter 在重要写入前会自动创建快照，也可以手动创建。\r\n\r\n• 先根据时间和原因选择备份。\r\n• 使用“查看内容”确认快照包含的配置。\r\n• SSH Config、Git rewrite 和程序配置可以分别恢复。\r\n• 恢复会覆盖对应范围，请先确认当前状态。",
+                "GitKeyRouter creates snapshots before important writes, and you can also create them manually.\r\n\r\n• Select a backup by timestamp and reason.\r\n• Use View contents to confirm what the snapshot contains.\r\n• SSH Config, Git rewrites, and application configuration can be restored independently.\r\n• Restore operations replace the selected scope, so review the current state first."));
         var toolbar = UiHelpers.CreateToolbar();
-        toolbar.Controls.Add(UiHelpers.Button("立即创建快照", async (_, _) => await CreateSnapshotAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("查看内容", async (_, _) => await ViewAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("恢复 SSH Config", async (_, _) => await RestoreSshAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("恢复 Git rewrite", async (_, _) => await RestoreGitAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("恢复程序配置", async (_, _) => await RestoreAppAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("打开备份目录", (_, _) => OpenBackupDirectory()));
-        toolbar.Controls.Add(UiHelpers.Button("刷新", async (_, _) => await RefreshAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("立即创建快照", "Create snapshot now"), async (_, _) => await CreateSnapshotAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("查看内容", "View contents"), async (_, _) => await ViewAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("恢复 SSH Config", "Restore SSH Config"), async (_, _) => await RestoreSshAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("恢复 Git rewrite", "Restore Git rewrites"), async (_, _) => await RestoreGitAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("恢复程序配置", "Restore application config"), async (_, _) => await RestoreAppAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("打开备份目录", "Open backup folder"), (_, _) => OpenBackupDirectory()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("刷新", "Refresh"), async (_, _) => await RefreshAsync()));
         Controls.Add(_grid);
         Controls.Add(toolbar);
         Controls.Add(header);

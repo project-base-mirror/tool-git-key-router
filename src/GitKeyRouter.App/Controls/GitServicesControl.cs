@@ -17,14 +17,19 @@ public sealed class GitServicesControl : UserControl, IAsyncRefreshable
     {
         _services = services;
         _status = status;
-        var header = UiHelpers.CreatePageHeader("Git 服务", "管理 GitHub.com、GitLab、Gitea 与其他自建 Git 服务实例");
+        var header = UiHelpers.CreatePageHeader(
+            AppLocalization.T("Git 服务", "Git Services"),
+            AppLocalization.T("管理 GitHub.com、GitLab、Gitea 与其他自建 Git 服务实例", "Manage GitHub.com, GitLab, Gitea, and other self-hosted Git services"),
+            AppLocalization.T(
+                "Git 服务描述远端主机和连接方式。\r\n\r\n• 先新建服务，再到“Git 身份”创建账号和密钥。\r\n• 默认身份是该服务的兜底身份。\r\n• Owner 和仓库路由会优先于默认身份。\r\n• 选择默认身份后，使用“应用服务配置”同步 SSH 与 Git 重写规则。\r\n• 应用前会显示变更预览。",
+                "A Git service describes a remote host and how to connect to it.\r\n\r\n• Create the service first, then create an account and key under Git Identities.\r\n• The default identity is the fallback for this service.\r\n• Owner and repository routes override the default identity.\r\n• After selecting a default identity, use Apply service configuration to synchronize SSH and Git rewrite rules.\r\n• Changes are previewed before they are applied."));
         var toolbar = UiHelpers.CreateToolbar();
-        toolbar.Controls.Add(UiHelpers.Button("新建", async (_, _) => await CreateAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("编辑", async (_, _) => await EditAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("删除", async (_, _) => await DeleteAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("应用服务配置", async (_, _) => await ApplyServiceConfigurationAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("测试连接", async (_, _) => await TestConnectionAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("刷新", async (_, _) => await RefreshAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("新建", "New"), async (_, _) => await CreateAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("编辑", "Edit"), async (_, _) => await EditAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("删除", "Delete"), async (_, _) => await DeleteAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("应用服务配置", "Apply service configuration"), async (_, _) => await ApplyServiceConfigurationAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("测试连接", "Test connection"), async (_, _) => await TestConnectionAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("刷新", "Refresh"), async (_, _) => await RefreshAsync()));
         Controls.Add(_grid);
         Controls.Add(toolbar);
         Controls.Add(header);
@@ -141,7 +146,9 @@ public sealed class GitServicesControl : UserControl, IAsyncRefreshable
         {
             MessageBox.Show(
                 this,
-                "该服务尚未配置属于本服务的默认身份。请先编辑服务并选择默认身份。GitHub 请继续使用 Owner 路由。",
+                AppLocalization.T(
+                    "该服务尚未配置属于本服务的默认身份。请先编辑服务并选择默认身份。",
+                    "This service does not have a default identity from the same service. Edit the service and select a default identity first."),
                 "GitKeyRouter",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);

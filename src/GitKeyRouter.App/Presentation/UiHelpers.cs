@@ -278,7 +278,7 @@ public static class UiHelpers
         }
     }
 
-    public static Control CreatePageHeader(string title, string subtitle)
+    public static Control CreatePageHeader(string title, string subtitle, string? helpText = null)
     {
         var header = new Panel
         {
@@ -287,6 +287,18 @@ public static class UiHelpers
             BackColor = AppBackground,
             Padding = new Padding(0, 2, 0, 8)
         };
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty,
+            BackColor = AppBackground
+        };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 46));
+        var textPanel = new Panel { Dock = DockStyle.Fill, BackColor = AppBackground };
         var titleLabel = new Label
         {
             Text = title,
@@ -304,8 +316,40 @@ public static class UiHelpers
             ForeColor = TextSecondary,
             TextAlign = ContentAlignment.TopLeft
         };
-        header.Controls.Add(subtitleLabel);
-        header.Controls.Add(titleLabel);
+        textPanel.Controls.Add(subtitleLabel);
+        textPanel.Controls.Add(titleLabel);
+        layout.Controls.Add(textPanel, 0, 0);
+        if (!string.IsNullOrWhiteSpace(helpText))
+        {
+            var helpButton = new Button
+            {
+                Name = "PageHelpButton",
+                Text = "?",
+                Width = 36,
+                Height = 36,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Margin = new Padding(6, 4, 0, 0),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Surface,
+                ForeColor = Accent,
+                Font = new Font("Segoe UI Semibold", 12F),
+                Cursor = Cursors.Hand,
+                AccessibleName = AppLocalization.T("页面帮助", "Page help"),
+                AccessibleDescription = AppLocalization.T("打开当前页面的使用说明", "Open instructions for the current page"),
+                UseVisualStyleBackColor = false
+            };
+            helpButton.FlatAppearance.BorderColor = Border;
+            helpButton.FlatAppearance.MouseOverBackColor = AccentSoft;
+            helpButton.Click += (_, _) => MessageBox.Show(
+                header.FindForm() as IWin32Window ?? header,
+                helpText,
+                AppLocalization.T($"{title} - 使用帮助", $"{title} - Help"),
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            layout.Controls.Add(helpButton, 1, 0);
+        }
+
+        header.Controls.Add(layout);
         return header;
     }
 

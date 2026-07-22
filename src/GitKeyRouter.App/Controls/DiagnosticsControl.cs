@@ -20,12 +20,17 @@ public sealed class DiagnosticsControl : UserControl, IAsyncRefreshable
     {
         _services = services;
         _status = status;
-        var header = UiHelpers.CreatePageHeader("诊断", "集中检查工具链、配置文件、SSH 与 Git rewrite 状态");
+        var header = UiHelpers.CreatePageHeader(
+            AppLocalization.T("诊断", "Diagnostics"),
+            AppLocalization.T("集中检查工具链、配置文件、SSH 与 Git rewrite 状态", "Check toolchain, configuration files, SSH, and Git rewrite status in one place"),
+            AppLocalization.T(
+                "在新增身份、修改路由或恢复配置后运行一键诊断。\r\n\r\n• 错误通常需要立即处理。\r\n• 警告表示配置可用但存在风险或未同步。\r\n• 建议列给出下一步操作。\r\n• 导出的报告包含路径和状态，但不会包含私钥内容。",
+                "Run diagnostics after adding identities, changing routes, or restoring configuration.\r\n\r\n• Errors normally require immediate action.\r\n• Warnings indicate risk or an unsynchronized state.\r\n• The Suggested action column provides the next step.\r\n• Exported reports include paths and status, but never private-key contents."));
         var toolbar = UiHelpers.CreateToolbar();
-        toolbar.Controls.Add(UiHelpers.Button("一键诊断", async (_, _) => await RefreshAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("复制诊断报告", (_, _) => CopyReport()));
-        toolbar.Controls.Add(UiHelpers.Button("导出报告", (_, _) => ExportReport()));
-        toolbar.Controls.Add(UiHelpers.Button("查看完整报告", (_, _) => ViewReport()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("一键诊断", "Run diagnostics"), async (_, _) => await RefreshAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("复制诊断报告", "Copy diagnostic report"), (_, _) => CopyReport()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("导出报告", "Export report"), (_, _) => ExportReport()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("查看完整报告", "View full report"), (_, _) => ViewReport()));
 
         _reportPanel = UiHelpers.CreateOutputPanel(_reportText);
         _reportPanel.Dock = DockStyle.Bottom;

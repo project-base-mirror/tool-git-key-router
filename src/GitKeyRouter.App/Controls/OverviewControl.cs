@@ -32,12 +32,17 @@ public sealed class OverviewControl : UserControl, IAsyncRefreshable
         _status = status;
         _navigate = navigate;
 
-        var header = UiHelpers.CreatePageHeader("概览", "快速检查工具链、身份、路由和备份状态");
+        var header = UiHelpers.CreatePageHeader(
+            AppLocalization.T("概览", "Overview"),
+            AppLocalization.T("快速检查工具链、身份、路由和备份状态", "Quickly review toolchain, identities, routes, and backups"),
+            AppLocalization.T(
+                "建议按以下顺序开始：\r\n\r\n1. 检测 Git、SSH 和 ssh-keygen。\r\n2. 创建 Git 服务和身份。\r\n3. 同步 SSH Config。\r\n4. 创建服务、Owner 或仓库路由并应用 Git 重写。\r\n5. 最后运行一键诊断并创建备份。",
+                "Recommended setup order:\r\n\r\n1. Check Git, SSH, and ssh-keygen.\r\n2. Create Git services and identities.\r\n3. Synchronize SSH Config.\r\n4. Create service, owner, or repository routes and apply Git rewrites.\r\n5. Run diagnostics and create a backup."));
         var toolbar = UiHelpers.CreateToolbar();
-        toolbar.Controls.Add(UiHelpers.Button("刷新", async (_, _) => await RefreshAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("一键诊断", async (_, _) => await RunDiagnosticsAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("检测/安装必需软件", async (_, _) => await CheckRequiredToolsAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("打开配置目录", (_, _) => OpenDirectory(_services.Paths.AppDataDirectory)));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("刷新", "Refresh"), async (_, _) => await RefreshAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("一键诊断", "Run diagnostics"), async (_, _) => await RunDiagnosticsAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("检测/安装必需软件", "Check/install required tools"), async (_, _) => await CheckRequiredToolsAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("打开配置目录", "Open config folder"), (_, _) => OpenDirectory(_services.Paths.AppDataDirectory)));
 
         _environmentCard = CreateOverviewCard(
             "环境状态",
@@ -45,35 +50,35 @@ public sealed class OverviewControl : UserControl, IAsyncRefreshable
             "读取中",
             OverviewStatusKind.Unknown,
             "查看诊断",
-            async (_, _) => await _navigate("诊断"));
+            async (_, _) => await _navigate(PageKeys.Diagnostics));
         _identitiesCard = CreateOverviewCard(
             "Git 身份",
             "正在读取身份与密钥文件状态...",
             "读取中",
             OverviewStatusKind.Unknown,
             "去管理",
-            async (_, _) => await _navigate("Git 身份"));
+            async (_, _) => await _navigate(PageKeys.Identities));
         _ownerRoutesCard = CreateOverviewCard(
             "仓库路由",
             "正在读取服务命名空间与身份映射...",
             "读取中",
             OverviewStatusKind.Unknown,
             "查看路由",
-            async (_, _) => await _navigate("仓库路由"));
+            async (_, _) => await _navigate(PageKeys.RepositoryRoutes));
         _sshConfigCard = CreateOverviewCard(
             "SSH Config",
             "正在检查受管理 Host 区块...",
             "读取中",
             OverviewStatusKind.Unknown,
             "查看配置",
-            async (_, _) => await _navigate("SSH Config"));
+            async (_, _) => await _navigate(PageKeys.SshConfig));
         _gitRewritesCard = CreateOverviewCard(
             "Git 重写配置",
             "正在比对期望规则与全局 Git 配置...",
             "读取中",
             OverviewStatusKind.Unknown,
             "检查规则",
-            async (_, _) => await _navigate("Git 重写配置"));
+            async (_, _) => await _navigate(PageKeys.GitRewrites));
         _backupCard = CreateOverviewCard(
             "备份状态",
             "正在读取配置快照...",

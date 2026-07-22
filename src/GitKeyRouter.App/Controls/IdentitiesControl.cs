@@ -18,23 +18,28 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
         _services = services;
         _status = status;
 
-        var header = UiHelpers.CreatePageHeader("Git 身份", "管理不同 Git 服务的账号、SSH 密钥、公钥格式与连接测试");
+        var header = UiHelpers.CreatePageHeader(
+            AppLocalization.T("Git 身份", "Git Identities"),
+            AppLocalization.T("管理不同 Git 服务的账号、SSH 密钥、公钥格式与连接测试", "Manage accounts, SSH keys, public-key formats, and connection tests"),
+            AppLocalization.T(
+                "一个 Git 身份由服务、账号、HostAlias 和 SSH 密钥组成。\r\n\r\n1. 新建身份或选择已有私钥。\r\n2. 将“查看公钥”中的内容添加到对应 Git 服务账号。\r\n3. 使用“同步 SSH Config”生成受管理 Host 区块。\r\n4. 使用“测试 SSH”确认密钥生效。\r\n\r\n程序不会上传或显示私钥内容。",
+                "A Git identity combines a service, account, HostAlias, and SSH key.\r\n\r\n1. Create an identity or select an existing private key.\r\n2. Add the value shown by View public key to the matching Git account.\r\n3. Use Synchronize SSH Config to create the managed Host block.\r\n4. Use Test SSH to verify the key.\r\n\r\nThe application never uploads or displays private-key contents."));
         var toolbar = UiHelpers.CreateToolbar();
-        toolbar.Controls.Add(UiHelpers.Button("新建", async (_, _) => await CreateAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("编辑", async (_, _) => await EditAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("删除记录", async (_, _) => await DeleteAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("生成密钥", async (_, _) => await GenerateKeyAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("重命名密钥", async (_, _) => await RenameKeyAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("查看公钥", async (_, _) => await ViewPublicKeyAsync(false)));
-        toolbar.Controls.Add(UiHelpers.Button("复制公钥", async (_, _) => await ViewPublicKeyAsync(true)));
-        toolbar.Controls.Add(UiHelpers.Button("复制指纹", (_, _) => CopyFingerprint()));
-        toolbar.Controls.Add(UiHelpers.Button("转换格式", async (_, _) => await ConvertPublicKeyAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("导出公钥", async (_, _) => await ExportPublicKeyAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("同步 SSH Config", async (_, _) => await SyncSshAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("测试 SSH", async (_, _) => await TestSshAsync(false)));
-        toolbar.Controls.Add(UiHelpers.Button("详细测试", async (_, _) => await TestSshAsync(true)));
-        toolbar.Controls.Add(UiHelpers.Button("打开密钥目录", (_, _) => OpenKeyDirectory()));
-        toolbar.Controls.Add(UiHelpers.Button("刷新", async (_, _) => await RefreshAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("新建", "New"), async (_, _) => await CreateAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("编辑", "Edit"), async (_, _) => await EditAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("删除记录", "Delete record"), async (_, _) => await DeleteAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("生成密钥", "Generate key"), async (_, _) => await GenerateKeyAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("重命名密钥", "Rename key"), async (_, _) => await RenameKeyAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("查看公钥", "View public key"), async (_, _) => await ViewPublicKeyAsync(false)));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("复制公钥", "Copy public key"), async (_, _) => await ViewPublicKeyAsync(true)));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("复制指纹", "Copy fingerprint"), (_, _) => CopyFingerprint()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("转换格式", "Convert format"), async (_, _) => await ConvertPublicKeyAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("导出公钥", "Export public key"), async (_, _) => await ExportPublicKeyAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("同步 SSH Config", "Synchronize SSH Config"), async (_, _) => await SyncSshAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("测试 SSH", "Test SSH"), async (_, _) => await TestSshAsync(false)));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("详细测试", "Detailed test"), async (_, _) => await TestSshAsync(true)));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("打开密钥目录", "Open key folder"), (_, _) => OpenKeyDirectory()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("刷新", "Refresh"), async (_, _) => await RefreshAsync()));
 
         Controls.Add(_grid);
         Controls.Add(toolbar);

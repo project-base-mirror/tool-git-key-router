@@ -1,5 +1,6 @@
 using GitKeyRouter.App.Cli;
 using GitKeyRouter.App.Forms;
+using GitKeyRouter.App.Presentation;
 
 namespace GitKeyRouter.App;
 
@@ -18,6 +19,8 @@ internal static class Program
                 return new CliApplication(services).RunAsync(args).GetAwaiter().GetResult();
             }
 
+            var startupConfig = services.ConfigStore.LoadAsync().GetAwaiter().GetResult();
+            AppLocalization.SetLanguage(AppLocalization.Parse(startupConfig.UiLanguage));
             ApplicationConfiguration.Initialize();
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
             Application.ThreadException += (_, eventArgs) =>

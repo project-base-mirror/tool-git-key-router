@@ -10,6 +10,8 @@ public sealed class AppConfig
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
 
+    public string UiLanguage { get; set; } = "zh-CN";
+
     public List<GitServiceInstance> GitServices { get; set; } = [GitServiceInstance.CreateGitHubCom()];
 
     public List<GitIdentity> Identities { get; set; } = [];
@@ -39,6 +41,9 @@ public sealed class AppConfig
         RepositoryRoutes ??= [];
         GitProfiles ??= [];
         GitProfileRules ??= [];
+        UiLanguage = UiLanguage?.Trim().StartsWith("en", StringComparison.OrdinalIgnoreCase) == true
+            ? "en-US"
+            : "zh-CN";
 
         if (!GitServices.Any(item => string.Equals(item.Id, GitServiceInstance.GitHubComId, StringComparison.OrdinalIgnoreCase)))
         {

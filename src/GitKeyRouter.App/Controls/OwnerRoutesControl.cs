@@ -17,16 +17,21 @@ public sealed class OwnerRoutesControl : UserControl, IAsyncRefreshable
     {
         _services = services;
         _status = status;
-        var header = UiHelpers.CreatePageHeader("仓库路由", "按整个服务、Owner 或单仓库映射 SSH 身份；仓库级优先于 Owner，Owner 优先于服务级");
+        var header = UiHelpers.CreatePageHeader(
+            AppLocalization.T("仓库路由", "Repository Routes"),
+            AppLocalization.T("按整个服务、Owner 或单仓库映射 SSH 身份；仓库级优先于 Owner，Owner 优先于服务级", "Map SSH identities by service, owner, or repository; repository routes override owner routes, which override service routes"),
+            AppLocalization.T(
+                "路由决定某个 Git URL 应使用哪个 SSH 身份。\r\n\r\n优先级：仓库路由 > Owner/Namespace 路由 > 服务默认身份。\r\n\r\n保存路由后，使用“应用缺失规则”补充规则，或使用“修复全部路由”使全局 Git 配置与当前配置完全一致。执行前会显示预览。",
+                "Routes choose the SSH identity for a Git URL.\r\n\r\nPriority: repository route > owner/namespace route > service default identity.\r\n\r\nAfter saving a route, use Apply missing rules to add only missing entries, or Reconcile all routes to make global Git configuration match the application. A preview is shown first."));
         var toolbar = UiHelpers.CreateToolbar();
-        toolbar.Controls.Add(UiHelpers.Button("新建", async (_, _) => await CreateAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("编辑", async (_, _) => await EditAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("删除", async (_, _) => await DeleteAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("应用缺失规则", async (_, _) => await ApplyMissingAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("修复全部路由", async (_, _) => await ReconcileAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("删除选中路由规则", async (_, _) => await DeleteSelectedRulesAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("复制 Git 命令", (_, _) => CopyCommands()));
-        toolbar.Controls.Add(UiHelpers.Button("刷新", async (_, _) => await RefreshAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("新建", "New"), async (_, _) => await CreateAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("编辑", "Edit"), async (_, _) => await EditAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("删除", "Delete"), async (_, _) => await DeleteAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("应用缺失规则", "Apply missing rules"), async (_, _) => await ApplyMissingAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("修复全部路由", "Reconcile all routes"), async (_, _) => await ReconcileAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("删除选中路由规则", "Remove selected route rules"), async (_, _) => await DeleteSelectedRulesAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("复制 Git 命令", "Copy Git commands"), (_, _) => CopyCommands()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("刷新", "Refresh"), async (_, _) => await RefreshAsync()));
         Controls.Add(_grid);
         Controls.Add(toolbar);
         Controls.Add(header);

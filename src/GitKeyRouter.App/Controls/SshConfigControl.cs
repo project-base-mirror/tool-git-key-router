@@ -21,19 +21,24 @@ public sealed class SshConfigControl : UserControl, IAsyncRefreshable
         _services = services;
         _status = status;
 
-        var header = UiHelpers.CreatePageHeader("SSH Config", "查看、同步和恢复 GitKeyRouter 管理的 Host 配置");
+        var header = UiHelpers.CreatePageHeader(
+            "SSH Config",
+            AppLocalization.T("查看、同步和恢复 GitKeyRouter 管理的 Host 配置", "View, synchronize, and restore Host entries managed by GitKeyRouter"),
+            AppLocalization.T(
+                "此页面管理 ~/.ssh/config 中由 GitKeyRouter 标记的 Host 区块。\r\n\r\n• 优先使用“同步全部身份”，不要手工复制区块。\r\n• 编辑原始文本前会显示内容，写入操作会创建备份。\r\n• 不要修改受管理区块的起止标记。\r\n• “解析结果”可用于检查重复 Host 或异常结构。",
+                "This page manages the Host blocks marked as GitKeyRouter-managed in ~/.ssh/config.\r\n\r\n• Prefer Synchronize all identities instead of copying blocks manually.\r\n• Raw-text changes are reviewed and backed up before writing.\r\n• Do not modify the start and end markers of managed blocks.\r\n• Use Parsed result to find duplicate Hosts or malformed structure."));
         var toolbar = UiHelpers.CreateToolbar();
-        toolbar.Controls.Add(UiHelpers.Button("同步全部身份", async (_, _) => await SynchronizeAllAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("删除选中区块", async (_, _) => await DeleteSelectedAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("编辑原始文本", async (_, _) => await EditRawAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("恢复最近备份", async (_, _) => await RestoreLatestAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("打开文件", (_, _) => OpenConfig()));
-        toolbar.Controls.Add(UiHelpers.Button("刷新", async (_, _) => await RefreshAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("同步全部身份", "Synchronize all identities"), async (_, _) => await SynchronizeAllAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("删除选中区块", "Delete selected block"), async (_, _) => await DeleteSelectedAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("编辑原始文本", "Edit raw text"), async (_, _) => await EditRawAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("恢复最近备份", "Restore latest backup"), async (_, _) => await RestoreLatestAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("打开文件", "Open file"), (_, _) => OpenConfig()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("刷新", "Refresh"), async (_, _) => await RefreshAsync()));
 
         var tabs = new TabControl { Dock = DockStyle.Fill };
-        tabs.TabPages.Add(new TabPage("受管理 Host") { Controls = { _managedGrid } });
-        tabs.TabPages.Add(new TabPage("解析结果") { Controls = { _parsedText } });
-        tabs.TabPages.Add(new TabPage("原始文本") { Controls = { _rawText } });
+        tabs.TabPages.Add(new TabPage(AppLocalization.T("受管理 Host", "Managed Hosts")) { Controls = { _managedGrid } });
+        tabs.TabPages.Add(new TabPage(AppLocalization.T("解析结果", "Parsed result")) { Controls = { _parsedText } });
+        tabs.TabPages.Add(new TabPage(AppLocalization.T("原始文本", "Raw text")) { Controls = { _rawText } });
 
         Controls.Add(tabs);
         Controls.Add(toolbar);

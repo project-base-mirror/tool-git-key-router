@@ -18,16 +18,21 @@ public sealed class GitRewritesControl : UserControl, IAsyncRefreshable
     {
         _services = services;
         _status = status;
-        var header = UiHelpers.CreatePageHeader("Git 重写配置", "检查并修复 Git URL 到 SSH HostAlias 的重写规则");
+        var header = UiHelpers.CreatePageHeader(
+            AppLocalization.T("Git 重写配置", "Git URL Rewrites"),
+            AppLocalization.T("检查并修复 Git URL 到 SSH HostAlias 的重写规则", "Inspect and repair rules that rewrite Git URLs to SSH HostAliases"),
+            AppLocalization.T(
+                "Git 重写使用全局 url.*.insteadOf 规则，把 HTTPS 或普通 SSH 地址映射到指定 HostAlias。\r\n\r\n• 先在下方输入仓库 URL 并使用“本地预览”。\r\n• 仓库前缀最长的规则优先，因此仓库 > Owner > 服务默认身份。\r\n• “应用缺失配置”只补充缺失项；“修复当前全部路由”会协调差异。\r\n• “实际连接测试”会调用 Git/SSH 验证最终地址。",
+                "Git rewrites use global url.*.insteadOf rules to map HTTPS or normal SSH URLs to a selected HostAlias.\r\n\r\n• Enter a repository URL below and use Local preview first.\r\n• Git chooses the longest matching prefix, so repository > owner > service default identity.\r\n• Apply missing configuration only adds missing entries; Reconcile all current routes aligns differences.\r\n• Actual connection test invokes Git/SSH against the final address."));
         var toolbar = UiHelpers.CreateToolbar();
-        toolbar.Controls.Add(UiHelpers.Button("应用缺失配置", async (_, _) => await ApplyPlanAsync(await _services.GitUrlRewriteService.BuildApplyMissingPlanAsync(), "应用缺失配置")));
-        toolbar.Controls.Add(UiHelpers.Button("修复当前全部路由", async (_, _) => await ApplyPlanAsync(await _services.GitUrlRewriteService.BuildReconcilePlanAsync(), "修复 Git rewrite")));
-        toolbar.Controls.Add(UiHelpers.Button("清理重复规则", async (_, _) => await ApplyPlanAsync(await _services.GitUrlRewriteService.BuildCleanupDuplicatesPlanAsync(), "清理重复 Git rewrite")));
-        toolbar.Controls.Add(UiHelpers.Button("全部重新生成", async (_, _) => await ApplyPlanAsync(await _services.GitUrlRewriteService.BuildRegeneratePlanAsync(), "全部重新生成受管理 Git rewrite")));
-        toolbar.Controls.Add(UiHelpers.Button("转换旧版账号路由", async (_, _) => await ApplyPlanAsync(await _services.GitUrlRewriteService.BuildLegacyAccountOwnerMigrationPlanAsync(), "转换旧版“账号即 Owner”路由")));
-        toolbar.Controls.Add(UiHelpers.Button("删除选中规则", async (_, _) => await DeleteSelectedAsync()));
-        toolbar.Controls.Add(UiHelpers.Button("复制对应命令", (_, _) => CopySelectedCommand()));
-        toolbar.Controls.Add(UiHelpers.Button("刷新", async (_, _) => await RefreshAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("应用缺失配置", "Apply missing configuration"), async (_, _) => await ApplyPlanAsync(await _services.GitUrlRewriteService.BuildApplyMissingPlanAsync(), AppLocalization.T("应用缺失配置", "Apply missing configuration"))));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("修复当前全部路由", "Reconcile all current routes"), async (_, _) => await ApplyPlanAsync(await _services.GitUrlRewriteService.BuildReconcilePlanAsync(), AppLocalization.T("修复 Git rewrite", "Reconcile Git rewrites"))));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("清理重复规则", "Clean duplicate rules"), async (_, _) => await ApplyPlanAsync(await _services.GitUrlRewriteService.BuildCleanupDuplicatesPlanAsync(), AppLocalization.T("清理重复 Git rewrite", "Clean duplicate Git rewrites"))));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("全部重新生成", "Regenerate all"), async (_, _) => await ApplyPlanAsync(await _services.GitUrlRewriteService.BuildRegeneratePlanAsync(), AppLocalization.T("全部重新生成受管理 Git rewrite", "Regenerate all managed Git rewrites"))));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("转换旧版账号路由", "Convert legacy account routes"), async (_, _) => await ApplyPlanAsync(await _services.GitUrlRewriteService.BuildLegacyAccountOwnerMigrationPlanAsync(), AppLocalization.T("转换旧版“账号即 Owner”路由", "Convert legacy account-as-owner routes"))));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("删除选中规则", "Delete selected rule"), async (_, _) => await DeleteSelectedAsync()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("复制对应命令", "Copy matching command"), (_, _) => CopySelectedCommand()));
+        toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("刷新", "Refresh"), async (_, _) => await RefreshAsync()));
 
         var testPanel = new TableLayoutPanel
         {
@@ -44,9 +49,9 @@ public sealed class GitRewritesControl : UserControl, IAsyncRefreshable
         testPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
         testPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         testPanel.Controls.Add(_urlInput, 0, 0);
-        var previewButton = new Button { Text = "本地预览", Dock = DockStyle.Fill };
+        var previewButton = new Button { Text = AppLocalization.T("本地预览", "Local preview"), Dock = DockStyle.Fill };
         previewButton.Click += async (_, _) => await PreviewUrlAsync();
-        var connectButton = new Button { Text = "实际连接测试", Dock = DockStyle.Fill };
+        var connectButton = new Button { Text = AppLocalization.T("实际连接测试", "Actual connection test"), Dock = DockStyle.Fill };
         connectButton.Click += async (_, _) => await TestConnectionAsync();
         testPanel.Controls.Add(previewButton, 1, 0);
         testPanel.Controls.Add(connectButton, 2, 0);
