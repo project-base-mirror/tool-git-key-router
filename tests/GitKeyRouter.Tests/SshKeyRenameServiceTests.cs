@@ -118,7 +118,7 @@ public sealed class SshKeyRenameServiceTests
         Assert.Equal(0, backupService.SnapshotCount);
     }
 
-    private static GitHubIdentity Identity(
+    private static GitIdentity Identity(
         string id,
         string displayName,
         string hostAlias,
@@ -128,7 +128,8 @@ public sealed class SshKeyRenameServiceTests
         {
             Id = id,
             DisplayName = displayName,
-            GitHubUsername = id,
+            ServiceInstanceId = GitServiceInstance.GitHubComId,
+            AccountName = id,
             HostAlias = hostAlias,
             PrivateKeyPath = privateKeyPath,
             PublicKeyPath = publicKeyPath,

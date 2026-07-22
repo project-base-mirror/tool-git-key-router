@@ -30,12 +30,12 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up .NET 8
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 8.0.x
 
@@ -154,7 +154,7 @@ jobs:
         run: .\scripts\Prepare-ReleaseAssets.ps1 -Version '${{ steps.release.outputs.version }}'
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: GitKeyRouter-${{ steps.release.outputs.version }}
           path: artifacts/release/*

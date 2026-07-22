@@ -25,20 +25,22 @@ public sealed class ValidationTests
     [Fact]
     public void Identity_RejectsDuplicateHostAlias()
     {
-        var existing = new GitHubIdentity
+        var existing = new GitIdentity
         {
             Id = "one",
             DisplayName = "One",
-            GitHubUsername = "one",
+            ServiceInstanceId = GitServiceInstance.GitHubComId,
+            AccountName = "one",
             HostAlias = "github-one",
             PrivateKeyPath = @"C:\keys\one",
             PublicKeyPath = @"C:\keys\one.pub"
         };
-        var candidate = new GitHubIdentity
+        var candidate = new GitIdentity
         {
             Id = "two",
             DisplayName = "Two",
-            GitHubUsername = "two",
+            ServiceInstanceId = GitServiceInstance.GitHubComId,
+            AccountName = "two",
             HostAlias = "github-one",
             PrivateKeyPath = @"C:\keys\two",
             PublicKeyPath = @"C:\keys\two.pub"

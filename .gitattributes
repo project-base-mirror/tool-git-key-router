@@ -1,0 +1,10 @@
+* text=auto eol=lf
+
+# Keep Windows command scripts compatible when they are added in the future.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Never apply text conversion to binary artifacts.
+*.ico binary
+*.png binary
+*.zip binary

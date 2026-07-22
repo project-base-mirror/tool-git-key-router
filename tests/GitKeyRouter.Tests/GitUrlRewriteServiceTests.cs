@@ -172,8 +172,27 @@ public sealed class GitUrlRewriteServiceTests
         {
             Config = new AppConfig
             {
-                Identities = [new GitHubIdentity { Id = "camus", DisplayName = "Camus", HostAlias = "github-camus" }],
-                OwnerRoutes = [new OwnerRoute { GitHubOwner = "camus0109", IdentityId = "camus", Enabled = true }]
+                Identities =
+                [
+                    new GitIdentity
+                    {
+                        Id = "camus",
+                        ServiceInstanceId = GitServiceInstance.GitHubComId,
+                        DisplayName = "Camus",
+                        HostAlias = "github-camus"
+                    }
+                ],
+                RepositoryRoutes =
+                [
+                    new RepositoryRoute
+                    {
+                        ServiceInstanceId = GitServiceInstance.GitHubComId,
+                        Scope = GitRouteScope.Owner,
+                        Owner = "camus0109",
+                        IdentityId = "camus",
+                        Enabled = true
+                    }
+                ]
             }
         };
 }

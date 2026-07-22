@@ -288,11 +288,12 @@ public sealed class SshKeyServiceTests
         Assert.Contains("git@gitlab-camus", request.Arguments);
     }
 
-    private static GitHubIdentity CreateIdentity(string directory)
+    private static GitIdentity CreateIdentity(string directory)
         => new()
         {
             DisplayName = "Demo",
-            GitHubUsername = "demo",
+            ServiceInstanceId = GitServiceInstance.GitHubComId,
+            AccountName = "demo",
             HostAlias = "github-demo",
             PrivateKeyPath = Path.Combine(directory, "id_demo"),
             PublicKeyPath = Path.Combine(directory, "id_demo.pub")

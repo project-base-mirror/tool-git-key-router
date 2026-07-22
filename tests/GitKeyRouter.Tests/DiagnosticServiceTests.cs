@@ -189,7 +189,7 @@ public sealed class DiagnosticServiceTests
         Assert.Contains("Diff:", mismatch.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static GitHubIdentity Identity(
+    private static GitIdentity Identity(
         string id,
         string displayName,
         string hostAlias,
@@ -199,7 +199,8 @@ public sealed class DiagnosticServiceTests
         {
             Id = id,
             DisplayName = displayName,
-            GitHubUsername = id,
+            ServiceInstanceId = GitServiceInstance.GitHubComId,
+            AccountName = id,
             HostAlias = hostAlias,
             PrivateKeyPath = privateKeyPath,
             PublicKeyPath = publicKeyPath,

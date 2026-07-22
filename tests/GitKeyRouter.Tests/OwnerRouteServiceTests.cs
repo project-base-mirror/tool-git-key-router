@@ -12,17 +12,28 @@ public sealed class OwnerRouteServiceTests
         {
             Identities =
             [
-                new GitHubIdentity
+                new GitIdentity
                 {
                     Id = "camus",
                     DisplayName = "Camus GitHub",
-                    GitHubUsername = "camus0109",
+                    ServiceInstanceId = GitServiceInstance.GitHubComId,
+                    AccountName = "camus0109",
                     HostAlias = "github-camus",
                     PrivateKeyPath = @"C:\keys\camus",
                     PublicKeyPath = @"C:\keys\camus.pub"
                 }
             ],
-            OwnerRoutes = [new OwnerRoute { GitHubOwner = "camus0109", IdentityId = "camus", Enabled = true }]
+            RepositoryRoutes =
+            [
+                new RepositoryRoute
+                {
+                    ServiceInstanceId = GitServiceInstance.GitHubComId,
+                    Scope = GitRouteScope.Owner,
+                    Owner = "camus0109",
+                    IdentityId = "camus",
+                    Enabled = true
+                }
+            ]
         };
 
         var rules = OwnerRouteService.BuildExpectedRules(config);
@@ -39,8 +50,26 @@ public sealed class OwnerRouteServiceTests
     {
         var config = new AppConfig
         {
-            Identities = [new GitHubIdentity { Id = "one", HostAlias = "github-one" }],
-            OwnerRoutes = [new OwnerRoute { GitHubOwner = "owner", IdentityId = "one", Enabled = false }]
+            Identities =
+            [
+                new GitIdentity
+                {
+                    Id = "one",
+                    ServiceInstanceId = GitServiceInstance.GitHubComId,
+                    HostAlias = "github-one"
+                }
+            ],
+            RepositoryRoutes =
+            [
+                new RepositoryRoute
+                {
+                    ServiceInstanceId = GitServiceInstance.GitHubComId,
+                    Scope = GitRouteScope.Owner,
+                    Owner = "owner",
+                    IdentityId = "one",
+                    Enabled = false
+                }
+            ]
         };
 
         Assert.Empty(OwnerRouteService.BuildExpectedRules(config));

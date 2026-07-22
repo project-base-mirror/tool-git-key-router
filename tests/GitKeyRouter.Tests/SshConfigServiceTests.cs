@@ -92,11 +92,12 @@ public sealed class SshConfigServiceTests
         return new SshConfigService(new PhysicalFileSystem(), new TestAppPaths(temp), new NoOpBackupService());
     }
 
-    private static GitHubIdentity Identity(string alias, string privateKey)
+    private static GitIdentity Identity(string alias, string privateKey)
         => new()
         {
             DisplayName = alias,
-            GitHubUsername = "owner",
+            ServiceInstanceId = GitServiceInstance.GitHubComId,
+            AccountName = "owner",
             HostAlias = alias,
             PrivateKeyPath = privateKey,
             PublicKeyPath = privateKey + ".pub"
