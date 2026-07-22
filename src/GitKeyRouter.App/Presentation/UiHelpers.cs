@@ -1,6 +1,9 @@
+using System.Runtime.CompilerServices;
 using System.Text;
 using GitKeyRouter.Core.Models;
 using GitKeyRouter.Infrastructure.ProcessExecution;
+
+[assembly: InternalsVisibleTo("GitKeyRouter.App.Tests")]
 
 namespace GitKeyRouter.App.Presentation;
 
@@ -50,7 +53,13 @@ public static class UiHelpers
         badge.ForeColor = palette.Item2;
     }
 
+    internal static GridColumnWidthRange DefaultGridColumnWidthRange { get; } = new(90, 420);
+
     public static DataGridView CreateGrid()
+        => CreateGrid(columnWidthOverrides: null);
+
+    internal static DataGridView CreateGrid(
+        IReadOnlyDictionary<string, GridColumnWidthRange>? columnWidthOverrides)
     {
         var grid = new DataGridView
         {
@@ -97,30 +106,93 @@ public static class UiHelpers
             }
         };
 
-        grid.DataBindingComplete += (_, _) => ResizeGridColumns(grid);
+        grid.DataBindingComplete += (_, _) => ApplyGridColumnLayout(grid, columnWidthOverrides);
         return grid;
     }
 
-    private static void ResizeGridColumns(DataGridView grid)
+    internal static void ApplyGridColumnLayout(
+        DataGridView grid,
+        IReadOnlyDictionary<string, GridColumnWidthRange>? columnWidthOverrides = null)
     {
+        grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
+        grid.ScrollBars = ScrollBars.Both;
         if (grid.Columns.Count == 0)
         {
             return;
         }
 
+        var ranges = new Dictionary<DataGridViewColumn, GridColumnWidthRange>();
+        foreach (DataGridViewColumn column in grid.Columns)
+        {
+            var range = ScaleGridColumnWidthRange(
+                ResolveGridColumnWidthRange(column, columnWidthOverrides),
+                grid.DeviceDpi);
+            ranges.Add(column, range);
+            column.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+            column.MinimumWidth = range.MinimumWidth;
+            column.Width = range.MinimumWidth;
+        }
+
         grid.AutoResizeColumns(DataGridViewAutoSizeColumnsMode.DisplayedCells);
         foreach (DataGridViewColumn column in grid.Columns)
         {
-            if (!column.Visible)
-            {
-                continue;
-            }
-
+            var range = ranges[column];
             column.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
-            column.MinimumWidth = 90;
-            column.Width = Math.Clamp(column.Width, column.MinimumWidth, 420);
+            column.MinimumWidth = range.MinimumWidth;
+            column.Width = Math.Clamp(column.Width, range.MinimumWidth, range.MaximumWidth);
         }
     }
+
+    internal static GridColumnWidthRange ScaleGridColumnWidthRange(
+        GridColumnWidthRange logicalRange,
+        int deviceDpi)
+    {
+        var effectiveDpi = deviceDpi > 0 ? deviceDpi : 96;
+        var minimumWidth = Math.Max(2, logicalRange.MinimumWidth);
+        var maximumWidth = Math.Max(minimumWidth, logicalRange.MaximumWidth);
+        return new GridColumnWidthRange(
+            ScaleGridColumnWidth(minimumWidth, effectiveDpi),
+            ScaleGridColumnWidth(maximumWidth, effectiveDpi));
+    }
+
+    private static int ScaleGridColumnWidth(int logicalWidth, int deviceDpi)
+        => Math.Max(
+            2,
+            (int)Math.Round(
+                logicalWidth * (deviceDpi / 96D),
+                MidpointRounding.AwayFromZero));
+
+    private static GridColumnWidthRange ResolveGridColumnWidthRange(
+        DataGridViewColumn column,
+        IReadOnlyDictionary<string, GridColumnWidthRange>? columnWidthOverrides)
+    {
+        if (columnWidthOverrides is not null
+            && (TryGetGridColumnWidthRange(columnWidthOverrides, column.Name, out var range)
+                || TryGetGridColumnWidthRange(columnWidthOverrides, column.DataPropertyName, out range)
+                || TryGetGridColumnWidthRange(columnWidthOverrides, column.HeaderText, out range)))
+        {
+            return range;
+        }
+
+        return DefaultGridColumnWidthRange;
+    }
+
+    private static bool TryGetGridColumnWidthRange(
+        IReadOnlyDictionary<string, GridColumnWidthRange> columnWidthOverrides,
+        string key,
+        out GridColumnWidthRange range)
+    {
+        if (!string.IsNullOrWhiteSpace(key)
+            && columnWidthOverrides.TryGetValue(key, out range))
+        {
+            return true;
+        }
+
+        range = default;
+        return false;
+    }
+
+    internal readonly record struct GridColumnWidthRange(int MinimumWidth, int MaximumWidth);
 
     public static FlowLayoutPanel CreateToolbar()
         => new WrappingToolbar();

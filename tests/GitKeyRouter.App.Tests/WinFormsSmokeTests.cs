@@ -3,7 +3,9 @@ using GitKeyRouter.App;
 using GitKeyRouter.App.Controls;
 using GitKeyRouter.App.Forms;
 using GitKeyRouter.App.Presentation;
+using GitKeyRouter.Core.Abstractions;
 using GitKeyRouter.Core.Models;
+using GitKeyRouter.Core.Services;
 
 namespace GitKeyRouter.App.Tests;
 
@@ -161,27 +163,33 @@ public sealed class WinFormsSmokeTests
                 foreach (var page in pages)
                 {
                     _ = page.Handle;
-                    page.Size = new Size(720, 520);
-                    page.PerformLayout();
-                    Application.DoEvents();
-
-                    var header = Assert.Single(page.Controls.Cast<Control>(), control => control.Name == "PageHeader");
-                    Assert.True(header.Height >= 72);
-                    Assert.InRange(header.Bottom, 1, page.ClientSize.Height);
-
-                    var toolbar = page.Controls.Cast<Control>()
-                        .SingleOrDefault(control => control.Name == "PageToolbar");
-                    if (toolbar is not null)
+                    foreach (var size in new[] { new Size(720, 520), new Size(900, 500) })
                     {
-                        Assert.True(toolbar.Height >= 52);
-                        Assert.False(header.Bounds.IntersectsWith(toolbar.Bounds));
-                        Assert.InRange(toolbar.Bottom, 1, page.ClientSize.Height);
-                    }
+                        page.Size = size;
+                        page.PerformLayout();
+                        Application.DoEvents();
 
-                    foreach (var pageGrid in Descendants<DataGridView>(page))
-                    {
-                        Assert.Equal(DataGridViewAutoSizeColumnsMode.None, pageGrid.AutoSizeColumnsMode);
-                        Assert.Equal(ScrollBars.Both, pageGrid.ScrollBars);
+                        var header = Assert.Single(page.Controls.Cast<Control>(), control => control.Name == "PageHeader");
+                        Assert.True(header.Height >= 72);
+                        Assert.InRange(header.Bottom, 1, page.ClientSize.Height);
+
+                        var toolbar = page.Controls.Cast<Control>()
+                            .SingleOrDefault(control => control.Name == "PageToolbar");
+                        if (toolbar is not null)
+                        {
+                            Assert.True(toolbar.Height >= 52);
+                            Assert.False(header.Bounds.IntersectsWith(toolbar.Bounds));
+                            Assert.InRange(toolbar.Bottom, 1, page.ClientSize.Height);
+                            Assert.All(
+                                toolbar.Controls.Cast<Control>(),
+                                control => Assert.InRange(control.Bottom, 1, toolbar.ClientSize.Height));
+                        }
+
+                        foreach (var pageGrid in Descendants<DataGridView>(page))
+                        {
+                            Assert.Equal(DataGridViewAutoSizeColumnsMode.None, pageGrid.AutoSizeColumnsMode);
+                            Assert.Equal(ScrollBars.Both, pageGrid.ScrollBars);
+                        }
                     }
                 }
 
@@ -240,6 +248,120 @@ public sealed class WinFormsSmokeTests
             }
         });
 
+    [Theory]
+    [InlineData(96, 90, 420)]
+    [InlineData(120, 113, 525)]
+    [InlineData(144, 135, 630)]
+    [InlineData(192, 180, 840)]
+    public void GridColumnWidthRanges_ScaleForHighDpi(
+        int deviceDpi,
+        int expectedMinimum,
+        int expectedMaximum)
+    {
+        var scaled = UiHelpers.ScaleGridColumnWidthRange(
+            UiHelpers.DefaultGridColumnWidthRange,
+            deviceDpi);
+
+        Assert.Equal(expectedMinimum, scaled.MinimumWidth);
+        Assert.Equal(expectedMaximum, scaled.MaximumWidth);
+    }
+
+    [Fact]
+    public void SharedGridBinding_RecalculatesDeterministicWidthsAcrossDataChanges()
+        => StaTest.Run(() =>
+        {
+            using var grid = UiHelpers.CreateGrid();
+            using var host = new UserControl { Size = new Size(360, 220) };
+            host.Controls.Add(grid);
+            _ = host.Handle;
+            _ = grid.Handle;
+            host.PerformLayout();
+            Application.DoEvents();
+
+            BindGrid(grid,
+            [
+                new GridLayoutRow
+                {
+                    Name = new string('n', 300),
+                    Details = new string('x', 1000)
+                }
+            ]);
+            AssertGridLayout(grid);
+            var longDetailsWidth = GridColumn(grid, nameof(GridLayoutRow.Details)).Width;
+            var defaultRange = UiHelpers.ScaleGridColumnWidthRange(
+                UiHelpers.DefaultGridColumnWidthRange,
+                grid.DeviceDpi);
+            Assert.Equal(defaultRange.MaximumWidth, longDetailsWidth);
+            Assert.True(VisibleColumnWidth(grid) > grid.ClientSize.Width);
+
+            BindGrid(grid, []);
+            AssertGridLayout(grid);
+
+            BindGrid(grid,
+            [
+                new GridLayoutRow
+                {
+                    Name = "Short",
+                    Details = "Small"
+                }
+            ]);
+            AssertGridLayout(grid);
+            var shortDetailsWidth = GridColumn(grid, nameof(GridLayoutRow.Details)).Width;
+            Assert.True(shortDetailsWidth < longDetailsWidth);
+
+            BindGrid(grid,
+            [
+                new GridLayoutRow
+                {
+                    Name = new string('n', 300),
+                    Details = new string('x', 1000)
+                }
+            ]);
+            AssertGridLayout(grid);
+            Assert.Equal(longDetailsWidth, GridColumn(grid, nameof(GridLayoutRow.Details)).Width);
+        });
+
+    [Fact]
+    public void GitServicesRefresh_KeepsLongColumnsBoundedAndScrollableAcrossRebinding()
+        => StaTest.Run(() =>
+        {
+            AppLocalization.SetLanguage(AppLanguage.English);
+            try
+            {
+                var configStore = new TestAppConfigStore(CreateGitServiceLayoutConfig(longText: true));
+                var services = CreateGitServicesOnlyApplicationServices(configStore);
+                using var page = new GitServicesControl(services, _ => { });
+                _ = page.Handle;
+
+                page.Size = new Size(720, 520);
+                page.PerformLayout();
+                page.RefreshAsync().GetAwaiter().GetResult();
+                Application.DoEvents();
+
+                var grid = Assert.Single(Descendants<DataGridView>(page));
+                var overrides = GitServiceGridColumnWidths();
+                AssertGridLayout(grid, overrides);
+                var longUrlWidth = GridColumn(grid, "Web地址").Width;
+                var scaledUrlRange = UiHelpers.ScaleGridColumnWidthRange(overrides["Web地址"], grid.DeviceDpi);
+                Assert.Equal(scaledUrlRange.MaximumWidth, longUrlWidth);
+                Assert.True(VisibleColumnWidth(grid) > grid.ClientSize.Width);
+
+                configStore.Config = CreateGitServiceLayoutConfig(longText: false);
+                page.Size = new Size(900, 500);
+                page.PerformLayout();
+                page.RefreshAsync().GetAwaiter().GetResult();
+                Application.DoEvents();
+
+                AssertGridLayout(grid, overrides);
+                Assert.True(GridColumn(grid, "Web地址").Width < longUrlWidth);
+                Assert.True(VisibleColumnWidth(grid) > grid.ClientSize.Width);
+            }
+            finally
+            {
+                AppLocalization.SetLanguage(AppLanguage.SimplifiedChinese);
+            }
+        });
+
     [Fact]
     public void MainPagesExposeHelpAndLanguageSelector()
         => StaTest.Run(() =>
@@ -285,6 +407,138 @@ public sealed class WinFormsSmokeTests
                 AppLocalization.SetLanguage(AppLanguage.SimplifiedChinese);
             }
         });
+
+    private static void BindGrid(DataGridView grid, IReadOnlyList<GridLayoutRow> rows)
+    {
+        grid.DataSource = null;
+        grid.DataSource = rows.ToList();
+        grid.PerformLayout();
+        Application.DoEvents();
+    }
+
+    private static void AssertGridLayout(
+        DataGridView grid,
+        IReadOnlyDictionary<string, UiHelpers.GridColumnWidthRange>? logicalOverrides = null)
+    {
+        Assert.Equal(DataGridViewAutoSizeColumnsMode.None, grid.AutoSizeColumnsMode);
+        Assert.Equal(ScrollBars.Both, grid.ScrollBars);
+        var visibleColumns = grid.Columns.Cast<DataGridViewColumn>()
+            .Where(column => column.Visible)
+            .ToList();
+        Assert.NotEmpty(visibleColumns);
+        Assert.All(
+            visibleColumns,
+            column =>
+            {
+                var logicalRange = logicalOverrides is not null
+                    && logicalOverrides.TryGetValue(column.Name, out var configuredRange)
+                        ? configuredRange
+                        : UiHelpers.DefaultGridColumnWidthRange;
+                var scaledRange = UiHelpers.ScaleGridColumnWidthRange(logicalRange, grid.DeviceDpi);
+                Assert.Equal(DataGridViewAutoSizeColumnMode.None, column.AutoSizeMode);
+                Assert.Equal(scaledRange.MinimumWidth, column.MinimumWidth);
+                Assert.InRange(column.Width, scaledRange.MinimumWidth, scaledRange.MaximumWidth);
+            });
+    }
+
+    private static DataGridViewColumn GridColumn(DataGridView grid, string name)
+        => Assert.Single(
+            grid.Columns.Cast<DataGridViewColumn>(),
+            column => string.Equals(column.Name, name, StringComparison.Ordinal));
+
+    private static int VisibleColumnWidth(DataGridView grid)
+        => grid.Columns.Cast<DataGridViewColumn>()
+            .Where(column => column.Visible)
+            .Sum(column => column.Width);
+
+    private static IReadOnlyDictionary<string, UiHelpers.GridColumnWidthRange> GitServiceGridColumnWidths()
+        => new Dictionary<string, UiHelpers.GridColumnWidthRange>(StringComparer.Ordinal)
+        {
+            ["Web地址"] = new(220, 520)
+        };
+
+    private static AppConfig CreateGitServiceLayoutConfig(bool longText)
+    {
+        var suffix = longText ? new string('x', 1000) : "short";
+        var service = new GitServiceInstance
+        {
+            Id = "layout-service",
+            DisplayName = longText ? $"Enterprise source control service {suffix}" : "Service",
+            ProviderKind = GitProviderKind.Generic,
+            HostName = longText ? $"git-{suffix}.example.test" : "git.example.test",
+            SshPort = 22,
+            SshUser = longText ? $"git-{suffix}" : "git",
+            WebBaseUrl = longText ? $"https://git.example.test/{suffix}" : "https://git.example.test",
+            DefaultIdentityId = "layout-identity"
+        };
+        var identity = new GitIdentity
+        {
+            Id = service.DefaultIdentityId,
+            ServiceInstanceId = service.Id,
+            DisplayName = longText ? $"Default engineering identity {suffix}" : "Default identity",
+            AccountName = "layout-user",
+            HostAlias = "layout-host"
+        };
+        return new AppConfig
+        {
+            GitServices = [service],
+            Identities = [identity],
+            RepositoryRoutes = []
+        };
+    }
+
+    private static ApplicationServices CreateGitServicesOnlyApplicationServices(TestAppConfigStore configStore)
+    {
+        var providers = GitProviderAdapterRegistry.CreateDefault();
+        return new ApplicationServices
+        {
+            Paths = null!,
+            FileSystem = null!,
+            ConfigStore = configStore,
+            ToolchainService = null!,
+            RequiredToolInstallerService = null!,
+            BackupService = null!,
+            GitProviderAdapters = providers,
+            GitServiceService = new GitServiceService(configStore, null!, null!, null!, providers),
+            GitProfileService = null!,
+            IdentityService = null!,
+            OwnerRouteService = null!,
+            SshKeyService = null!,
+            SshKeyRenameService = null!,
+            SshConfigService = null!,
+            GitUrlRewriteService = null!,
+            DiagnosticService = null!,
+            Logger = null!
+        };
+    }
+
+    private sealed class GridLayoutRow
+    {
+        public string Name { get; init; } = string.Empty;
+
+        public string Details { get; init; } = string.Empty;
+    }
+
+    private sealed class TestAppConfigStore : IAppConfigStore
+    {
+        public TestAppConfigStore(AppConfig config)
+        {
+            Config = config;
+        }
+
+        public string ConfigPath => "memory://config.json";
+
+        public AppConfig Config { get; set; }
+
+        public Task<AppConfig> LoadAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(Config);
+
+        public Task SaveAsync(AppConfig config, CancellationToken cancellationToken = default)
+        {
+            Config = config;
+            return Task.CompletedTask;
+        }
+    }
 
     private static void Exercise(Control control, params Size[] sizes)
     {
