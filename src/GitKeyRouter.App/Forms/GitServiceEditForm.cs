@@ -16,6 +16,16 @@ public sealed class GitServiceEditForm : Form
     private readonly CheckBox _extendedSshUrls = new() { Text = "生成 ssh:// 与 git+ssh:// rewrite", AutoSize = true };
     private readonly CheckBox _allowInsecureHttp = new() { Text = "同时接受 HTTP URL（不安全）", AutoSize = true };
     private readonly ComboBox _defaultIdentity = new() { DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly Label _defaultIdentityHint = new()
+    {
+        AutoSize = true,
+        MaximumSize = new Size(470, 0),
+        Text = "GitHub 默认身份是兜底规则：未配置 Owner 或仓库路由的所有 GitHub 仓库都会使用此身份；更具体的路由优先。",
+        ForeColor = Color.FromArgb(143, 91, 0),
+        BackColor = Color.FromArgb(255, 247, 224),
+        Padding = new Padding(8),
+        Visible = false
+    };
     private readonly GitServiceInstance? _original;
     private string _suggestedId = string.Empty;
 
@@ -23,7 +33,7 @@ public sealed class GitServiceEditForm : Form
     {
         _original = service;
         Text = service is null ? "新建 Git 服务" : "编辑 Git 服务";
-        UiHelpers.ConfigureDialog(this, 680, 460);
+        UiHelpers.ConfigureDialog(this, 680, 500);
 
         _template.Items.AddRange(GitServiceService.AvailableTemplates.Cast<object>().ToArray());
         _provider.Items.AddRange(Enum.GetValues<GitProviderKind>().Cast<object>().ToArray());
@@ -36,6 +46,8 @@ public sealed class GitServiceEditForm : Form
             .ToArray());
         _defaultIdentity.SelectedIndex = 0;
         _template.SelectedIndexChanged += (_, _) => ApplyTemplate();
+        _provider.SelectedIndexChanged += (_, _) => UpdateDefaultIdentityHint();
+        _defaultIdentity.SelectedIndexChanged += (_, _) => UpdateDefaultIdentityHint();
 
         var table = UiHelpers.CreateCompactDialogTable(2, 140);
         UiHelpers.AddCompactDialogRow(table, 0, "快速模板", _template);
@@ -46,8 +58,9 @@ public sealed class GitServiceEditForm : Form
         UiHelpers.AddCompactDialogRow(table, 5, "SSH 用户", _sshUser);
         UiHelpers.AddCompactDialogRow(table, 6, "Web Base URL", _webBaseUrl);
         UiHelpers.AddCompactDialogRow(table, 7, "默认身份", _defaultIdentity);
-        UiHelpers.AddCompactDialogRow(table, 8, "扩展 URL", _extendedSshUrls);
-        UiHelpers.AddCompactDialogRow(table, 9, "HTTP 兼容", _allowInsecureHttp);
+        UiHelpers.AddCompactDialogContent(table, 8, _defaultIdentityHint, 1);
+        UiHelpers.AddCompactDialogRow(table, 9, "扩展 URL", _extendedSshUrls);
+        UiHelpers.AddCompactDialogRow(table, 10, "HTTP 兼容", _allowInsecureHttp);
 
         var save = UiHelpers.CreateDialogButton("保存", DialogResult.OK, primary: true);
         var cancel = UiHelpers.CreateDialogButton("取消", DialogResult.Cancel);
@@ -114,7 +127,13 @@ public sealed class GitServiceEditForm : Form
         {
             _defaultIdentity.SelectedIndex = 0;
         }
+
+        UpdateDefaultIdentityHint();
     }
+
+    private void UpdateDefaultIdentityHint()
+        => _defaultIdentityHint.Visible = _provider.SelectedItem is GitProviderKind.GitHub
+            && (_defaultIdentity.SelectedItem as IdentityChoice)?.Id is not null;
 
     private void SaveClicked(object? sender, EventArgs eventArgs)
     {

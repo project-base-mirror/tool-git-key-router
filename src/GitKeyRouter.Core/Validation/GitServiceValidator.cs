@@ -28,10 +28,6 @@ public static class GitServiceValidator
                 result.Add("DefaultIdentityId must belong to the same Git service.");
             }
 
-            if (service.ProviderKind == GitProviderKind.GitHub)
-            {
-                result.Add("GitHub cannot use a service-level default identity; configure Owner routes instead.");
-            }
         }
 
         return result;

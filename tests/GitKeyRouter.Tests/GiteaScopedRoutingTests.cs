@@ -108,27 +108,46 @@ public sealed class GiteaScopedRoutingTests
     }
 
     [Fact]
-    public void GitHub_KeepsOwnerRoutesAndRejectsServiceScope()
+    public async Task GitHub_DefaultIdentityFallsBackBehindOwnerAndRepositoryRoutes()
     {
         var github = GitServiceInstance.CreateGitHubCom();
-        var camus = Identity("github-camus", github.Id, "github-camus", "camus0109");
-        var fgc = Identity("github-fgc", github.Id, "github-fgc", "fgc0109");
+        var fallback = Identity("github-default", github.Id, "github-default", "default-user");
+        var owner = Identity("github-owner", github.Id, "github-owner", "special-org");
+        var repository = Identity("github-repository", github.Id, "github-repository", "special-org");
+        github.DefaultIdentityId = fallback.Id;
         var config = new AppConfig
         {
-            Identities = [camus, fgc],
-            RepositoryRoutes = [Route(github, camus, GitRouteScope.Owner, "camus0109"), Route(github, fgc, GitRouteScope.Owner, "fgc0109")]
+            GitServices = [github],
+            Identities = [fallback, owner, repository],
+            RepositoryRoutes =
+            [
+                Route(github, owner, GitRouteScope.Owner, "special-org"),
+                Route(github, repository, GitRouteScope.Repository, "special-org", "private-repo.git")
+            ]
         };
+        config.Normalize();
+        var serviceRoute = Assert.Single(config.RepositoryRoutes, route => route.Scope == GitRouteScope.Service);
         var rules = OwnerRouteService.BuildExpectedRules(config);
+        var git = new FakeGitUrlRewriteStore();
+        git.Rules.AddRange(rules);
+        var rewrites = new GitUrlRewriteService(
+            new InMemoryAppConfigStore { Config = config },
+            git,
+            new NoOpBackupService());
 
-        Assert.Contains(rules, rule => rule.BaseUrl == "git@github-camus:camus0109/");
-        Assert.Contains(rules, rule => rule.BaseUrl == "git@github-fgc:fgc0109/");
-        Assert.DoesNotContain(rules, rule => rule.InsteadOfUrl == "https://github.com/");
-        Assert.False(OwnerRouteValidator.Validate(
-            Route(github, camus, GitRouteScope.Service),
+        Assert.True(GitServiceValidator.Validate(github, config).IsValid);
+        Assert.True(OwnerRouteValidator.Validate(
+            serviceRoute,
             config,
             null,
             null,
             GitProviderAdapterRegistry.CreateDefault()).IsValid);
+        Assert.Equal("git@github-default:other/public.git",
+            (await rewrites.PreviewAsync("https://github.com/other/public.git")).RewrittenUrl);
+        Assert.Equal("git@github-owner:special-org/server.git",
+            (await rewrites.PreviewAsync("https://github.com/special-org/server.git")).RewrittenUrl);
+        Assert.Equal("git@github-repository:special-org/private-repo.git",
+            (await rewrites.PreviewAsync("https://github.com/special-org/private-repo.git")).RewrittenUrl);
     }
 
     [Fact]

@@ -22,6 +22,38 @@ public sealed class GitServiceServiceTests
     }
 
     [Fact]
+    public async Task BuiltInGitHubServiceAllowsDefaultIdentityAndCreatesFallbackRoute()
+    {
+        var github = GitServiceInstance.CreateGitHubCom();
+        var identity = new GitIdentity
+        {
+            Id = "github-default",
+            ServiceInstanceId = github.Id,
+            DisplayName = "GitHub Default",
+            AccountName = "default-user",
+            HostAlias = "github-default"
+        };
+        github.DefaultIdentityId = identity.Id;
+        var store = new InMemoryAppConfigStore
+        {
+            Config = new AppConfig
+            {
+                GitServices = [GitServiceInstance.CreateGitHubCom()],
+                Identities = [identity]
+            }
+        };
+        var service = CreateService(store, new NoOpBackupService());
+
+        var result = await service.SaveAsync(github);
+
+        Assert.True(result.Success);
+        Assert.Equal(identity.Id, store.Config.FindService(github.Id)?.DefaultIdentityId);
+        var fallback = Assert.Single(store.Config.RepositoryRoutes, route => route.Scope == GitRouteScope.Service);
+        Assert.Equal($"service-default:{github.Id}", fallback.Id);
+        Assert.Equal(identity.Id, fallback.IdentityId);
+    }
+
+    [Fact]
     public async Task SavesAndDeletesUnreferencedGiteaService()
     {
         var store = new InMemoryAppConfigStore();

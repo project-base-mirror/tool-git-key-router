@@ -134,7 +134,7 @@ public sealed class AppConfig
                     string.Equals(item.Id, service.DefaultIdentityId, StringComparison.OrdinalIgnoreCase)
                     && string.Equals(item.ServiceInstanceId, service.Id, StringComparison.OrdinalIgnoreCase));
 
-            if (service.ProviderKind == GitProviderKind.GitHub || defaultIdentity is null)
+            if (defaultIdentity is null)
             {
                 if (managedRoute is not null)
                 {

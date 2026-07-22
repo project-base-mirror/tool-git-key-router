@@ -32,11 +32,7 @@ public static class OwnerRouteValidator
         }
         else
         {
-            if (route.Scope == GitRouteScope.Service && service.ProviderKind == GitProviderKind.GitHub)
-            {
-                result.Add("GitHub service-level routing is not allowed because it would route every account through one SSH identity.");
-            }
-            else if (route.Scope is GitRouteScope.Owner or GitRouteScope.Repository)
+            if (route.Scope is GitRouteScope.Owner or GitRouteScope.Repository)
             {
                 var namespaceValidation = providers.Get(service.ProviderKind).ValidateNamespace(route.Owner ?? route.NamespacePath);
                 foreach (var error in namespaceValidation.Errors)
