@@ -25,7 +25,7 @@ public sealed class GitServiceEditForm : Form
         Text = service is null ? "新建 Git 服务" : "编辑 Git 服务";
         UiHelpers.ConfigureDialog(this, 680, 460);
 
-        _template.Items.AddRange(["Gitea Local", "Gitea Cloud", "GitLab.com", "自建 GitLab", "自建 Gitea", "通用 Git 服务"]);
+        _template.Items.AddRange(GitServiceService.AvailableTemplates.Cast<object>().ToArray());
         _provider.Items.AddRange(Enum.GetValues<GitProviderKind>().Cast<object>().ToArray());
         _defaultIdentity.DisplayMember = nameof(IdentityChoice.DisplayText);
         _defaultIdentity.Items.Add(new IdentityChoice(null, "<无默认身份>"));

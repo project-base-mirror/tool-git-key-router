@@ -53,6 +53,23 @@ public sealed class GitServiceServiceTests
         Assert.Equal(2, backup.SnapshotCount);
     }
 
+    [Theory]
+    [InlineData("Gogs")]
+    [InlineData("OneDev")]
+    [InlineData("GitBucket")]
+    public void SelfHostedGenericTemplatesHaveExpectedDefaults(string template)
+    {
+        var service = GitServiceService.CreateTemplate(template);
+
+        Assert.Contains(template, GitServiceService.AvailableTemplates);
+        Assert.Equal(template, service.DisplayName);
+        Assert.Equal(GitProviderKind.Generic, service.ProviderKind);
+        Assert.Equal(22, service.SshPort);
+        Assert.Equal("git", service.SshUser);
+        Assert.Empty(service.HostName);
+        Assert.Empty(service.WebBaseUrl);
+    }
+
     [Fact]
     public async Task ReferencedServiceCannotBeDeleted()
     {

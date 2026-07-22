@@ -161,6 +161,19 @@ public sealed class GitServiceService
         return OperationResult<GitServiceConnectionResult>.Ok(result, classification);
     }
 
+    public static IReadOnlyList<string> AvailableTemplates { get; } =
+    [
+        "Gitea Local",
+        "Gitea Cloud",
+        "GitLab.com",
+        "自建 GitLab",
+        "自建 Gitea",
+        "Gogs",
+        "OneDev",
+        "GitBucket",
+        "通用 Git 服务"
+    ];
+
     public static GitServiceInstance CreateTemplate(string template)
         => template switch
         {
@@ -194,7 +207,19 @@ public sealed class GitServiceService
                 WebBaseUrl = "https://git.policoil.top"
             },
             "自建 Gitea" => new GitServiceInstance { DisplayName = "自建 Gitea", ProviderKind = GitProviderKind.Gitea, SshPort = 22, SshUser = "git" },
+            "Gogs" => CreateSelfHostedGenericTemplate("Gogs"),
+            "OneDev" => CreateSelfHostedGenericTemplate("OneDev"),
+            "GitBucket" => CreateSelfHostedGenericTemplate("GitBucket"),
             _ => new GitServiceInstance { DisplayName = "自定义 Git 服务", ProviderKind = GitProviderKind.Generic, SshUser = "git" }
+        };
+
+    private static GitServiceInstance CreateSelfHostedGenericTemplate(string displayName)
+        => new()
+        {
+            DisplayName = displayName,
+            ProviderKind = GitProviderKind.Generic,
+            SshPort = 22,
+            SshUser = "git"
         };
 
     private static string NormalizeId(string id, string displayName, string hostName)
