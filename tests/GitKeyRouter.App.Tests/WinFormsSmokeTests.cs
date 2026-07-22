@@ -138,6 +138,109 @@ public sealed class WinFormsSmokeTests
         });
 
     [Fact]
+    public void SharedPageLayout_KeepsLongContentAccessibleAtMinimumViewport()
+        => StaTest.Run(() =>
+        {
+            var services = AppBootstrapper.CreateServices();
+            AppLocalization.SetLanguage(AppLanguage.English);
+            var pages = new UserControl[]
+            {
+                new OverviewControl(services, _ => { }, _ => Task.CompletedTask),
+                new GitServicesControl(services, _ => { }),
+                new IdentitiesControl(services, _ => { }),
+                new GitProfilesControl(services, _ => { }),
+                new OwnerRoutesControl(services, _ => { }),
+                new SshConfigControl(services, _ => { }),
+                new GitRewritesControl(services, _ => { }),
+                new DiagnosticsControl(services, _ => { }),
+                new BackupControl(services, _ => { })
+            };
+
+            try
+            {
+                foreach (var page in pages)
+                {
+                    _ = page.Handle;
+                    page.Size = new Size(720, 520);
+                    page.PerformLayout();
+                    Application.DoEvents();
+
+                    var header = Assert.Single(page.Controls.Cast<Control>(), control => control.Name == "PageHeader");
+                    Assert.True(header.Height >= 72);
+                    Assert.InRange(header.Bottom, 1, page.ClientSize.Height);
+
+                    var toolbar = page.Controls.Cast<Control>()
+                        .SingleOrDefault(control => control.Name == "PageToolbar");
+                    if (toolbar is not null)
+                    {
+                        Assert.True(toolbar.Height >= 52);
+                        Assert.False(header.Bounds.IntersectsWith(toolbar.Bounds));
+                        Assert.InRange(toolbar.Bottom, 1, page.ClientSize.Height);
+                    }
+
+                    foreach (var pageGrid in Descendants<DataGridView>(page))
+                    {
+                        Assert.Equal(DataGridViewAutoSizeColumnsMode.None, pageGrid.AutoSizeColumnsMode);
+                        Assert.Equal(ScrollBars.Both, pageGrid.ScrollBars);
+                    }
+                }
+
+                using var narrowHeader = UiHelpers.CreatePageHeader(
+                    "Repository Routes",
+                    "Map SSH identities by service, owner, or repository; repository routes override owner routes, which override service routes.",
+                    "Help text");
+                narrowHeader.Size = new Size(360, 72);
+                _ = narrowHeader.Handle;
+                narrowHeader.PerformLayout();
+                Application.DoEvents();
+                var subtitle = Assert.Single(
+                    Descendants<Label>(narrowHeader),
+                    label => label.Name == "PageHeaderSubtitle");
+                var help = Assert.Single(
+                    Descendants<Button>(narrowHeader),
+                    button => button.Name == "PageHelpButton");
+                Assert.True(narrowHeader.Height > 72);
+                var subtitleBounds = narrowHeader.RectangleToClient(
+                    subtitle.RectangleToScreen(subtitle.ClientRectangle));
+                var helpBounds = narrowHeader.RectangleToClient(
+                    help.RectangleToScreen(help.ClientRectangle));
+                Assert.True(narrowHeader.ClientRectangle.Contains(subtitleBounds));
+                Assert.False(subtitleBounds.IntersectsWith(helpBounds));
+
+                using var sampleGrid = UiHelpers.CreateGrid();
+                sampleGrid.DataSource = new[] { new { Name = "Example", Details = new string('x', 1000) } };
+                _ = sampleGrid.Handle;
+                sampleGrid.PerformLayout();
+                Application.DoEvents();
+                Assert.All(
+                    sampleGrid.Columns.Cast<DataGridViewColumn>().Where(column => column.Visible),
+                    column =>
+                    {
+                        Assert.Equal(DataGridViewAutoSizeColumnMode.None, column.AutoSizeMode);
+                        Assert.InRange(column.Width, 90, 420);
+                    });
+
+                using var main = new MainForm(services);
+                _ = main.Handle;
+                var contentPanel = Assert.Single(
+                    Descendants<Panel>(main),
+                    panel => panel.Name == "MainContentPanel");
+                Assert.True(contentPanel.AutoScroll);
+                Assert.True(contentPanel.AutoScrollMinSize.Width >= 720 + contentPanel.Padding.Horizontal);
+                Assert.True(contentPanel.AutoScrollMinSize.Height >= 520 + contentPanel.Padding.Vertical);
+            }
+            finally
+            {
+                foreach (var page in pages)
+                {
+                    page.Dispose();
+                }
+
+                AppLocalization.SetLanguage(AppLanguage.SimplifiedChinese);
+            }
+        });
+
+    [Fact]
     public void MainPagesExposeHelpAndLanguageSelector()
         => StaTest.Run(() =>
         {

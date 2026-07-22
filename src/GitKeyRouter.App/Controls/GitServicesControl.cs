@@ -56,6 +56,18 @@ public sealed class GitServicesControl : UserControl, IAsyncRefreshable
                 && string.Equals(route.ServiceInstanceId, item.Id, StringComparison.OrdinalIgnoreCase)) ? "已启用" : "未启用",
             内置 = item.IsBuiltIn ? "是" : "否"
         }).ToList();
+        _grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
+        foreach (DataGridViewColumn column in _grid.Columns)
+        {
+            column.AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells;
+            column.MinimumWidth = 90;
+        }
+        if (_grid.Columns.Contains("Web地址"))
+        {
+            _grid.Columns["Web地址"].MinimumWidth = 220;
+            _grid.Columns["Web地址"].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+        }
+        _grid.ScrollBars = ScrollBars.Both;
         _status($"已加载 {_items.Count} 个 Git 服务");
     }
 

@@ -62,7 +62,8 @@ public static class UiHelpers
             ReadOnly = true,
             MultiSelect = false,
             SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-            AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+            AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None,
+            ScrollBars = ScrollBars.Both,
             RowHeadersVisible = false,
             BackgroundColor = Surface,
             BorderStyle = BorderStyle.None,
@@ -96,7 +97,29 @@ public static class UiHelpers
             }
         };
 
+        grid.DataBindingComplete += (_, _) => ResizeGridColumns(grid);
         return grid;
+    }
+
+    private static void ResizeGridColumns(DataGridView grid)
+    {
+        if (grid.Columns.Count == 0)
+        {
+            return;
+        }
+
+        grid.AutoResizeColumns(DataGridViewAutoSizeColumnsMode.DisplayedCells);
+        foreach (DataGridViewColumn column in grid.Columns)
+        {
+            if (!column.Visible)
+            {
+                continue;
+            }
+
+            column.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+            column.MinimumWidth = 90;
+            column.Width = Math.Clamp(column.Width, column.MinimumWidth, 420);
+        }
     }
 
     public static FlowLayoutPanel CreateToolbar()
@@ -279,79 +302,7 @@ public static class UiHelpers
     }
 
     public static Control CreatePageHeader(string title, string subtitle, string? helpText = null)
-    {
-        var header = new Panel
-        {
-            Dock = DockStyle.Top,
-            Height = 72,
-            BackColor = AppBackground,
-            Padding = new Padding(0, 2, 0, 8)
-        };
-        var layout = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            RowCount = 1,
-            Margin = Padding.Empty,
-            Padding = Padding.Empty,
-            BackColor = AppBackground
-        };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 46));
-        var textPanel = new Panel { Dock = DockStyle.Fill, BackColor = AppBackground };
-        var titleLabel = new Label
-        {
-            Text = title,
-            Dock = DockStyle.Top,
-            Height = 38,
-            Font = new Font("Segoe UI Semibold", 20F),
-            ForeColor = TextPrimary,
-            TextAlign = ContentAlignment.MiddleLeft
-        };
-        var subtitleLabel = new Label
-        {
-            Text = subtitle,
-            Dock = DockStyle.Fill,
-            Font = new Font("Segoe UI", 9F),
-            ForeColor = TextSecondary,
-            TextAlign = ContentAlignment.TopLeft
-        };
-        textPanel.Controls.Add(subtitleLabel);
-        textPanel.Controls.Add(titleLabel);
-        layout.Controls.Add(textPanel, 0, 0);
-        if (!string.IsNullOrWhiteSpace(helpText))
-        {
-            var helpButton = new Button
-            {
-                Name = "PageHelpButton",
-                Text = "?",
-                Width = 36,
-                Height = 36,
-                Anchor = AnchorStyles.Top | AnchorStyles.Right,
-                Margin = new Padding(6, 4, 0, 0),
-                FlatStyle = FlatStyle.Flat,
-                BackColor = Surface,
-                ForeColor = Accent,
-                Font = new Font("Segoe UI Semibold", 12F),
-                Cursor = Cursors.Hand,
-                AccessibleName = AppLocalization.T("页面帮助", "Page help"),
-                AccessibleDescription = AppLocalization.T("打开当前页面的使用说明", "Open instructions for the current page"),
-                UseVisualStyleBackColor = false
-            };
-            helpButton.FlatAppearance.BorderColor = Border;
-            helpButton.FlatAppearance.MouseOverBackColor = AccentSoft;
-            helpButton.Click += (_, _) => MessageBox.Show(
-                header.FindForm() as IWin32Window ?? header,
-                helpText,
-                AppLocalization.T($"{title} - 使用帮助", $"{title} - Help"),
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
-            layout.Controls.Add(helpButton, 1, 0);
-        }
-
-        header.Controls.Add(layout);
-        return header;
-    }
+        => new ResponsivePageHeader(title, subtitle, helpText);
 
     public static Panel CreateCard(Control content, Padding? padding = null)
     {
@@ -558,12 +509,136 @@ public static class UiHelpers
     private static bool ContainsAny(string value, params string[] tokens)
         => tokens.Any(token => value.Contains(token, StringComparison.OrdinalIgnoreCase));
 
+    private sealed class ResponsivePageHeader : Panel
+    {
+        private const int MinimumHeaderHeight = 72;
+        private const int TitleHeight = 38;
+        private const int HelpColumnWidth = 46;
+        private readonly Label _titleLabel;
+        private readonly Label _subtitleLabel;
+        private readonly Button? _helpButton;
+        private bool _adjustingHeight;
+
+        public ResponsivePageHeader(string title, string subtitle, string? helpText)
+        {
+            Name = "PageHeader";
+            Dock = DockStyle.Top;
+            Height = MinimumHeaderHeight;
+            MinimumSize = new Size(0, MinimumHeaderHeight);
+            BackColor = AppBackground;
+            Padding = new Padding(0, 2, 0, 8);
+            Margin = Padding.Empty;
+
+            _titleLabel = new Label
+            {
+                Name = "PageHeaderTitle",
+                Text = title,
+                Font = new Font("Segoe UI Semibold", 20F),
+                ForeColor = TextPrimary,
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoEllipsis = true
+            };
+            _subtitleLabel = new Label
+            {
+                Name = "PageHeaderSubtitle",
+                Text = subtitle,
+                Font = new Font("Segoe UI", 9F),
+                ForeColor = TextSecondary,
+                TextAlign = ContentAlignment.TopLeft
+            };
+            Controls.Add(_subtitleLabel);
+            Controls.Add(_titleLabel);
+
+            if (!string.IsNullOrWhiteSpace(helpText))
+            {
+                _helpButton = new Button
+                {
+                    Name = "PageHelpButton",
+                    Text = "?",
+                    Width = 36,
+                    Height = 36,
+                    FlatStyle = FlatStyle.Flat,
+                    BackColor = Surface,
+                    ForeColor = Accent,
+                    Font = new Font("Segoe UI Semibold", 12F),
+                    Cursor = Cursors.Hand,
+                    AccessibleName = AppLocalization.T("页面帮助", "Page help"),
+                    AccessibleDescription = AppLocalization.T("打开当前页面的使用说明", "Open instructions for the current page"),
+                    UseVisualStyleBackColor = false
+                };
+                _helpButton.FlatAppearance.BorderColor = Border;
+                _helpButton.FlatAppearance.MouseOverBackColor = AccentSoft;
+                _helpButton.Click += (_, _) => MessageBox.Show(
+                    FindForm() as IWin32Window ?? this,
+                    helpText,
+                    AppLocalization.T($"{title} - 使用帮助", $"{title} - Help"),
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                Controls.Add(_helpButton);
+            }
+        }
+
+        protected override void OnLayout(LayoutEventArgs layoutEventArgs)
+        {
+            if (_titleLabel is null || _subtitleLabel is null)
+            {
+                base.OnLayout(layoutEventArgs);
+                return;
+            }
+
+            if (_adjustingHeight)
+            {
+                base.OnLayout(layoutEventArgs);
+                return;
+            }
+
+            var helpWidth = _helpButton is null ? 0 : HelpColumnWidth;
+            var contentWidth = Math.Max(1, ClientSize.Width - Padding.Horizontal - helpWidth);
+            var subtitleSize = TextRenderer.MeasureText(
+                _subtitleLabel.Text,
+                _subtitleLabel.Font,
+                new Size(contentWidth, int.MaxValue),
+                TextFormatFlags.WordBreak | TextFormatFlags.NoPadding | TextFormatFlags.TextBoxControl);
+            var targetHeight = Math.Max(
+                MinimumHeaderHeight,
+                Padding.Top + TitleHeight + subtitleSize.Height + Padding.Bottom);
+
+            if (Height != targetHeight)
+            {
+                _adjustingHeight = true;
+                try
+                {
+                    Height = targetHeight;
+                }
+                finally
+                {
+                    _adjustingHeight = false;
+                }
+            }
+
+            base.OnLayout(layoutEventArgs);
+            _titleLabel.Bounds = new Rectangle(Padding.Left, Padding.Top, contentWidth, TitleHeight);
+            _subtitleLabel.Bounds = new Rectangle(
+                Padding.Left,
+                Padding.Top + TitleHeight,
+                contentWidth,
+                Math.Max(1, ClientSize.Height - Padding.Top - TitleHeight - Padding.Bottom));
+            if (_helpButton is not null)
+            {
+                _helpButton.Location = new Point(
+                    ClientSize.Width - Padding.Right - _helpButton.Width,
+                    Padding.Top + 2);
+            }
+        }
+    }
+
     private sealed class WrappingToolbar : FlowLayoutPanel
     {
         private bool _adjustingHeight;
 
         public WrappingToolbar()
         {
+            Name = "PageToolbar";
             Dock = DockStyle.Top;
             Height = 52;
             MinimumSize = new Size(0, 52);
