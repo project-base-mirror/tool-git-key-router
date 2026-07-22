@@ -5,10 +5,14 @@ namespace GitKeyRouter.App.Forms;
 
 public sealed class MainForm : Form
 {
+    private static readonly Size MinimumPageSize = new(720, 520);
     private readonly ApplicationServices _services;
     private readonly Panel _contentPanel = new()
     {
+        Name = "MainContentPanel",
         Dock = DockStyle.Fill,
+        AutoScroll = true,
+        AutoScrollMinSize = new Size(MinimumPageSize.Width + 48, MinimumPageSize.Height + 38),
         Padding = new Padding(24, 20, 24, 18),
         BackColor = UiHelpers.AppBackground
     };
@@ -313,8 +317,10 @@ public sealed class MainForm : Form
         }
 
         UpdateNavigationState(pageKey);
+        _contentPanel.AutoScrollPosition = Point.Empty;
         _contentPanel.SuspendLayout();
         _contentPanel.Controls.Clear();
+        page.MinimumSize = MinimumPageSize;
         page.Dock = DockStyle.Fill;
         page.BackColor = UiHelpers.AppBackground;
         _contentPanel.Controls.Add(page);

@@ -62,7 +62,8 @@ public static class UiHelpers
             ReadOnly = true,
             MultiSelect = false,
             SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-            AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+            AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None,
+            ScrollBars = ScrollBars.Both,
             RowHeadersVisible = false,
             BackgroundColor = Surface,
             BorderStyle = BorderStyle.None,
@@ -96,7 +97,29 @@ public static class UiHelpers
             }
         };
 
+        grid.DataBindingComplete += (_, _) => ResizeGridColumns(grid);
         return grid;
+    }
+
+    private static void ResizeGridColumns(DataGridView grid)
+    {
+        if (grid.Columns.Count == 0)
+        {
+            return;
+        }
+
+        grid.AutoResizeColumns(DataGridViewAutoSizeColumnsMode.DisplayedCells);
+        foreach (DataGridViewColumn column in grid.Columns)
+        {
+            if (!column.Visible)
+            {
+                continue;
+            }
+
+            column.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+            column.MinimumWidth = 90;
+            column.Width = Math.Clamp(column.Width, column.MinimumWidth, 420);
+        }
     }
 
     public static FlowLayoutPanel CreateToolbar()
@@ -282,8 +305,10 @@ public static class UiHelpers
     {
         var header = new Panel
         {
+            Name = "PageHeader",
             Dock = DockStyle.Top,
             Height = 72,
+            MinimumSize = new Size(0, 72),
             BackColor = AppBackground,
             Padding = new Padding(0, 2, 0, 8)
         };
@@ -301,6 +326,7 @@ public static class UiHelpers
         var textPanel = new Panel { Dock = DockStyle.Fill, BackColor = AppBackground };
         var titleLabel = new Label
         {
+            Name = "PageHeaderTitle",
             Text = title,
             Dock = DockStyle.Top,
             Height = 38,
@@ -310,6 +336,7 @@ public static class UiHelpers
         };
         var subtitleLabel = new Label
         {
+            Name = "PageHeaderSubtitle",
             Text = subtitle,
             Dock = DockStyle.Fill,
             Font = new Font("Segoe UI", 9F),
@@ -350,6 +377,41 @@ public static class UiHelpers
         }
 
         header.Controls.Add(layout);
+        var adjustingHeaderHeight = false;
+        void ResizeHeader()
+        {
+            if (adjustingHeaderHeight || header.ClientSize.Width <= 0)
+            {
+                return;
+            }
+
+            var subtitleWidth = Math.Max(1, header.ClientSize.Width - header.Padding.Horizontal - 46);
+            var subtitleHeight = TextRenderer.MeasureText(
+                subtitleLabel.Text,
+                subtitleLabel.Font,
+                new Size(subtitleWidth, int.MaxValue),
+                TextFormatFlags.WordBreak | TextFormatFlags.NoPadding | TextFormatFlags.TextBoxControl).Height;
+            var targetHeight = Math.Max(
+                header.MinimumSize.Height,
+                header.Padding.Vertical + titleLabel.Height + subtitleHeight);
+            if (header.Height == targetHeight)
+            {
+                return;
+            }
+
+            adjustingHeaderHeight = true;
+            try
+            {
+                header.Height = targetHeight;
+            }
+            finally
+            {
+                adjustingHeaderHeight = false;
+            }
+        }
+
+        header.SizeChanged += (_, _) => ResizeHeader();
+        header.HandleCreated += (_, _) => ResizeHeader();
         return header;
     }
 
@@ -564,6 +626,7 @@ public static class UiHelpers
 
         public WrappingToolbar()
         {
+            Name = "PageToolbar";
             Dock = DockStyle.Top;
             Height = 52;
             MinimumSize = new Size(0, 52);

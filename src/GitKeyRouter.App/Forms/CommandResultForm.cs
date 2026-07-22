@@ -12,8 +12,8 @@ public sealed class CommandResultForm : Form
 
         var textBox = UiHelpers.CreateOutputTextBox(wordWrap: false, scrollBars: ScrollBars.Both);
         textBox.Text = content;
-        var close = UiHelpers.CreateDialogButton("关闭", DialogResult.OK, primary: true);
-        var copy = UiHelpers.CreateDialogButton("复制");
+        var close = UiHelpers.CreateDialogButton(AppLocalization.T("关闭", "Close"), DialogResult.OK, primary: true);
+        var copy = UiHelpers.CreateDialogButton(AppLocalization.T("复制", "Copy"));
         copy.Click += (_, _) => Clipboard.SetText(textBox.Text);
         var buttons = UiHelpers.CreateDialogButtonBar(close, copy);
         var body = new Panel { Dock = DockStyle.Fill, Padding = new Padding(12), BackColor = UiHelpers.AppBackground };
