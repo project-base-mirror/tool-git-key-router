@@ -39,7 +39,7 @@ $variants = @(
     [pscustomobject]@{
         SourceDirectory = 'win-x64-framework-dependent'
         AssetSuffix = 'framework-dependent'
-        RuntimeRequirement = 'This compact build requires the .NET 8 Desktop Runtime x64.'
+        RuntimeRequirement = 'This compact build requires the .NET 10 Desktop Runtime x64.'
     }
 )
 

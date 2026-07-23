@@ -200,16 +200,20 @@ public sealed class WinFormsSmokeTests
                     Descendants<Button>(narrowHeader),
                     button => button.Name == "PageHelpButton");
                 Assert.True(narrowHeader.Height > 72);
-                Assert.InRange(subtitle.Bottom, 1, narrowHeader.ClientSize.Height - narrowHeader.Padding.Bottom);
-                Assert.False(subtitle.Bounds.IntersectsWith(help.Bounds));
+                var subtitleBounds = narrowHeader.RectangleToClient(
+                    subtitle.RectangleToScreen(subtitle.ClientRectangle));
+                var helpBounds = narrowHeader.RectangleToClient(
+                    help.RectangleToScreen(help.ClientRectangle));
+                Assert.True(narrowHeader.ClientRectangle.Contains(subtitleBounds));
+                Assert.False(subtitleBounds.IntersectsWith(helpBounds));
 
-                using var grid = UiHelpers.CreateGrid();
-                grid.DataSource = new[] { new { Name = "Example", Details = new string('x', 1000) } };
-                _ = grid.Handle;
-                grid.PerformLayout();
+                using var sampleGrid = UiHelpers.CreateGrid();
+                sampleGrid.DataSource = new[] { new { Name = "Example", Details = new string('x', 1000) } };
+                _ = sampleGrid.Handle;
+                sampleGrid.PerformLayout();
                 Application.DoEvents();
                 Assert.All(
-                    grid.Columns.Cast<DataGridViewColumn>().Where(column => column.Visible),
+                    sampleGrid.Columns.Cast<DataGridViewColumn>().Where(column => column.Visible),
                     column =>
                     {
                         Assert.Equal(DataGridViewAutoSizeColumnMode.None, column.AutoSizeMode);

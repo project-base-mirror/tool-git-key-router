@@ -10,9 +10,9 @@ GitKeyRouter 是一个面向 Windows 10 / Windows 11 的本地桌面工具，用
 - 配置修改前的 diff、命令输出、备份和选择性恢复
 - GUI 与 DevRunner 可调用的简单 CLI
 
-项目使用 C#、.NET 8 和 WinForms，不使用数据库、WebView、Node.js、Electron、GitHub API、OAuth 或 PAT。
+项目使用 C#、.NET 10 和 WinForms，不使用数据库、WebView、Node.js、Electron、GitHub API、OAuth 或 PAT。
 
-> 项目目标框架为 .NET 8，并在 Windows 环境通过 Release 构建和自动化测试验证。发布前仍建议在目标机器执行 `dotnet build --configuration Release` 和 `dotnet test --configuration Release`。
+> 项目目标框架为 .NET 10，并在 Windows 环境通过 Release 构建和自动化测试验证。发布前仍建议在目标机器执行 `dotnet build --configuration Release` 和 `dotnet test --configuration Release`。
 
 ## 安全和操作边界
 
@@ -34,7 +34,7 @@ GitKeyRouter 以“管理方便、状态透明、操作可恢复”为目标：
 ## 系统要求
 
 - Windows 10 或 Windows 11 x64
-- .NET 8 SDK：仅源码构建需要
+- .NET 10 SDK：仅源码构建需要
 - Git for Windows：提供 `git.exe`
 - Windows OpenSSH Client 或 Git for Windows OpenSSH：提供 `ssh.exe`、`ssh-keygen.exe`
 
@@ -431,7 +431,7 @@ GitHub Owner 和 HostAlias 使用：
 
 ## 本地构建和验证
 
-在安装 .NET 8 SDK 的 Windows PowerShell 中：
+在安装 .NET 10 SDK 的 Windows PowerShell 中：
 
 ```powershell
 dotnet restore .\GitKeyRouter.sln
@@ -468,7 +468,7 @@ Publish-WinX64-FrameworkDependent.bat
 ```text
 artifacts\publish\win-x64\                         # 自包含版，包含 GitKeyRouter.exe
 artifacts\publish\win-x64-framework-dependent\     # 依赖框架版，包含 GitKeyRouter.exe
-artifacts\release\                                    # v0.4.1 ZIP 和 SHA256SUMS.txt
+artifacts\release\                                    # v0.4.4 ZIP 和 SHA256SUMS.txt
 ```
 
 ## 测试隔离

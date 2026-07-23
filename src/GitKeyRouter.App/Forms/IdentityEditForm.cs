@@ -1,6 +1,7 @@
 using GitKeyRouter.Core.Models;
 using GitKeyRouter.Core.Services;
 using GitKeyRouter.App.Presentation;
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 
 namespace GitKeyRouter.App.Forms;
@@ -212,6 +213,7 @@ public sealed class IdentityEditForm : Form
         private const int SetCueBannerMessage = 0x1703;
         private string _cueText = string.Empty;
 
+        [DefaultValue("")]
         public string CueText
         {
             get => _cueText;

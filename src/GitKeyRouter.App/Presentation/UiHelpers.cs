@@ -323,6 +323,7 @@ public static class UiHelpers
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 46));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var textPanel = new Panel { Dock = DockStyle.Fill, BackColor = AppBackground };
         var titleLabel = new Label
         {
@@ -386,11 +387,7 @@ public static class UiHelpers
             }
 
             var subtitleWidth = Math.Max(1, header.ClientSize.Width - header.Padding.Horizontal - 46);
-            var subtitleHeight = TextRenderer.MeasureText(
-                subtitleLabel.Text,
-                subtitleLabel.Font,
-                new Size(subtitleWidth, int.MaxValue),
-                TextFormatFlags.WordBreak | TextFormatFlags.NoPadding | TextFormatFlags.TextBoxControl).Height;
+            var subtitleHeight = subtitleLabel.GetPreferredSize(new Size(subtitleWidth, 0)).Height;
             var targetHeight = Math.Max(
                 header.MinimumSize.Height,
                 header.Padding.Vertical + titleLabel.Height + subtitleHeight);

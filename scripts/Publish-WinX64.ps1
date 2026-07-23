@@ -20,7 +20,7 @@ $releaseScript = Join-Path $PSScriptRoot 'Prepare-ReleaseAssets.ps1'
 $versionProps = Join-Path $root 'Directory.Build.props'
 
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
-    throw '.NET 8 SDK was not found. This script will not install it automatically.'
+    throw '.NET 10 SDK was not found. This script will not install it automatically.'
 }
 
 function Invoke-DotNet {
