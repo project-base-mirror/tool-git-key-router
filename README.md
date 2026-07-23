@@ -455,7 +455,7 @@ Publish-WinX64-SelfContained.bat
 Publish-WinX64-FrameworkDependent.bat
 ```
 
-三者都调用 `scripts\Publish-WinX64.ps1`，保持同一套格式化、构建、测试、发布和 EXE 校验逻辑。`Publish-WinX64.bat` 还会生成 `artifacts\release` 下的版本化 ZIP 与 `SHA256SUMS.txt`。
+三者都调用 `scripts\Publish-WinX64.ps1`，保持同一套格式化、构建、测试、发布和 EXE 校验逻辑。BAT 会先显示仓库根目录和目标目录，成功后自动打开实际输出文件夹；失败时保留窗口显示错误。`Publish-WinX64.bat` 还会生成 `artifacts\release` 下的版本化 ZIP 与 `SHA256SUMS.txt`。
 
 暂时跳过测试：
 
@@ -469,6 +469,7 @@ Publish-WinX64-FrameworkDependent.bat
 artifacts\publish\win-x64\                         # 自包含版，包含 GitKeyRouter.exe
 artifacts\publish\win-x64-framework-dependent\     # 依赖框架版，包含 GitKeyRouter.exe
 artifacts\release\                                    # v0.4.4 ZIP 和 SHA256SUMS.txt
+这些目录属于本地生成物并被 `.gitignore` 忽略，不会随 Git 提交或分支合并复制。若在隔离工作区中执行发布，生成物也只存在于该工作区；需要在当前仓库根目录重新运行 BAT 才会出现在当前仓库的 `artifacts` 下。
 ```
 
 ## 测试隔离

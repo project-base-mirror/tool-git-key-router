@@ -49,8 +49,28 @@ public sealed class PublishSmokeTests
             var content = await File.ReadAllTextAsync(path);
             Assert.Contains("scripts\\Publish-WinX64.ps1", content, StringComparison.OrdinalIgnoreCase);
             Assert.Contains(variantArgument, content, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("-OpenOutput", content, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("artifacts\\publish", content, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("GITKEYROUTER_NO_PAUSE", content, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("pause", content, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("exit /b %RC%", content, StringComparison.OrdinalIgnoreCase);
         }
+    }
+
+    [Fact]
+    public async Task ManualPublishScript_ReportsAndCanOpenTheGeneratedOutputDirectory()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var scriptPath = Path.Combine(repositoryRoot, "scripts", "Publish-WinX64.ps1");
+        var content = await File.ReadAllTextAsync(scriptPath);
+
+        Assert.Contains("[switch]$OpenOutput", content, StringComparison.Ordinal);
+        Assert.Contains("Repository root:", content, StringComparison.Ordinal);
+        Assert.Contains("Self-contained binary:", content, StringComparison.Ordinal);
+        Assert.Contains("Framework-dependent binary:", content, StringComparison.Ordinal);
+        Assert.Contains("Versioned archives and checksums:", content, StringComparison.Ordinal);
+        Assert.Contains("Opening output folder:", content, StringComparison.Ordinal);
+        Assert.Contains("explorer.exe", content, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

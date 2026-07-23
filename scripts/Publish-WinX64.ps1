@@ -4,6 +4,7 @@ param(
     [switch]$SkipTests,
     [switch]$SkipPublishedAppSmokeTest,
     [switch]$SkipReleaseAssets,
+    [switch]$OpenOutput,
 
     [ValidateSet('All', 'SelfContained', 'FrameworkDependent')]
     [string]$Variant = 'All'
@@ -15,6 +16,7 @@ $solution = Join-Path $root 'GitKeyRouter.sln'
 $project = Join-Path $root 'src\GitKeyRouter.App\GitKeyRouter.App.csproj'
 $selfContainedPublishDir = Join-Path $root 'artifacts\publish\win-x64'
 $frameworkDependentPublishDir = Join-Path $root 'artifacts\publish\win-x64-framework-dependent'
+$releaseOutputDir = Join-Path $root 'artifacts\release'
 $validationScript = Join-Path $PSScriptRoot 'Test-WinX64Publish.ps1'
 $releaseScript = Join-Path $PSScriptRoot 'Prepare-ReleaseAssets.ps1'
 $versionProps = Join-Path $root 'Directory.Build.props'
@@ -22,6 +24,14 @@ $versionProps = Join-Path $root 'Directory.Build.props'
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
     throw '.NET 10 SDK was not found. This script will not install it automatically.'
 }
+
+Write-Host 'GitKeyRouter Windows x64 publish'
+Write-Host "Repository root: $root"
+Write-Host "Publish root: $(Join-Path $root 'artifacts\publish')"
+if ($Variant -eq 'All' -and -not $SkipReleaseAssets) {
+    Write-Host "Release assets: $releaseOutputDir"
+}
+Write-Host ''
 
 function Invoke-DotNet {
     param([Parameter(Mandatory)][string[]]$Arguments)
@@ -108,9 +118,45 @@ try {
         }
     }
 
+    $outputDirectoryToOpen = switch ($Variant) {
+        'SelfContained' { $selfContainedPublishDir }
+        'FrameworkDependent' { $frameworkDependentPublishDir }
+        default {
+            if ($SkipReleaseAssets) {
+                Join-Path $root 'artifacts\publish'
+            }
+            else {
+                $releaseOutputDir
+            }
+        }
+    }
+
+    if (-not (Test-Path -LiteralPath $outputDirectoryToOpen -PathType Container)) {
+        throw "Expected output directory was not created: $outputDirectoryToOpen"
+    }
+
+    Write-Host ''
     Write-Host "Publish completed. Variant: $Variant"
-    Write-Host "Self-contained: $selfContainedPublishDir"
-    Write-Host "Framework-dependent: $frameworkDependentPublishDir"
+    if ($Variant -in @('All', 'SelfContained')) {
+        Write-Host "Self-contained binary: $(Join-Path $selfContainedPublishDir 'GitKeyRouter.exe')"
+    }
+    if ($Variant -in @('All', 'FrameworkDependent')) {
+        Write-Host "Framework-dependent binary: $(Join-Path $frameworkDependentPublishDir 'GitKeyRouter.exe')"
+    }
+    if ($Variant -eq 'All' -and -not $SkipReleaseAssets) {
+        Write-Host "Versioned archives and checksums: $releaseOutputDir"
+    }
+    Write-Host "Output folder: $outputDirectoryToOpen"
+
+    if ($OpenOutput) {
+        try {
+            Write-Host "Opening output folder: $outputDirectoryToOpen"
+            Start-Process -FilePath 'explorer.exe' -ArgumentList @($outputDirectoryToOpen)
+        }
+        catch {
+            Write-Warning "Publish succeeded, but Explorer could not open the output folder: $($_.Exception.Message)"
+        }
+    }
 }
 finally {
     Pop-Location
