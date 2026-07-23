@@ -78,17 +78,24 @@ function Publish-Variant {
 
 Push-Location $root
 try {
-    Invoke-DotNet -Arguments @('restore', $solution)
-    Invoke-DotNet -Arguments @('restore', $project, '-r', 'win-x64')
+    Invoke-DotNet -Arguments @('restore', $solution, '--locked-mode')
+    Invoke-DotNet -Arguments @(
+        'restore',
+        $project,
+        '-r', 'win-x64',
+        '--locked-mode',
+        '-p:NuGetLockFilePath=packages.publish-win-x64.lock.json',
+        '-p:PublishSingleFile=true'
+    )
 
     if (-not $SkipFormat) {
-        Invoke-DotNet -Arguments @('format', $solution)
+        Invoke-DotNet -Arguments @('format', $solution, '--no-restore')
     }
 
     Invoke-DotNet -Arguments @('build', $solution, '-c', 'Release', '--no-restore')
 
     if (-not $SkipTests) {
-        Invoke-DotNet -Arguments @('test', $solution, '-c', 'Release', '--no-build')
+        Invoke-DotNet -Arguments @('test', $solution, '-c', 'Release', '--no-build', '--no-restore')
     }
 
     if ($Variant -in @('All', 'SelfContained')) {

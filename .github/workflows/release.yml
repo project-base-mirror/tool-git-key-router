@@ -37,7 +37,7 @@ jobs:
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.302
 
       - name: Resolve release metadata
         id: release
@@ -101,9 +101,9 @@ jobs:
       - name: Restore
         shell: pwsh
         run: |
-          dotnet restore .\GitKeyRouter.sln
+          dotnet restore .\GitKeyRouter.sln --locked-mode
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          dotnet restore .\src\GitKeyRouter.App\GitKeyRouter.App.csproj -r win-x64
+          dotnet restore .\src\GitKeyRouter.App\GitKeyRouter.App.csproj -r win-x64 --locked-mode -p:NuGetLockFilePath=packages.publish-win-x64.lock.json -p:PublishSingleFile=true
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Verify formatting
@@ -113,7 +113,7 @@ jobs:
         run: dotnet build .\GitKeyRouter.sln -c Release --no-restore
 
       - name: Test
-        run: dotnet test .\GitKeyRouter.sln -c Release --no-build
+        run: dotnet test .\GitKeyRouter.sln -c Release --no-build --no-restore
 
       - name: Publish portable build
         shell: pwsh

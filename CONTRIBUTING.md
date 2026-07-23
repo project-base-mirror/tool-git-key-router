@@ -33,11 +33,16 @@ Run the full publish pipeline for release, build-script, runtime, or UI changes:
 NuGet restore is locked. When intentionally changing dependencies, regenerate and review all affected `packages.lock.json` files:
 
 ```powershell
-dotnet restore .\GitKeyRouter.sln --use-lock-file
-dotnet restore .\src\GitKeyRouter.App\GitKeyRouter.App.csproj -r win-x64 --use-lock-file
+dotnet restore .\GitKeyRouter.sln --use-lock-file --force-evaluate
+dotnet restore .\src\GitKeyRouter.App\GitKeyRouter.App.csproj `
+  -r win-x64 `
+  --use-lock-file `
+  --force-evaluate `
+  -p:NuGetLockFilePath=packages.publish-win-x64.lock.json `
+  -p:PublishSingleFile=true
 ```
 
-Commit project files and their lock-file changes together. Do not edit lock files manually.
+Standard builds use `packages.lock.json`; WinForms tests use `packages.win-x64.lock.json`; single-file publishing uses `packages.publish-win-x64.lock.json`. Keeping all three graphs separate prevents one restore mode from overwriting another. Commit project files and every affected lock-file set together. Do not edit lock files manually.
 
 依赖声明与锁文件必须在同一个提交中更新，不要手工编辑锁文件。
 

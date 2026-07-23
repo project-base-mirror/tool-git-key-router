@@ -453,13 +453,19 @@ GitHub Owner 和 HostAlias 使用：
 在安装 .NET 10 SDK 的 Windows PowerShell 中：
 
 ```powershell
-dotnet restore .\GitKeyRouter.sln
-dotnet format .\GitKeyRouter.sln
-dotnet build .\GitKeyRouter.sln -c Release
-dotnet test .\GitKeyRouter.sln -c Release
+dotnet restore .\GitKeyRouter.sln --locked-mode
+dotnet restore .\src\GitKeyRouter.App\GitKeyRouter.App.csproj `
+  -r win-x64 `
+  --locked-mode `
+  -p:NuGetLockFilePath=packages.publish-win-x64.lock.json `
+  -p:PublishSingleFile=true
+dotnet format .\GitKeyRouter.sln --verify-no-changes --no-restore
+dotnet build .\GitKeyRouter.sln -c Release --no-restore
+dotnet test .\GitKeyRouter.sln -c Release --no-build --no-restore
 dotnet publish .\src\GitKeyRouter.App\GitKeyRouter.App.csproj `
   -c Release `
   -r win-x64 `
+  --no-restore `
   --self-contained true `
   -p:PublishSingleFile=true `
   -p:PublishTrimmed=false `

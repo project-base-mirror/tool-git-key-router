@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Security.Cryptography;
+using System.Text.Json;
 using System.Xml.Linq;
 
 namespace GitKeyRouter.App.Tests;
@@ -102,6 +103,55 @@ public sealed class PublishSmokeTests
     }
 
     [Fact]
+    public async Task RepositoryBuild_IsPinnedAndUsesLockedRestore()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        await using var globalJsonStream = File.OpenRead(Path.Combine(repositoryRoot, "global.json"));
+        using var globalJson = await JsonDocument.ParseAsync(globalJsonStream);
+        var sdk = globalJson.RootElement.GetProperty("sdk");
+        Assert.Equal("10.0.302", sdk.GetProperty("version").GetString());
+        Assert.Equal("latestPatch", sdk.GetProperty("rollForward").GetString());
+
+        var lockFiles = new[]
+        {
+            "src/GitKeyRouter.App/packages.lock.json",
+            "src/GitKeyRouter.Core/packages.lock.json",
+            "src/GitKeyRouter.Infrastructure/packages.lock.json",
+            "tests/GitKeyRouter.App.Tests/packages.win-x64.lock.json",
+            "tests/GitKeyRouter.Tests/packages.lock.json",
+            "src/GitKeyRouter.App/packages.win-x64.lock.json",
+            "src/GitKeyRouter.Core/packages.win-x64.lock.json",
+            "src/GitKeyRouter.Infrastructure/packages.win-x64.lock.json",
+            "src/GitKeyRouter.App/packages.publish-win-x64.lock.json",
+            "src/GitKeyRouter.Core/packages.publish-win-x64.lock.json",
+            "src/GitKeyRouter.Infrastructure/packages.publish-win-x64.lock.json"
+        };
+        Assert.All(lockFiles, relativePath => Assert.True(
+            File.Exists(Path.Combine(repositoryRoot, relativePath.Replace('/', Path.DirectorySeparatorChar))),
+            $"NuGet lock file was not found: {relativePath}"));
+
+        var directoryBuildProps = await File.ReadAllTextAsync(Path.Combine(repositoryRoot, "Directory.Build.props"));
+        var appTestProject = await File.ReadAllTextAsync(Path.Combine(
+            repositoryRoot, "tests", "GitKeyRouter.App.Tests", "GitKeyRouter.App.Tests.csproj"));
+        var ciWorkflow = await File.ReadAllTextAsync(Path.Combine(repositoryRoot, ".github", "workflows", "ci.yml"));
+        var releaseWorkflow = await File.ReadAllTextAsync(Path.Combine(repositoryRoot, ".github", "workflows", "release.yml"));
+        var publishScript = await File.ReadAllTextAsync(Path.Combine(repositoryRoot, "scripts", "Publish-WinX64.ps1"));
+        Assert.Contains("packages.$(RuntimeIdentifier).lock.json", directoryBuildProps, StringComparison.Ordinal);
+        Assert.Contains("<NuGetLockFilePath>packages.win-x64.lock.json</NuGetLockFilePath>", appTestProject, StringComparison.Ordinal);
+        Assert.Contains("dotnet-version: 10.0.302", ciWorkflow, StringComparison.Ordinal);
+        Assert.Contains("--locked-mode", ciWorkflow, StringComparison.Ordinal);
+        Assert.Contains("dotnet-version: 10.0.302", releaseWorkflow, StringComparison.Ordinal);
+        Assert.Contains("--locked-mode", releaseWorkflow, StringComparison.Ordinal);
+        Assert.Contains("NuGetLockFilePath=packages.publish-win-x64.lock.json", releaseWorkflow, StringComparison.Ordinal);
+        Assert.Contains("PublishSingleFile=true", releaseWorkflow, StringComparison.Ordinal);
+        Assert.Contains("--locked-mode", publishScript, StringComparison.Ordinal);
+        Assert.Contains("NuGetLockFilePath=packages.publish-win-x64.lock.json", publishScript, StringComparison.Ordinal);
+        Assert.Contains("PublishSingleFile=true", publishScript, StringComparison.Ordinal);
+        Assert.Contains("@('format', $solution, '--no-restore')", publishScript, StringComparison.Ordinal);
+        Assert.Contains("@('test', $solution, '-c', 'Release', '--no-build', '--no-restore')", publishScript, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ReleasePublish_ProducesBothExecutablesAndVersionedAssets()
     {
         var repositoryRoot = FindRepositoryRoot();
@@ -115,13 +165,27 @@ public sealed class PublishSmokeTests
 
         var formatResult = await RunProcessAsync(
             "dotnet",
-            ["format", solutionPath],
+            ["format", solutionPath, "--no-restore"],
             repositoryRoot,
             TimeSpan.FromMinutes(3),
             captureOutput: true);
         Assert.True(
             formatResult.ExitCode == 0,
             $"dotnet format failed.{Environment.NewLine}{formatResult.StandardOutput}{Environment.NewLine}{formatResult.StandardError}");
+
+        var runtimeRestoreResult = await RunProcessAsync(
+            "dotnet",
+            [
+                "restore", projectPath, "-r", "win-x64", "--locked-mode",
+                "-p:NuGetLockFilePath=packages.publish-win-x64.lock.json",
+                "-p:PublishSingleFile=true"
+            ],
+            repositoryRoot,
+            TimeSpan.FromMinutes(3),
+            captureOutput: true);
+        Assert.True(
+            runtimeRestoreResult.ExitCode == 0,
+            $"win-x64 locked restore failed.{Environment.NewLine}{runtimeRestoreResult.StandardOutput}{Environment.NewLine}{runtimeRestoreResult.StandardError}");
 
         var variants = new[]
         {
@@ -140,7 +204,7 @@ public sealed class PublishSmokeTests
             var publishResult = await RunProcessAsync(
                 "dotnet",
                 [
-                    "publish", projectPath, "-c", "Release", "-r", "win-x64",
+                    "publish", projectPath, "-c", "Release", "-r", "win-x64", "--no-restore",
                     $"-p:PublishProfile={variant.Profile}", "-o", publishDirectory
                 ],
                 repositoryRoot,

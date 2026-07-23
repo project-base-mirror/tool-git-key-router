@@ -26,10 +26,10 @@ jobs:
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.302
 
       - name: Restore
-        run: dotnet restore .\GitKeyRouter.sln
+        run: dotnet restore .\GitKeyRouter.sln --locked-mode
 
       - name: Verify formatting
         run: dotnet format .\GitKeyRouter.sln --verify-no-changes --no-restore
@@ -38,7 +38,7 @@ jobs:
         run: dotnet build .\GitKeyRouter.sln -c Release --no-restore
 
       - name: Test
-        run: dotnet test .\GitKeyRouter.sln -c Release --no-build --logger "trx;LogFileName=tests.trx"
+        run: dotnet test .\GitKeyRouter.sln -c Release --no-build --no-restore --logger "trx;LogFileName=tests.trx"
 
       - name: Upload test results on failure
         if: failure()
