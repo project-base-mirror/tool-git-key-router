@@ -97,24 +97,26 @@ public sealed class MainForm : Form
     {
         var sidebar = new Panel
         {
+            Name = "MainSidebar",
             Dock = DockStyle.Left,
-            Width = 232,
+            Width = 260,
             BackColor = UiHelpers.SidebarBackground,
             Padding = Padding.Empty
         };
 
         var brand = new Panel
         {
+            Name = "SidebarBrand",
             Dock = DockStyle.Top,
             Height = 94,
-            Padding = new Padding(18, 18, 14, 14),
+            Padding = new Padding(16, 18, 12, 14),
             Cursor = Cursors.Hand
         };
         var mark = new Label
         {
             Text = "G",
             Dock = DockStyle.Left,
-            Width = 46,
+            Width = 44,
             BackColor = UiHelpers.Accent,
             ForeColor = Color.White,
             Font = new Font("Segoe UI Semibold", 17F),
@@ -124,21 +126,25 @@ public sealed class MainForm : Form
         var brandText = new Panel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(12, 1, 0, 0),
+            Padding = new Padding(10, 1, 0, 0),
             Cursor = Cursors.Hand
         };
         var title = new Label
         {
+            Name = "SidebarBrandTitle",
             Text = "GitKeyRouter",
             Dock = DockStyle.Top,
             Height = 30,
             Font = new Font("Segoe UI Semibold", 15F),
             ForeColor = Color.White,
             TextAlign = ContentAlignment.MiddleLeft,
-            Cursor = Cursors.Hand
+            Cursor = Cursors.Hand,
+            AutoEllipsis = false,
+            UseMnemonic = false
         };
         var subtitle = new Label
         {
+            Name = "SidebarBrandSubtitle",
             Text = AppLocalization.T("SSH 身份与路由管理", "SSH identity and routing manager"),
             Dock = DockStyle.Fill,
             Font = new Font("Segoe UI", 8.5F),

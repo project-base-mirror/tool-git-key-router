@@ -345,6 +345,48 @@ public sealed class WinFormsSmokeTests
             }
         });
 
+    [Fact]
+    public void SidebarBrandTitleRemainsFullyVisibleAtMinimumWindowSize()
+        => StaTest.Run(() =>
+        {
+            var services = AppBootstrapper.CreateServices();
+            try
+            {
+                foreach (var language in new[] { AppLanguage.SimplifiedChinese, AppLanguage.English })
+                {
+                    AppLocalization.SetLanguage(language);
+                    using var main = new MainForm(services);
+                    main.Size = main.MinimumSize;
+                    _ = main.Handle;
+                    main.PerformLayout();
+                    Application.DoEvents();
+
+                    var sidebar = Assert.Single(
+                        Descendants<Panel>(main),
+                        panel => panel.Name == "MainSidebar");
+                    var title = Assert.Single(
+                        Descendants<Label>(main),
+                        label => label.Name == "SidebarBrandTitle");
+                    var preferredWidth = TextRenderer.MeasureText(
+                        title.Text,
+                        title.Font,
+                        Size.Empty,
+                        TextFormatFlags.NoPadding).Width;
+
+                    Assert.True(sidebar.Width >= 260);
+                    Assert.True(
+                        title.ClientSize.Width >= preferredWidth,
+                        $"Brand title width {title.ClientSize.Width}px is smaller than preferred {preferredWidth}px.");
+                    Assert.Equal("GitKeyRouter", title.Text);
+                    Assert.False(title.AutoEllipsis);
+                }
+            }
+            finally
+            {
+                AppLocalization.SetLanguage(AppLanguage.SimplifiedChinese);
+            }
+        });
+
     private static void Exercise(Control control, params Size[] sizes)
     {
         using (control)
