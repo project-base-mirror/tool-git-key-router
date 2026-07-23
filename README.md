@@ -1,5 +1,11 @@
 # GitKeyRouter
 
+[English](README.en.md) | **简体中文**
+
+> **协作说明**
+>
+> GitKeyRouter 的大量架构设计、代码实现、测试、文档和发布流程由项目作者与 ChatGPT（OpenAI）协作完成。项目作者负责提出需求、确定产品方向、审阅与验收变更，并对最终设计决策、运行和发布负责。
+
 GitKeyRouter 是一个面向 Windows 10 / Windows 11 的本地桌面工具，用于统一管理：
 
 - GitHub.com、GitLab.com、自建 GitLab、Gitea 和通用 Git 服务实例
@@ -13,6 +19,16 @@ GitKeyRouter 是一个面向 Windows 10 / Windows 11 的本地桌面工具，用
 项目使用 C#、.NET 10 和 WinForms，不使用数据库、WebView、Node.js、Electron、GitHub API、OAuth 或 PAT。
 
 > 项目目标框架为 .NET 10，并在 Windows 环境通过 Release 构建和自动化测试验证。发布前仍建议在目标机器执行 `dotnet build --configuration Release` 和 `dotnet test --configuration Release`。
+
+## 下载与版本选择
+
+GitHub Releases 提供 Windows x64 发布包：
+
+- **`GitKeyRouter-v<version>-win-x64-portable.zip`**：自包含便携版，内含 .NET 运行时，解压后可直接运行。
+- **`GitKeyRouter-v<version>-win-x64-framework-dependent.zip`**：体积较小，需要目标机器安装 .NET 10 Desktop Runtime x64。
+- **`SHA256SUMS.txt`**：两个 ZIP 包的 SHA-256 校验值。
+
+从源码构建时需要 .NET 10 SDK；普通使用不需要 SDK。
 
 ## 安全和操作边界
 
@@ -468,9 +484,10 @@ Publish-WinX64-FrameworkDependent.bat
 ```text
 artifacts\publish\win-x64\                         # 自包含版，包含 GitKeyRouter.exe
 artifacts\publish\win-x64-framework-dependent\     # 依赖框架版，包含 GitKeyRouter.exe
-artifacts\release\                                    # v0.4.4 ZIP 和 SHA256SUMS.txt
-这些目录属于本地生成物并被 `.gitignore` 忽略，不会随 Git 提交或分支合并复制。若在隔离工作区中执行发布，生成物也只存在于该工作区；需要在当前仓库根目录重新运行 BAT 才会出现在当前仓库的 `artifacts` 下。
+artifacts\release\                                  # 带版本号的 ZIP 和 SHA256SUMS.txt
 ```
+
+这些目录属于本地生成物并被 `.gitignore` 忽略，不会随 Git 提交或分支合并复制。若在隔离工作区中执行发布，生成物也只存在于该工作区；需要在当前仓库根目录重新运行 BAT 才会出现在当前仓库的 `artifacts` 下。
 
 ## 测试隔离
 
@@ -537,8 +554,13 @@ tests/
   GitKeyRouter.Tests/           单元测试和隔离 Git 集成测试
 ```
 
-更详细设计见：
+## 文档与设计
 
-- `docs/architecture.md`
-- `docs/backup-and-restore.md`
-- `docs/troubleshooting.md`
+- [Architecture](docs/architecture.md)
+- [Backup and restore](docs/backup-and-restore.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [English README](README.en.md)
+
+## 许可证
+
+本项目采用 [MIT License](LICENSE)。

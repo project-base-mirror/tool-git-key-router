@@ -1,0 +1,566 @@
+# GitKeyRouter
+
+**English** | [简体中文](README.md)
+
+> **Collaboration note**
+>
+> A substantial part of GitKeyRouter's architecture, implementation, tests, documentation, and release workflow was developed collaboratively by the project author and ChatGPT (OpenAI). The project author defines requirements and product direction, reviews and accepts changes, and remains responsible for final design decisions, operation, and releases.
+
+GitKeyRouter is a local desktop application for Windows 10 and Windows 11 that centrally manages:
+
+- GitHub.com, GitLab.com, self-hosted GitLab, Gitea, and generic Git service instances
+- Multiple SSH identities, accounts, and key paths for each service
+- Service-specific HostAlias entries generated in `%USERPROFILE%\.ssh\config`
+- Gitea service-wide default identity routing and GitHub multi-account Owner / Repository routing through global `url.*.insteadOf` Git configuration
+- Git Profiles that automatically select `user.name`, `user.email`, and signing keys by directory or remote URL
+- Diffs, command output, backups, and selective restore before configuration changes
+- A WinForms GUI and a simple CLI that can also be invoked by DevRunner
+
+The project uses C#, .NET 10, and WinForms. It does not use a database, WebView, Node.js, Electron, the GitHub API, OAuth, or PATs.
+
+> The target framework is .NET 10. Release builds and automated tests are validated on Windows. Before publishing, it is still recommended to run `dotnet build --configuration Release` and `dotnet test --configuration Release` on the target machine.
+
+## Downloads and package choices
+
+GitHub Releases provides Windows x64 packages:
+
+- **`GitKeyRouter-v<version>-win-x64-portable.zip`**: a self-contained portable build that includes the .NET runtime and can run after extraction.
+- **`GitKeyRouter-v<version>-win-x64-framework-dependent.zip`**: a smaller framework-dependent build that requires the .NET 10 Desktop Runtime x64 on the target machine.
+- **`SHA256SUMS.txt`**: SHA-256 checksums for both ZIP packages.
+
+Building from source requires the .NET 10 SDK. Normal application use does not require the SDK.
+
+## Safety and operational boundaries
+
+GitKeyRouter is designed around convenient management, transparent state, and recoverable operations:
+
+- It does not implement SSH key algorithms; key generation calls the system `ssh-keygen.exe`.
+- Git operations call the actual `git.exe`.
+- SSH tests call the actual `ssh.exe`.
+- Git and SSH commands are not assembled through `cmd.exe` or PowerShell.
+- External process arguments are passed separately through `ProcessStartInfo.ArgumentList`.
+- Git, OpenSSH, and other software are never downloaded or installed automatically.
+- Private-key contents are never stored, copied, or displayed.
+- Deleting an identity record does not delete key files by default.
+- Automatic SSH Config management modifies only GitKeyRouter managed blocks.
+- Git rewrites are read and written precisely through `git config --global`; the complete `.gitconfig` is never replaced.
+- Dangerous operations show a text diff or structured change plan first.
+- A snapshot is created before changes, and restore operations create another safety snapshot before restoring.
+
+## System requirements
+
+- Windows 10 or Windows 11 x64
+- .NET 10 SDK, only when building from source
+- Git for Windows, providing `git.exe`
+- Windows OpenSSH Client or Git for Windows OpenSSH, providing `ssh.exe` and `ssh-keygen.exe`
+
+At startup and in the one-click diagnostics page, the application reports for each required tool:
+
+- Whether it exists
+- The selected executable path
+- Other candidate paths
+- The version or file version
+- stdout, stderr, and exit code from the probe command
+
+Missing tools produce a clear message. GitKeyRouter does not install them automatically.
+
+## Quick start
+
+### 1. Start the application
+
+Starting without command-line arguments opens the WinForms interface:
+
+```powershell
+GitKeyRouter.exe
+```
+
+### 2. Configure Git services and identities
+
+GitHub.com is a built-in service that cannot be deleted. For GitLab, Gitea, or another self-hosted service, first create an instance on the **Git Services** page and enter its host name, SSH user, port, and Web Base URL.
+
+Then open **Git Identities** and create an identity such as:
+
+```text
+Git service: GitHub.com
+Display name: Camus GitHub
+Account: camus0109
+HostAlias: github-camus
+Private-key path: C:\Users\fgc01\.ssh\id_ed25519_github_camus
+Public-key path: C:\Users\fgc01\.ssh\id_ed25519_github_camus.pub
+Comment: camus0109
+```
+
+Application configuration is stored at:
+
+```text
+%APPDATA%\GitKeyRouter\config.json
+```
+
+Keys remain at the user-selected locations and are not copied into the application configuration directory.
+
+### 3. Generate or import a key
+
+The **Generate key** action calls:
+
+```text
+ssh-keygen.exe -t ed25519 -C <comment> -f <private-key-path> -N ""
+```
+
+The initial version creates keys without a passphrase by default, and the UI clearly warns about this before execution.
+
+When a target file already exists, the user can:
+
+- Cancel
+- Return to identity editing and choose another filename
+- Explicitly overwrite it; before overwriting, the old key is backed up as `.gitkeyrouter.<timestamp>.bak`
+
+After generation, the complete public key is displayed and can be copied or exported.
+
+GitKeyRouter recognizes multiple public-key formats in the same identity directory and shows each format as a separate row on the **Git Identities** page:
+
+- OpenSSH public key
+- RFC4716 / SSH2 public key
+- PEM / PKCS8 public key
+- Unknown or invalid candidate public-key files
+
+Format conversion never overwrites the source file. Explicit filenames are used side by side:
+
+```text
+id_ed25519_account.pub             # User-configured original public-key path
+id_ed25519_account.openssh.pub     # OpenSSH
+id_ed25519_account.rfc4716.pub     # RFC4716 / SSH2
+id_ed25519_account.pem.pub         # PEM / PKCS8
+```
+
+If the target format file already exists, replacement is refused by default. When the user explicitly allows replacement, a `.gitkeyrouter.<timestamp>.bak` backup is created first. Backup and temporary conversion files are not shown in the public-key variant list.
+
+The application never displays private-key contents. When an OpenSSH or PEM private key is selected, GitKeyRouter only calls `ssh-keygen -y` to derive a new `.openssh.pub` file. PuTTY PPK files must first be converted with PuTTYgen.
+
+### 4. Add the public key to a Git service
+
+Open the SSH Keys page for the relevant Git service account, create a new key, and use **Copy public key** on the key variant marked as OpenSSH. RFC4716, PEM, private-key, malformed Base64, and structurally invalid text are not copied by this action.
+
+GitKeyRouter does not call the GitHub, GitLab, or Gitea API and does not upload public keys on the user's behalf.
+
+### 5. Synchronize SSH Config
+
+Synchronization adds only controlled blocks:
+
+```sshconfig
+# BEGIN GitKeyRouter managed block: github-camus
+Host github-camus
+    HostName github.com
+    User git
+    IdentityFile C:/Users/fgc01/.ssh/id_ed25519_github_camus
+    IdentitiesOnly yes
+# END GitKeyRouter managed block: github-camus
+```
+
+GitKeyRouter preserves:
+
+- Other Host entries
+- User comments
+- Unmanaged text
+- The existing CRLF or LF line-ending style
+
+Normal synchronization does not rewrite the complete SSH Config. Full-text replacement happens only when the user explicitly opens **Edit raw text** and confirms the complete diff.
+
+### 6. Configure default identities and repository routing
+
+For Gitea, `AccountName` represents the web-login account and is not assumed to be the repository Owner. Selecting a `DefaultIdentityId` for a Gitea service generates service-wide routing for the entire instance. For example:
+
+```text
+url.git@gitea-cloud:.insteadOf = git@git.policoil.top:
+url.git@gitea-cloud:.insteadOf = ssh://git@git.policoil.top/
+url.git@gitea-cloud:.insteadOf = git+ssh://git@git.policoil.top/
+url.git@gitea-cloud:.insteadOf = https://git.policoil.top/
+```
+
+This preserves original Owners such as `project-base/*`, `game-riki/*`, and `game-hhmx/*` while routing all of them through the `gitea-cloud` HostAlias. Two independent Gitea services may share the same key files, but they must have separate service IDs, HostAliases, and HostNames.
+
+GitHub continues to route by Owner and does not allow a default identity that covers all of `github.com`. For example:
+
+```text
+camus0109/*
+→ github-camus
+
+project-base-mirror/*
+→ github-project-base
+```
+
+For `camus0109`, the expected rules are:
+
+```text
+url.git@github-camus:camus0109/.insteadOf = https://github.com/camus0109/
+url.git@github-camus:camus0109/.insteadOf = git@github.com:camus0109/
+```
+
+The application executes operations equivalent to:
+
+```powershell
+git config --global --add "url.git@github-camus:camus0109/.insteadOf" "https://github.com/camus0109/"
+git config --global --add "url.git@github-camus:camus0109/.insteadOf" "git@github.com:camus0109/"
+```
+
+Commands shown to the user are only for review and copying. The application never hands a complete command string to a shell.
+
+## How repository routing works
+
+Input:
+
+```text
+https://github.com/camus0109/panel-terraria.git
+```
+
+Git uses the longest matching `insteadOf` prefix and rewrites it to:
+
+```text
+git@github-camus:camus0109/panel-terraria.git
+```
+
+OpenSSH then selects the appropriate private key through `Host github-camus`.
+
+Therefore:
+
+- The Git service and Owner / Namespace select a HostAlias.
+- The HostAlias selects an IdentityFile.
+- Individual repositories do not need their own SSH-key configuration.
+
+## Git rewrite states
+
+The **Git Rewrite Configuration** page distinguishes:
+
+- `Correct`: the exact rule exists once
+- `Missing`: no rule exists for the prefix
+- `Duplicate`: the same Base URL and insteadOf pair appears more than once
+- `Conflict`: the same insteadOf prefix points to another Base URL
+- `Extra`: a rule exists in Git but does not belong to an enabled repository route
+- `LegacyAccountOwner`: a legacy Gitea route that treated the login account as the repository Owner and is waiting for user-confirmed migration
+
+Supported actions include:
+
+- Apply missing configuration
+- Repair all current routes
+- Delete a selected rule
+- Remove duplicate rules
+- Copy the corresponding Git command
+
+Repair processes only the exact prefixes used by currently enabled routes. It does not automatically delete unrelated URL rewrites.
+
+Deletion uses:
+
+```text
+git config --global --fixed-value --unset-all <key> <exact-value>
+```
+
+`--fixed-value` prevents Git from treating URLs as regular expressions.
+
+## URL testing
+
+### Local preview
+
+The preview reads both the current Git rewrites and the expected rewrites derived from GitKeyRouter service configuration. It displays the actual match, expected match, missing or conflicting state, and final expected rewritten result. Previewing does not access the network.
+
+### Real connection test
+
+After explicit confirmation, GitKeyRouter runs:
+
+```text
+git ls-remote <original-url> HEAD
+```
+
+The result window shows:
+
+- The actual executable
+- Separate arguments
+- stdout
+- stderr
+- Exit code
+- Timeout state and duration
+
+## SSH testing
+
+Normal mode:
+
+```text
+ssh -T git@github-camus
+```
+
+Verbose mode:
+
+```text
+ssh -vT git@github-camus
+```
+
+GitHub, GitLab, and Gitea SSH tests may return a non-zero exit code even after successful authentication. GitKeyRouter therefore uses the selected provider adapter to inspect service-specific success messages in stdout and stderr.
+
+```text
+successfully authenticated
+```
+
+Raw output is always available.
+
+## Backup and restore
+
+Backup directory:
+
+```text
+%APPDATA%\GitKeyRouter\backups\<timestamp>\
+```
+
+Each snapshot may contain:
+
+```text
+manifest.json
+app_config.json
+ssh_config.txt
+git_url_rewrites.json
+```
+
+The files contain:
+
+- `app_config.json`: Git services, identities, and repository routes
+- `ssh_config.txt`: SSH Config before the change
+- `git_url_rewrites.json`: all `url.*.insteadOf` rules before the change
+- `manifest.json`: time, reason, configuration schema, whether original files existed, whether Git snapshot capture succeeded, and other metadata
+
+If Git is unavailable, identity configuration can still be saved. The snapshot explicitly records that Git rewrite capture failed instead of pretending that an empty snapshot is valid. Such a snapshot cannot be used to restore Git rewrites.
+
+The following can be restored independently:
+
+- SSH Config
+- Git URL rewrites
+- Application configuration
+
+Git rewrite restore still removes and adds exact rules through `git config`; it never replaces the complete `.gitconfig`.
+
+## Git Profiles and commit identity
+
+Version 0.3.0 introduced the **Git Profiles** page. Each profile can store `user.name`, `user.email`, a signing key, a default Git service, and a default SSH identity. Directory and remote-URL rules determine where a profile applies.
+
+Directory rules generate Git's official `includeIf "gitdir/i:<directory>/"` condition. Remote URL rules generate `includeIf "hasconfig:remote.*.url:<pattern>"`. GitKeyRouter does not edit every repository's `.git/config`; instead, it generates one managed conditional-config entry and separate profile files under `%APPDATA%\GitKeyRouter\git-profiles`, then registers a single `include.path` in global Git configuration.
+
+**Preview and apply** shows diffs for the entry file and every profile file before writing. After deleting a profile or rule, apply again to remove previously generated conditional configuration.
+
+## CLI
+
+The GUI and CLI share the same service graph and business logic.
+
+```powershell
+GitKeyRouter.exe diagnose
+GitKeyRouter.exe list-services
+GitKeyRouter.exe list-identities
+GitKeyRouter.exe list-profiles
+GitKeyRouter.exe list-routes
+GitKeyRouter.exe apply
+GitKeyRouter.exe apply --yes
+GitKeyRouter.exe apply-profiles
+GitKeyRouter.exe apply-profiles --yes
+GitKeyRouter.exe parse-url ssh://git@gitlab.example:2222/company/platform/repo.git
+GitKeyRouter.exe resolve-profile C:\code\work\repo --url https://gitlab.example/company/repo.git
+GitKeyRouter.exe test-service gitlab-office
+GitKeyRouter.exe test-route camus0109
+GitKeyRouter.exe test-route company/platform --service gitlab-office
+GitKeyRouter.exe test-route camus0109 --url https://github.com/camus0109/panel-terraria.git
+GitKeyRouter.exe test-route camus0109 --url https://github.com/camus0109/panel-terraria.git --connect
+GitKeyRouter.exe test-ssh github-camus
+GitKeyRouter.exe test-ssh github-camus --verbose
+GitKeyRouter.exe version
+GitKeyRouter.exe help
+```
+
+`apply` displays the SSH diff and Git rewrite plan by default. Changes are executed only with `--yes`. `apply-profiles` follows the same policy and displays the conditional Git Config diff by default.
+
+`test-route --connect` also requires a real `--url`, preventing the application from sending network requests for an invented repository.
+
+CLI diagnostic exit codes:
+
+- `0`: no warnings or errors
+- `1`: warnings exist
+- `2`: errors exist or a connection test failed
+- `3`: invalid arguments or an application execution failure
+
+## Configuration example
+
+```json
+{
+  "SchemaVersion": 4,
+  "GitServices": [
+    {
+      "Id": "github.com",
+      "DisplayName": "GitHub.com",
+      "ProviderKind": "GitHub",
+      "HostName": "github.com",
+      "SshPort": null,
+      "SshUser": "git",
+      "WebBaseUrl": "https://github.com",
+      "AllowInsecureHttp": false,
+      "EnableExtendedSshUrlRewrites": false,
+      "IsBuiltIn": true
+    }
+  ],
+  "Identities": [
+    {
+      "Id": "7b90999f7ce643fbb07eb4b94f802579",
+      "ServiceInstanceId": "github.com",
+      "DisplayName": "Camus GitHub",
+      "AccountName": "camus0109",
+      "HostAlias": "github-camus",
+      "PrivateKeyPath": "C:\\Users\\fgc01\\.ssh\\id_ed25519_github_camus",
+      "PublicKeyPath": "C:\\Users\\fgc01\\.ssh\\id_ed25519_github_camus.pub",
+      "EmailOrComment": "camus0109",
+      "CreatedAt": "2026-07-18T08:30:45+00:00"
+    }
+  ],
+  "RepositoryRoutes": [
+    {
+      "ServiceInstanceId": "github.com",
+      "NamespacePath": "camus0109",
+      "IdentityId": "7b90999f7ce643fbb07eb4b94f802579",
+      "Enabled": true
+    }
+  ]
+}
+```
+
+## Configuration upgrades
+
+The current configuration schema is Schema 4. Reading an older configuration preserves all services, identities, key paths, repository routes, and Git Profiles. For non-GitHub services that have a default identity but no service route, normalization derives a service-wide route. Legacy Gitea account-level rewrites are not deleted automatically; they are converted only after user-confirmed migration. GitHub Owner routing remains compatible. A snapshot is still created before modifying configuration.
+
+## Input validation
+
+GitHub Owners and HostAliases use:
+
+```regex
+^[A-Za-z0-9_.-]+$
+```
+
+Additional restrictions:
+
+- GitHub Owners cannot contain slashes; GitLab, Gitea, and generic services allow multi-level Namespaces separated by `/`.
+- HostAliases cannot contain spaces, slashes, colons, wildcards, or control characters.
+- A HostAlias cannot directly equal the real host name of a configured service.
+- Every identity must have a unique HostAlias.
+- One enabled Namespace in the same Git service can point to only one identity.
+- A route identity must belong to the same Git service.
+- Private- and public-key paths must be different absolute paths.
+
+## Local build and validation
+
+In Windows PowerShell with the .NET 10 SDK installed:
+
+```powershell
+dotnet restore .\GitKeyRouter.sln
+dotnet format .\GitKeyRouter.sln
+dotnet build .\GitKeyRouter.sln -c Release
+dotnet test .\GitKeyRouter.sln -c Release
+dotnet publish .\src\GitKeyRouter.App\GitKeyRouter.App.csproj `
+  -c Release `
+  -r win-x64 `
+  --self-contained true `
+  -p:PublishSingleFile=true `
+  -p:PublishTrimmed=false `
+  -p:EnableCompressionInSingleFile=true
+```
+
+You can also double-click or run the following from the solution root:
+
+```text
+Publish-WinX64.bat
+Publish-WinX64-SelfContained.bat
+Publish-WinX64-FrameworkDependent.bat
+```
+
+All three call `scripts\Publish-WinX64.ps1` and use the same formatting, build, test, publish, and executable-validation pipeline. Each BAT file prints the repository and output directories, opens the actual output folder after success, and keeps the window open with an error message after failure. `Publish-WinX64.bat` also creates versioned ZIP files and `SHA256SUMS.txt` under `artifacts\release`.
+
+To temporarily skip tests:
+
+```powershell
+.\scripts\Publish-WinX64.ps1 -SkipTests
+```
+
+Final output directories:
+
+```text
+artifacts\publish\win-x64\                         # Self-contained build with GitKeyRouter.exe
+artifacts\publish\win-x64-framework-dependent\     # Framework-dependent build with GitKeyRouter.exe
+artifacts\release\                                  # Versioned ZIP files and SHA256SUMS.txt
+```
+
+These directories contain local generated artifacts and are ignored by `.gitignore`. They are not copied by commits or branch merges. When publishing from an isolated workspace, artifacts exist only in that workspace; run the BAT file again from the current repository root to create them under the current repository's `artifacts` directory.
+
+## Test isolation
+
+Process operations are abstracted behind interfaces, and most tests use in-memory objects or temporary directories.
+
+Git integration tests set:
+
+```text
+GIT_CONFIG_GLOBAL=<temporary-file>
+```
+
+This isolates global configuration and does not modify the developer machine's real Git configuration.
+
+## Common errors
+
+### `git.exe` cannot be found
+
+Install Git for Windows or add it to `PATH`. GitKeyRouter does not install it automatically.
+
+### `ssh.exe` or `ssh-keygen.exe` cannot be found
+
+Enable OpenSSH Client in Windows Optional Features, or verify that the Git for Windows OpenSSH directory exists.
+
+### `Permission denied (publickey)`
+
+Check:
+
+1. Whether the public key was added to the correct Git service account
+2. Whether `IdentityFile` in SSH Config points to the correct private key
+3. Whether the HostAlias matches the Base URL used by the repository-route rewrite
+4. Whether the private-key file exists
+
+### `Could not resolve hostname github-camus`
+
+This usually means SSH Config does not contain `Host github-camus`, or the managed block has not been synchronized.
+
+### `Host key verification failed`
+
+Check `%USERPROFILE%\.ssh\known_hosts` and the current network environment. GitKeyRouter never deletes host keys automatically.
+
+### A URL is not rewritten
+
+On the **Git Rewrite Configuration** page, check:
+
+- Whether the Gitea service has a default identity that belongs to that service
+- Whether current rules match the expected service-wide rules
+- Whether HTTPS / SSH insteadOf entries are `Correct`, missing, or waiting for legacy-route migration
+- Whether a longer or conflicting prefix exists
+- Whether the input URL contains the complete path prefix for the Namespace
+
+### `config.json` is malformed
+
+The application stops saving and displays the JSON parsing error. It does not automatically overwrite a malformed file. Repair it manually or restore it from **Backup and Restore**.
+
+## Project structure
+
+```text
+src/
+  GitKeyRouter.App/             WinForms, CLI, and UI orchestration
+  GitKeyRouter.Core/            Models, validation, business services, and diagnostics
+  GitKeyRouter.Infrastructure/  Git, SSH, process, file, and backup implementations
+
+tests/
+  GitKeyRouter.Tests/           Unit tests and isolated Git integration tests
+```
+
+## Documentation and design
+
+- [Architecture](docs/architecture.md)
+- [Backup and restore](docs/backup-and-restore.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Chinese README](README.md)
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
