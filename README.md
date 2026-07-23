@@ -47,6 +47,7 @@ GitKeyRouter 以“管理方便、状态透明、操作可恢复”为目标：
 - 危险操作先显示文本 diff 或结构化变更计划
 - 修改前创建快照，恢复操作本身也会先创建新快照
 - GUI 和 CLI 共享当前 Windows 用户的单实例锁，避免两个进程并发修改配置、SSH Config 或 Git Rewrite
+- 日志中的私钥块会被脱敏；日志默认每 5 MB 轮转并保留 3 份历史文件，日志写入失败不会中断主操作
 
 ## 系统要求
 
@@ -561,6 +562,8 @@ tests/
 - [Architecture](docs/architecture.md)
 - [Backup and restore](docs/backup-and-restore.md)
 - [Troubleshooting](docs/troubleshooting.md)
+- [Security policy](SECURITY.md)
+- [Contributing guide](CONTRIBUTING.md)
 - [English README](README.en.md)
 
 ## 许可证

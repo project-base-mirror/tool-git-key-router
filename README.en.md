@@ -47,6 +47,7 @@ GitKeyRouter is designed around convenient management, transparent state, and re
 - Dangerous operations show a text diff or structured change plan first.
 - A snapshot is created before changes, and restore operations create another safety snapshot before restoring.
 - The GUI and CLI share a single-instance lock for the current Windows user, preventing concurrent writes to application configuration, SSH Config, or Git rewrites.
+- Private-key blocks are redacted from logs. Logs rotate at 5 MB by default, retain three historical files, and never interrupt the primary operation when logging fails.
 
 ## System requirements
 
@@ -561,6 +562,8 @@ tests/
 - [Architecture](docs/architecture.md)
 - [Backup and restore](docs/backup-and-restore.md)
 - [Troubleshooting](docs/troubleshooting.md)
+- [Security policy](SECURITY.md)
+- [Contributing guide](CONTRIBUTING.md)
 - [Chinese README](README.md)
 
 ## License
