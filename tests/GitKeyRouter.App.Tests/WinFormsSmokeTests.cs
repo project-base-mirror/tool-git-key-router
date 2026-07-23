@@ -309,6 +309,42 @@ public sealed class WinFormsSmokeTests
             }
         });
 
+    [Fact]
+    public void SshConfigUsesStyledViewSelectorInsteadOfNativeTabs()
+        => StaTest.Run(() =>
+        {
+            var services = AppBootstrapper.CreateServices();
+            using var page = new SshConfigControl(services, _ => { });
+            page.Size = new Size(1000, 700);
+            _ = page.Handle;
+            page.PerformLayout();
+            Application.DoEvents();
+
+            Assert.Empty(Descendants<TabControl>(page));
+            var selector = Assert.Single(
+                Descendants<FlowLayoutPanel>(page),
+                panel => panel.Name == "SshConfigViewSelector");
+            var host = Assert.Single(
+                Descendants<Panel>(page),
+                panel => panel.Name == "SshConfigViewHost");
+            var buttons = selector.Controls.Cast<Button>().ToList();
+            Assert.Equal(3, buttons.Count);
+
+            foreach (var button in buttons)
+            {
+                var view = Assert.IsAssignableFrom<Control>(button.Tag);
+                button.PerformClick();
+                Application.DoEvents();
+
+                Assert.Equal(UiHelpers.Accent, button.BackColor);
+                Assert.Equal(Color.White, button.ForeColor);
+                Assert.True(view.Visible);
+                Assert.Equal(0, host.Controls.GetChildIndex(view));
+                Assert.Single(buttons, item => item.BackColor == UiHelpers.Accent);
+                Assert.Single(host.Controls.Cast<Control>(), item => item.Visible);
+            }
+        });
+
     private static void Exercise(Control control, params Size[] sizes)
     {
         using (control)

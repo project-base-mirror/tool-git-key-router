@@ -13,6 +13,14 @@ public sealed class SshConfigControl : UserControl, IAsyncRefreshable
     private readonly DataGridView _managedGrid = UiHelpers.CreateGrid();
     private readonly TextBox _parsedText = CreateTextBox();
     private readonly TextBox _rawText = CreateTextBox();
+    private readonly Panel _viewHost = new()
+    {
+        Name = "SshConfigViewHost",
+        Dock = DockStyle.Fill,
+        BackColor = UiHelpers.Surface,
+        BorderStyle = BorderStyle.FixedSingle
+    };
+    private readonly List<(Button Button, Control View)> _views = [];
     private string _raw = string.Empty;
     private IReadOnlyList<SshManagedBlock> _blocks = [];
 
@@ -35,12 +43,40 @@ public sealed class SshConfigControl : UserControl, IAsyncRefreshable
         toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("打开文件", "Open file"), (_, _) => OpenConfig()));
         toolbar.Controls.Add(UiHelpers.Button(AppLocalization.T("刷新", "Refresh"), async (_, _) => await RefreshAsync()));
 
-        var tabs = new TabControl { Dock = DockStyle.Fill };
-        tabs.TabPages.Add(new TabPage(AppLocalization.T("受管理 Host", "Managed Hosts")) { Controls = { _managedGrid } });
-        tabs.TabPages.Add(new TabPage(AppLocalization.T("解析结果", "Parsed result")) { Controls = { _parsedText } });
-        tabs.TabPages.Add(new TabPage(AppLocalization.T("原始文本", "Raw text")) { Controls = { _rawText } });
+        _managedGrid.Name = "SshManagedHostsView";
+        _parsedText.Name = "SshParsedResultView";
+        _rawText.Name = "SshRawTextView";
 
-        Controls.Add(tabs);
+        var selector = new FlowLayoutPanel
+        {
+            Name = "SshConfigViewSelector",
+            Dock = DockStyle.Top,
+            Height = 52,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Padding = new Padding(0, 6, 0, 8),
+            Margin = Padding.Empty,
+            BackColor = UiHelpers.AppBackground
+        };
+        var managedButton = AddView(
+            selector,
+            "SshManagedHostsViewButton",
+            AppLocalization.T("受管理 Host", "Managed Hosts"),
+            _managedGrid);
+        AddView(
+            selector,
+            "SshParsedResultViewButton",
+            AppLocalization.T("解析结果", "Parsed result"),
+            _parsedText);
+        AddView(
+            selector,
+            "SshRawTextViewButton",
+            AppLocalization.T("原始文本", "Raw text"),
+            _rawText);
+        ShowView(managedButton);
+
+        Controls.Add(_viewHost);
+        Controls.Add(selector);
         Controls.Add(toolbar);
         Controls.Add(header);
         UiHelpers.EnableStatusColors(_managedGrid, nameof(ManagedRow.状态));
@@ -217,6 +253,57 @@ public sealed class SshConfigControl : UserControl, IAsyncRefreshable
         System.Diagnostics.Process.Start(startInfo);
     }
 
+    private Button AddView(FlowLayoutPanel selector, string name, string text, Control view)
+    {
+        view.Dock = DockStyle.Fill;
+        view.Visible = false;
+        _viewHost.Controls.Add(view);
+
+        var button = new Button
+        {
+            Name = name,
+            Text = text,
+            Tag = view,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            MinimumSize = new Size(132, 36),
+            Height = 36,
+            Padding = new Padding(16, 0, 16, 0),
+            Margin = new Padding(0, 0, 8, 0),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = UiHelpers.Surface,
+            ForeColor = UiHelpers.TextSecondary,
+            Font = new Font("Segoe UI Semibold", 9F),
+            Cursor = Cursors.Hand,
+            UseVisualStyleBackColor = false,
+            AccessibleRole = AccessibleRole.PageTab
+        };
+        button.FlatAppearance.BorderColor = UiHelpers.Border;
+        button.FlatAppearance.MouseOverBackColor = UiHelpers.AccentSoft;
+        button.FlatAppearance.MouseDownBackColor = UiHelpers.AccentSoft;
+        button.Click += (_, _) => ShowView(button);
+        selector.Controls.Add(button);
+        _views.Add((button, view));
+        return button;
+    }
+
+    private void ShowView(Button selectedButton)
+    {
+        foreach (var (button, view) in _views)
+        {
+            var selected = ReferenceEquals(button, selectedButton);
+            button.BackColor = selected ? UiHelpers.Accent : UiHelpers.Surface;
+            button.ForeColor = selected ? Color.White : UiHelpers.TextSecondary;
+            button.FlatAppearance.BorderColor = selected ? UiHelpers.Accent : UiHelpers.Border;
+            view.Visible = selected;
+            if (selected)
+            {
+                view.BringToFront();
+                button.Select();
+            }
+        }
+    }
+
     private static TextBox CreateTextBox()
         => new()
         {
@@ -225,7 +312,10 @@ public sealed class SshConfigControl : UserControl, IAsyncRefreshable
             ReadOnly = true,
             ScrollBars = ScrollBars.Both,
             WordWrap = false,
-            Font = new Font(FontFamily.GenericMonospace, 9F)
+            Font = new Font(FontFamily.GenericMonospace, 9F),
+            BackColor = UiHelpers.OutputBackground,
+            ForeColor = UiHelpers.TextPrimary,
+            BorderStyle = BorderStyle.None
         };
 
     private sealed class ManagedRow
