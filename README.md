@@ -46,6 +46,7 @@ GitKeyRouter 以“管理方便、状态透明、操作可恢复”为目标：
 - Git rewrite 使用 `git config --global` 精确读写，不覆盖整个 `.gitconfig`
 - 危险操作先显示文本 diff 或结构化变更计划
 - 修改前创建快照，恢复操作本身也会先创建新快照
+- GUI 和 CLI 共享当前 Windows 用户的单实例锁，避免两个进程并发修改配置、SSH Config 或 Git Rewrite
 
 ## 系统要求
 
@@ -379,6 +380,7 @@ CLI 诊断退出码：
 - `1`：存在警告
 - `2`：存在错误或连接测试失败
 - `3`：参数错误或程序自身执行失败
+- `4`：当前 Windows 用户已有一个 GitKeyRouter 实例运行
 
 ## 配置示例
 

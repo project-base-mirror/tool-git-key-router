@@ -46,6 +46,7 @@ GitKeyRouter is designed around convenient management, transparent state, and re
 - Git rewrites are read and written precisely through `git config --global`; the complete `.gitconfig` is never replaced.
 - Dangerous operations show a text diff or structured change plan first.
 - A snapshot is created before changes, and restore operations create another safety snapshot before restoring.
+- The GUI and CLI share a single-instance lock for the current Windows user, preventing concurrent writes to application configuration, SSH Config, or Git rewrites.
 
 ## System requirements
 
@@ -379,6 +380,7 @@ CLI diagnostic exit codes:
 - `1`: warnings exist
 - `2`: errors exist or a connection test failed
 - `3`: invalid arguments or an application execution failure
+- `4`: another GitKeyRouter instance is already running for the current Windows user
 
 ## Configuration example
 

@@ -9,6 +9,12 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        using var instanceGuard = SingleInstanceGuard.TryAcquire();
+        if (!instanceGuard.IsPrimaryInstance)
+        {
+            return ReportExistingInstance(args.Length > 0);
+        }
+
         ApplicationServices? services = null;
         try
         {
@@ -50,5 +56,26 @@ internal static class Program
 
             return 3;
         }
+    }
+
+    private static int ReportExistingInstance(bool isCli)
+    {
+        const string message = "GitKeyRouter 已在当前 Windows 用户下运行。\n\nGitKeyRouter is already running for this Windows user.";
+        if (isCli)
+        {
+            ConsoleBridge.Attach();
+            Console.Error.WriteLine(message.Replace("\n\n", Environment.NewLine, StringComparison.Ordinal));
+        }
+        else
+        {
+            ApplicationConfiguration.Initialize();
+            MessageBox.Show(
+                message,
+                "GitKeyRouter",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+
+        return 4;
     }
 }

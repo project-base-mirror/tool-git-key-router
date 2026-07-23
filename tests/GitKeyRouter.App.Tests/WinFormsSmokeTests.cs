@@ -387,6 +387,21 @@ public sealed class WinFormsSmokeTests
             }
         });
 
+    [Fact]
+    public void SingleInstanceGuard_AllowsOnlyOneOwnerForTheSameName()
+    {
+        var mutexName = $@"Local\GitKeyRouter.Tests.{Guid.NewGuid():N}";
+        using var first = SingleInstanceGuard.TryAcquire(mutexName);
+        using var second = SingleInstanceGuard.TryAcquire(mutexName);
+
+        Assert.True(first.IsPrimaryInstance);
+        Assert.False(second.IsPrimaryInstance);
+
+        first.Dispose();
+        using var third = SingleInstanceGuard.TryAcquire(mutexName);
+        Assert.True(third.IsPrimaryInstance);
+    }
+
     private static void Exercise(Control control, params Size[] sizes)
     {
         using (control)
