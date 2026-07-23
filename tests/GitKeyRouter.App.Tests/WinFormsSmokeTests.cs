@@ -207,18 +207,41 @@ public sealed class WinFormsSmokeTests
                 Assert.True(narrowHeader.ClientRectangle.Contains(subtitleBounds));
                 Assert.False(subtitleBounds.IntersectsWith(helpBounds));
 
+                using var gridHost = new Form
+                {
+                    ClientSize = new Size(940, 260),
+                    StartPosition = FormStartPosition.Manual,
+                    Location = new Point(-32000, -32000),
+                    ShowInTaskbar = false
+                };
                 using var sampleGrid = UiHelpers.CreateGrid();
-                sampleGrid.DataSource = new[] { new { Name = "Example", Details = new string('x', 1000) } };
-                _ = sampleGrid.Handle;
+                sampleGrid.Location = new Point(12, 12);
+                sampleGrid.Size = new Size(900, 220);
+                gridHost.Controls.Add(sampleGrid);
+                gridHost.Show();
+                sampleGrid.DataSource = new[] { new { Name = "Example", Details = "Short value" } };
                 sampleGrid.PerformLayout();
                 Application.DoEvents();
+                var roomyColumns = sampleGrid.Columns.Cast<DataGridViewColumn>()
+                    .Where(column => column.Visible)
+                    .ToList();
+                Assert.Single(roomyColumns, column => column.AutoSizeMode == DataGridViewAutoSizeColumnMode.Fill);
+                Assert.InRange(
+                    sampleGrid.DisplayRectangle.Width - roomyColumns.Sum(column => column.Width),
+                    -4,
+                    24);
+
+                gridHost.ClientSize = new Size(260, 260);
+                sampleGrid.DataSource = new[] { new { Name = "Example", Details = new string('x', 1000) } };
+                sampleGrid.PerformLayout();
+                Application.DoEvents();
+                var constrainedColumns = sampleGrid.Columns.Cast<DataGridViewColumn>()
+                    .Where(column => column.Visible)
+                    .ToList();
                 Assert.All(
-                    sampleGrid.Columns.Cast<DataGridViewColumn>().Where(column => column.Visible),
-                    column =>
-                    {
-                        Assert.Equal(DataGridViewAutoSizeColumnMode.None, column.AutoSizeMode);
-                        Assert.InRange(column.Width, 90, 420);
-                    });
+                    constrainedColumns,
+                    column => Assert.Equal(DataGridViewAutoSizeColumnMode.None, column.AutoSizeMode));
+                Assert.True(constrainedColumns.Sum(column => column.Width) > sampleGrid.DisplayRectangle.Width);
 
                 using var main = new MainForm(services);
                 _ = main.Handle;

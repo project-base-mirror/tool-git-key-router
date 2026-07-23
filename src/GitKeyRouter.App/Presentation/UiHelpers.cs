@@ -97,28 +97,68 @@ public static class UiHelpers
             }
         };
 
-        grid.DataBindingComplete += (_, _) => ResizeGridColumns(grid);
+        var resizingColumns = false;
+        void ResizeColumns()
+        {
+            if (resizingColumns)
+            {
+                return;
+            }
+
+            try
+            {
+                resizingColumns = true;
+                ResizeGridColumns(grid);
+            }
+            finally
+            {
+                resizingColumns = false;
+            }
+        }
+
+        grid.DataBindingComplete += (_, _) => ResizeColumns();
+        grid.DataSourceChanged += (_, _) => ResizeColumns();
+        grid.RowsAdded += (_, _) => ResizeColumns();
+        grid.RowsRemoved += (_, _) => ResizeColumns();
+        grid.SizeChanged += (_, _) => ResizeColumns();
         return grid;
     }
 
-    private static void ResizeGridColumns(DataGridView grid)
+    public static void ResizeGridColumns(DataGridView grid)
     {
-        if (grid.Columns.Count == 0)
+        if (grid.Columns.Count == 0 || grid.ClientSize.Width <= 0)
         {
             return;
         }
 
-        grid.AutoResizeColumns(DataGridViewAutoSizeColumnsMode.DisplayedCells);
-        foreach (DataGridViewColumn column in grid.Columns)
+        var visibleColumns = grid.Columns
+            .Cast<DataGridViewColumn>()
+            .Where(column => column.Visible)
+            .ToList();
+        if (visibleColumns.Count == 0)
         {
-            if (!column.Visible)
-            {
-                continue;
-            }
+            return;
+        }
 
+        foreach (var column in visibleColumns)
+        {
             column.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
-            column.MinimumWidth = 90;
+        }
+
+        grid.AutoResizeColumns(DataGridViewAutoSizeColumnsMode.DisplayedCells);
+        foreach (var column in visibleColumns)
+        {
+            column.MinimumWidth = Math.Max(column.MinimumWidth, 90);
             column.Width = Math.Clamp(column.Width, column.MinimumWidth, 420);
+        }
+
+        var availableWidth = Math.Max(0, grid.DisplayRectangle.Width - 2);
+        var measuredWidth = visibleColumns.Sum(column => column.Width);
+        if (measuredWidth < availableWidth)
+        {
+            var fillColumn = visibleColumns.MaxBy(column => column.Width)!;
+            fillColumn.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+            fillColumn.FillWeight = 100;
         }
     }
 
