@@ -10,6 +10,8 @@ public interface IFileSystem
 
     Task<string> ReadAllTextAsync(string path, CancellationToken cancellationToken = default);
 
+    Task<byte[]> ReadAllBytesAsync(string path, CancellationToken cancellationToken = default);
+
     Task WriteAllTextAtomicAsync(string path, string content, CancellationToken cancellationToken = default);
 
     void CopyFile(string sourcePath, string destinationPath, bool overwrite);

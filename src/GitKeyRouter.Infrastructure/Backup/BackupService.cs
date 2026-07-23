@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using GitKeyRouter.Core.Abstractions;
@@ -69,6 +70,25 @@ public sealed class BackupService : IBackupService
             JsonSerializer.Serialize(rewrites, JsonOptions) + Environment.NewLine,
             cancellationToken).ConfigureAwait(false);
 
+        var files = new Dictionary<string, BackupFileIntegrity>(StringComparer.OrdinalIgnoreCase);
+        if (appExists)
+        {
+            files[AppConfigFileName] = await GetIntegrityAsync(
+                Path.Combine(directory, AppConfigFileName),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        if (sshExists)
+        {
+            files[SshConfigFileName] = await GetIntegrityAsync(
+                Path.Combine(directory, SshConfigFileName),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        files[GitRewritesFileName] = await GetIntegrityAsync(
+            Path.Combine(directory, GitRewritesFileName),
+            cancellationToken).ConfigureAwait(false);
+
         var manifest = new BackupManifest
         {
             CreatedAt = _clock.UtcNow,
@@ -79,7 +99,8 @@ public sealed class BackupService : IBackupService
             AppConfigSchemaVersion = appConfigSchemaVersion,
             SshConfigExisted = sshExists,
             GitRewriteCount = rewrites.Count,
-            GitRewriteCaptureError = gitCaptureError
+            GitRewriteCaptureError = gitCaptureError,
+            Files = files
         };
         await _fileSystem.WriteAllTextAtomicAsync(
             Path.Combine(directory, ManifestFileName),
@@ -130,6 +151,9 @@ public sealed class BackupService : IBackupService
         var manifest = JsonSerializer.Deserialize<BackupManifest>(manifestText, JsonOptions)
             ?? throw new InvalidDataException("Backup manifest is invalid.");
         manifest.BackupDirectory = backupDirectory;
+        manifest.Files ??= new Dictionary<string, BackupFileIntegrity>(StringComparer.OrdinalIgnoreCase);
+
+        await ValidateIntegrityAsync(backupDirectory, manifest, cancellationToken).ConfigureAwait(false);
 
         var appPath = Path.Combine(backupDirectory, AppConfigFileName);
         var sshPath = Path.Combine(backupDirectory, SshConfigFileName);
@@ -155,7 +179,13 @@ public sealed class BackupService : IBackupService
 
     public async Task<OperationResult> RestoreAppConfigAsync(string backupDirectory, CancellationToken cancellationToken = default)
     {
-        var snapshot = await ReadAsync(backupDirectory, cancellationToken).ConfigureAwait(false);
+        var readResult = await TryReadForRestoreAsync(backupDirectory, cancellationToken).ConfigureAwait(false);
+        if (!readResult.Success || readResult.Value is null)
+        {
+            return OperationResult.Fail(readResult.Message, readResult.Errors.ToArray());
+        }
+
+        var snapshot = readResult.Value;
         if (snapshot.Manifest.AppConfigExisted)
         {
             if (snapshot.AppConfigText is null)
@@ -185,7 +215,13 @@ public sealed class BackupService : IBackupService
 
     public async Task<OperationResult> RestoreSshConfigAsync(string backupDirectory, CancellationToken cancellationToken = default)
     {
-        var snapshot = await ReadAsync(backupDirectory, cancellationToken).ConfigureAwait(false);
+        var readResult = await TryReadForRestoreAsync(backupDirectory, cancellationToken).ConfigureAwait(false);
+        if (!readResult.Success || readResult.Value is null)
+        {
+            return OperationResult.Fail(readResult.Message, readResult.Errors.ToArray());
+        }
+
+        var snapshot = readResult.Value;
         await CreateSnapshotAsync("Before restoring SSH config", cancellationToken).ConfigureAwait(false);
         if (!snapshot.Manifest.SshConfigExisted)
         {
@@ -201,7 +237,13 @@ public sealed class BackupService : IBackupService
 
     public async Task<OperationResult> RestoreGitRewritesAsync(string backupDirectory, CancellationToken cancellationToken = default)
     {
-        var snapshot = await ReadAsync(backupDirectory, cancellationToken).ConfigureAwait(false);
+        var readResult = await TryReadForRestoreAsync(backupDirectory, cancellationToken).ConfigureAwait(false);
+        if (!readResult.Success || readResult.Value is null)
+        {
+            return OperationResult.Fail(readResult.Message, readResult.Errors.ToArray());
+        }
+
+        var snapshot = readResult.Value;
         if (!string.IsNullOrWhiteSpace(snapshot.Manifest.GitRewriteCaptureError))
         {
             return OperationResult.Fail(
@@ -209,8 +251,54 @@ public sealed class BackupService : IBackupService
                 snapshot.Manifest.GitRewriteCaptureError);
         }
 
-        await CreateSnapshotAsync("Before restoring Git URL rewrites", cancellationToken).ConfigureAwait(false);
-        var current = await _gitStore.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        var safetyManifest = await CreateSnapshotAsync("Before restoring Git URL rewrites", cancellationToken).ConfigureAwait(false);
+        var safetySnapshot = await ReadAsync(safetyManifest.BackupDirectory, cancellationToken).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(safetySnapshot.Manifest.GitRewriteCaptureError))
+        {
+            return OperationResult.Fail(
+                "Could not create a reliable safety snapshot before restoring Git URL rewrites.",
+                safetySnapshot.Manifest.GitRewriteCaptureError);
+        }
+
+        var applyResult = await ReplaceGitRewritesAsync(snapshot.GitUrlRewrites, cancellationToken).ConfigureAwait(false);
+        if (applyResult.Success)
+        {
+            return OperationResult.Ok("Git URL rewrites restored from the selected snapshot.");
+        }
+
+        var rollbackResult = await ReplaceGitRewritesAsync(safetySnapshot.GitUrlRewrites, cancellationToken).ConfigureAwait(false);
+        if (rollbackResult.Success)
+        {
+            return OperationResult.Fail(
+                "Git URL rewrite restore failed. The original rewrites were restored automatically.",
+                [applyResult.Message, .. applyResult.Errors, $"Safety snapshot: {safetyManifest.BackupDirectory}"]);
+        }
+
+        return OperationResult.Fail(
+            "Git URL rewrite restore failed, and the automatic rollback also failed.",
+            [
+                applyResult.Message,
+                .. applyResult.Errors,
+                rollbackResult.Message,
+                .. rollbackResult.Errors,
+                $"Safety snapshot: {safetyManifest.BackupDirectory}"
+            ]);
+    }
+
+    private async Task<OperationResult> ReplaceGitRewritesAsync(
+        IReadOnlyList<GitUrlRewriteRule> targetRules,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<GitUrlRewriteRule> current;
+        try
+        {
+            current = await _gitStore.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            return OperationResult.Fail("Failed to read current Git URL rewrites.", exception.Message);
+        }
+
         foreach (var rule in current.Distinct())
         {
             var result = await _gitStore.RemoveAllAsync(rule, cancellationToken).ConfigureAwait(false);
@@ -220,7 +308,7 @@ public sealed class BackupService : IBackupService
             }
         }
 
-        foreach (var rule in snapshot.GitUrlRewrites)
+        foreach (var rule in targetRules)
         {
             var result = await _gitStore.AddAsync(rule, cancellationToken).ConfigureAwait(false);
             if (!result.Succeeded)
@@ -229,8 +317,103 @@ public sealed class BackupService : IBackupService
             }
         }
 
-        return OperationResult.Ok("Git URL rewrites restored from the selected snapshot.");
+        IReadOnlyList<GitUrlRewriteRule> actual;
+        try
+        {
+            actual = await _gitStore.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            return OperationResult.Fail("Failed to verify restored Git URL rewrites.", exception.Message);
+        }
+
+        if (!RulesEqual(actual, targetRules))
+        {
+            return OperationResult.Fail("Git URL rewrites did not match the requested state after restoration.");
+        }
+
+        return OperationResult.Ok("Git URL rewrites replaced.");
     }
+
+    private async Task<OperationResult<BackupSnapshot>> TryReadForRestoreAsync(
+        string backupDirectory,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return OperationResult<BackupSnapshot>.Ok(
+                await ReadAsync(backupDirectory, cancellationToken).ConfigureAwait(false));
+        }
+        catch (Exception exception) when (exception is InvalidDataException or IOException or JsonException or UnauthorizedAccessException)
+        {
+            return OperationResult<BackupSnapshot>.Fail(
+                "The selected backup could not be validated and was not restored.",
+                exception.Message);
+        }
+    }
+
+    private async Task<BackupFileIntegrity> GetIntegrityAsync(string path, CancellationToken cancellationToken)
+    {
+        var bytes = await _fileSystem.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
+        return new BackupFileIntegrity
+        {
+            Length = bytes.LongLength,
+            Sha256 = Convert.ToHexString(SHA256.HashData(bytes))
+        };
+    }
+
+    private async Task ValidateIntegrityAsync(
+        string backupDirectory,
+        BackupManifest manifest,
+        CancellationToken cancellationToken)
+    {
+        if (manifest.SchemaVersion < 2)
+        {
+            return;
+        }
+
+        var expectedFiles = new List<string> { GitRewritesFileName };
+        if (manifest.AppConfigExisted)
+        {
+            expectedFiles.Add(AppConfigFileName);
+        }
+
+        if (manifest.SshConfigExisted)
+        {
+            expectedFiles.Add(SshConfigFileName);
+        }
+
+        foreach (var fileName in expectedFiles)
+        {
+            if (!manifest.Files.TryGetValue(fileName, out var expected))
+            {
+                throw new InvalidDataException($"Backup integrity metadata is missing for '{fileName}'.");
+            }
+
+            var path = Path.Combine(backupDirectory, fileName);
+            if (!_fileSystem.FileExists(path))
+            {
+                throw new InvalidDataException($"Backup file '{fileName}' is missing.");
+            }
+
+            var actual = await GetIntegrityAsync(path, cancellationToken).ConfigureAwait(false);
+            if (actual.Length != expected.Length
+                || !string.Equals(actual.Sha256, expected.Sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException($"Backup file '{fileName}' failed its SHA-256 integrity check.");
+            }
+        }
+    }
+
+    private static bool RulesEqual(
+        IReadOnlyList<GitUrlRewriteRule> actual,
+        IReadOnlyList<GitUrlRewriteRule> expected)
+        => NormalizeRules(actual).SequenceEqual(NormalizeRules(expected), StringComparer.OrdinalIgnoreCase);
+
+    private static IEnumerable<string> NormalizeRules(IEnumerable<GitUrlRewriteRule> rules)
+        => rules
+            .Select(rule => $"{rule.ConfigKey}\n{rule.InsteadOfUrl}")
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase);
 
     private static int? TryReadAppConfigSchemaVersion(string text)
     {

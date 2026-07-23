@@ -77,6 +77,8 @@ internal sealed class FakeGitUrlRewriteStore : IGitUrlRewriteStore
 {
     public List<GitUrlRewriteRule> Rules { get; } = [];
 
+    public bool FailNextAdd { get; set; }
+
     public ProcessResult? RemoteResult { get; set; }
 
     public string? GitExecutablePath => "git.exe";
@@ -95,6 +97,18 @@ internal sealed class FakeGitUrlRewriteStore : IGitUrlRewriteStore
 
     public Task<ProcessResult> AddAsync(GitUrlRewriteRule rule, CancellationToken cancellationToken = default)
     {
+        if (FailNextAdd)
+        {
+            FailNextAdd = false;
+            return Task.FromResult(new ProcessResult
+            {
+                ExecutablePath = "git.exe",
+                Arguments = ["config", "--add", rule.ConfigKey, rule.InsteadOfUrl],
+                ExitCode = 1,
+                StandardError = "Simulated add failure."
+            });
+        }
+
         Rules.Add(rule);
         return Task.FromResult(Success("config", "--add", rule.ConfigKey, rule.InsteadOfUrl));
     }

@@ -2,7 +2,7 @@ namespace GitKeyRouter.Core.Models;
 
 public sealed class BackupManifest
 {
-    public int SchemaVersion { get; set; } = 1;
+    public int SchemaVersion { get; set; } = 2;
 
     public DateTimeOffset CreatedAt { get; set; }
 
@@ -21,6 +21,15 @@ public sealed class BackupManifest
     public int GitRewriteCount { get; set; }
 
     public string? GitRewriteCaptureError { get; set; }
+
+    public Dictionary<string, BackupFileIntegrity> Files { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
+public sealed class BackupFileIntegrity
+{
+    public long Length { get; set; }
+
+    public string Sha256 { get; set; } = string.Empty;
 }
 
 public sealed class BackupSnapshot

@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text.Json;
 using GitKeyRouter.Core.Models;
 using GitKeyRouter.Infrastructure.Backup;
 using GitKeyRouter.Infrastructure.FileSystem;
@@ -24,7 +26,16 @@ public sealed class BackupServiceTests
         var service = new BackupService(paths, fileSystem, git, new TestClock());
 
         var manifest = await service.CreateSnapshotAsync("test snapshot");
+        Assert.Equal(2, manifest.SchemaVersion);
         Assert.Equal(3, manifest.AppConfigSchemaVersion);
+        Assert.Equal(3, manifest.Files.Count);
+        foreach (var (fileName, integrity) in manifest.Files)
+        {
+            var bytes = await File.ReadAllBytesAsync(Path.Combine(manifest.BackupDirectory, fileName));
+            Assert.Equal(bytes.LongLength, integrity.Length);
+            Assert.Equal(Convert.ToHexString(SHA256.HashData(bytes)), integrity.Sha256);
+        }
+
         await File.WriteAllTextAsync(paths.ConfigPath, "{\"changed\":true}");
         await File.WriteAllTextAsync(paths.SshConfigPath, "changed ssh config");
         git.Rules.Clear();
@@ -63,5 +74,74 @@ public sealed class BackupServiceTests
         Assert.False(result.Success);
         Assert.Contains("supports up to schema", result.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(currentConfig, await File.ReadAllTextAsync(paths.ConfigPath));
+    }
+
+    [Fact]
+    public async Task RestoreAppConfig_RejectsTamperedBackupWithoutChangingCurrentConfiguration()
+    {
+        using var temp = new TemporaryDirectory();
+        var paths = new TestAppPaths(temp.Path);
+        var fileSystem = new PhysicalFileSystem();
+        Directory.CreateDirectory(paths.AppDataDirectory);
+        const string originalConfig = "{\"SchemaVersion\":3,\"GitServices\":[],\"Identities\":[],\"RepositoryRoutes\":[],\"GitProfiles\":[],\"GitProfileRules\":[]}";
+        await File.WriteAllTextAsync(paths.ConfigPath, originalConfig);
+        var service = new BackupService(paths, fileSystem, new FakeGitUrlRewriteStore(), new TestClock());
+        var manifest = await service.CreateSnapshotAsync("tamper test");
+        await File.AppendAllTextAsync(Path.Combine(manifest.BackupDirectory, "app_config.json"), "tampered");
+        const string currentConfig = "{\"SchemaVersion\":3,\"changed\":true}";
+        await File.WriteAllTextAsync(paths.ConfigPath, currentConfig);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => service.ReadAsync(manifest.BackupDirectory));
+        var result = await service.RestoreAppConfigAsync(manifest.BackupDirectory);
+
+        Assert.False(result.Success);
+        Assert.Contains("integrity", string.Join(' ', result.Errors), StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(currentConfig, await File.ReadAllTextAsync(paths.ConfigPath));
+    }
+
+    [Fact]
+    public async Task ReadAsync_RemainsCompatibleWithLegacySchemaOneManifest()
+    {
+        using var temp = new TemporaryDirectory();
+        var paths = new TestAppPaths(temp.Path);
+        var fileSystem = new PhysicalFileSystem();
+        Directory.CreateDirectory(paths.AppDataDirectory);
+        await File.WriteAllTextAsync(paths.ConfigPath, "{\"SchemaVersion\":3}");
+        var service = new BackupService(paths, fileSystem, new FakeGitUrlRewriteStore(), new TestClock());
+        var manifest = await service.CreateSnapshotAsync("legacy test");
+        manifest.SchemaVersion = 1;
+        manifest.Files.Clear();
+        await File.WriteAllTextAsync(
+            Path.Combine(manifest.BackupDirectory, "manifest.json"),
+            JsonSerializer.Serialize(manifest));
+        await File.AppendAllTextAsync(Path.Combine(manifest.BackupDirectory, "app_config.json"), " ");
+
+        var snapshot = await service.ReadAsync(manifest.BackupDirectory);
+
+        Assert.Equal(1, snapshot.Manifest.SchemaVersion);
+        Assert.NotNull(snapshot.AppConfigText);
+    }
+
+    [Fact]
+    public async Task RestoreGitRewrites_RollsBackAutomaticallyWhenApplyFails()
+    {
+        using var temp = new TemporaryDirectory();
+        var paths = new TestAppPaths(temp.Path);
+        var fileSystem = new PhysicalFileSystem();
+        var git = new FakeGitUrlRewriteStore();
+        var targetRule = new GitUrlRewriteRule("git@target:", "https://target.example/");
+        var originalRule = new GitUrlRewriteRule("git@original:", "https://original.example/");
+        git.Rules.Add(targetRule);
+        var service = new BackupService(paths, fileSystem, git, new TestClock());
+        var selected = await service.CreateSnapshotAsync("selected target");
+        git.Rules.Clear();
+        git.Rules.Add(originalRule);
+        git.FailNextAdd = true;
+
+        var result = await service.RestoreGitRewritesAsync(selected.BackupDirectory);
+
+        Assert.False(result.Success);
+        Assert.Contains("restored automatically", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal([originalRule], git.Rules);
     }
 }

@@ -14,6 +14,9 @@ public sealed class PhysicalFileSystem : IFileSystem
     public Task<string> ReadAllTextAsync(string path, CancellationToken cancellationToken = default)
         => File.ReadAllTextAsync(path, Encoding.UTF8, cancellationToken);
 
+    public Task<byte[]> ReadAllBytesAsync(string path, CancellationToken cancellationToken = default)
+        => File.ReadAllBytesAsync(path, cancellationToken);
+
     public async Task WriteAllTextAtomicAsync(string path, string content, CancellationToken cancellationToken = default)
     {
         var directory = Path.GetDirectoryName(path)
