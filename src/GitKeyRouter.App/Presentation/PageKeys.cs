@@ -11,4 +11,5 @@ public static class PageKeys
     public const string GitRewrites = "git-rewrites";
     public const string Diagnostics = "diagnostics";
     public const string Backup = "backup";
+    public const string Settings = "settings";
 }

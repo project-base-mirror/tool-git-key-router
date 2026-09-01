@@ -116,6 +116,7 @@ public sealed class WinFormsSmokeTests
             Exercise(new GitRewritesControl(services, _ => { }));
             Exercise(new DiagnosticsControl(services, _ => { }));
             Exercise(new BackupControl(services, _ => { }));
+            Exercise(CreateSettingsControl(services));
 
             using var profiles = new GitProfilesControl(services, _ => { });
             _ = profiles.Handle;
@@ -182,7 +183,8 @@ public sealed class WinFormsSmokeTests
                 new SshConfigControl(services, _ => { }),
                 new GitRewritesControl(services, _ => { }),
                 new DiagnosticsControl(services, _ => { }),
-                new BackupControl(services, _ => { })
+                new BackupControl(services, _ => { }),
+                CreateSettingsControl(services)
             };
 
             try
@@ -293,7 +295,7 @@ public sealed class WinFormsSmokeTests
         });
 
     [Fact]
-    public void MainPagesExposeHelpAndLanguageSelector()
+    public void MainPagesExposeHelpAndSettingsPageOwnsPreferences()
         => StaTest.Run(() =>
         {
             var services = AppBootstrapper.CreateServices();
@@ -308,7 +310,8 @@ public sealed class WinFormsSmokeTests
                 new SshConfigControl(services, _ => { }),
                 new GitRewritesControl(services, _ => { }),
                 new DiagnosticsControl(services, _ => { }),
-                new BackupControl(services, _ => { })
+                new BackupControl(services, _ => { }),
+                CreateSettingsControl(services)
             };
 
             try
@@ -320,26 +323,46 @@ public sealed class WinFormsSmokeTests
                 }
 
                 using var main = new MainForm(services);
+                main.Size = main.MinimumSize;
                 _ = main.Handle;
-                var selector = Assert.Single(
-                    Descendants<ComboBox>(main),
-                    item => item.Name == "UiLanguageSelector");
-                Assert.Equal(2, selector.Items.Count);
+                main.PerformLayout();
+                Application.DoEvents();
+                var settings = Assert.IsType<SettingsControl>(pages[^1]);
+                Assert.Empty(Descendants<ComboBox>(main));
+                Assert.Empty(Descendants<ComboBox>(settings));
+                Assert.Empty(Descendants<CheckBox>(settings));
                 Assert.Single(
-                    Descendants<CheckBox>(main),
-                    item => item.Name == "CheckForUpdatesOnStartupCheckbox" && item.Checked);
+                    Descendants<Button>(settings),
+                    button => button.Name == "SettingsLanguageChineseButton");
                 Assert.Single(
-                    Descendants<CheckBox>(main),
-                    item => item.Name == "KeepRunningInTrayCheckbox" && item.Checked);
+                    Descendants<Button>(settings),
+                    button => button.Name == "SettingsLanguageEnglishButton");
                 Assert.Single(
-                    Descendants<Button>(main),
+                    Descendants<Button>(settings),
+                    button => button.Name == "CheckForUpdatesOnStartupToggle");
+                Assert.Single(
+                    Descendants<Button>(settings),
+                    button => button.Name == "KeepRunningInTrayToggle");
+                Assert.Single(
+                    Descendants<Button>(settings),
                     button => button.Name == "CheckForUpdatesButton");
+                var navigation = Assert.Single(
+                    Descendants<FlowLayoutPanel>(main),
+                    panel => panel.Name == "SidebarNavigation");
+                Assert.False(navigation.AutoScroll);
+                Assert.False(navigation.VerticalScroll.Visible);
+                Assert.DoesNotContain(
+                    Descendants<Label>(main),
+                    label => label.Text is "NAVIGATION" or "导航"
+                        || label.Text.Contains("Click the brand", StringComparison.OrdinalIgnoreCase)
+                        || label.Text.Contains("点击左上角品牌", StringComparison.Ordinal));
                 var trayMenuField = typeof(MainForm).GetField("_trayMenu", BindingFlags.Instance | BindingFlags.NonPublic);
                 var trayMenu = Assert.IsType<ContextMenuStrip>(trayMenuField?.GetValue(main));
                 Assert.Contains(
                     trayMenu.Items.OfType<ToolStripMenuItem>(),
                     item => item.Name == "TrayCheckUpdatesMenuItem");
                 Assert.Contains("     Git Services", Descendants<Button>(main).Select(button => button.Text));
+                Assert.Contains("⚙   Settings", Descendants<Button>(main).Select(button => button.Text));
             }
             finally
             {
@@ -523,6 +546,15 @@ public sealed class WinFormsSmokeTests
         Assert.False(second.IsPrimaryInstance);
         Assert.True(activated.Wait(TimeSpan.FromSeconds(2)));
     }
+
+    private static SettingsControl CreateSettingsControl(ApplicationServices services)
+        => new(
+            services,
+            _ => { },
+            _ => Task.CompletedTask,
+            _ => { },
+            _ => { },
+            () => Task.CompletedTask);
 
     private static void Exercise(Control control, params Size[] sizes)
     {

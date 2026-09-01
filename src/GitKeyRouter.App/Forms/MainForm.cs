@@ -27,13 +27,6 @@ public sealed class MainForm : Form
     private readonly Dictionary<string, UserControl> _pages = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Button> _navigationButtons = new(StringComparer.OrdinalIgnoreCase);
     private Label? _brandSubtitle;
-    private Label? _navigationLabel;
-    private Label? _footerHint;
-    private Label? _languageLabel;
-    private ComboBox? _languageSelector;
-    private CheckBox? _checkForUpdatesOnStartupCheckbox;
-    private Button? _checkForUpdatesButton;
-    private CheckBox? _keepRunningInTrayCheckbox;
     private NotifyIcon? _trayIcon;
     private ContextMenuStrip? _trayMenu;
     private ToolStripMenuItem? _trayOpenMenuItem;
@@ -41,10 +34,9 @@ public sealed class MainForm : Form
     private ToolStripMenuItem? _trayExitMenuItem;
     private Icon? _trayIconImage;
     private string _activePageKey = PageKeys.Overview;
-    private bool _updatingLanguage;
-    private bool _updatingUpdatePreference;
     private bool _checkingForUpdates;
-    private bool _updatingTrayPreference;
+    private bool _keepRunningInTray = true;
+    private bool _checkForUpdatesOnStartup = true;
     private bool _exitRequested;
     private bool _closing;
     private static string DisplayVersion => typeof(MainForm).Assembly.GetName().Version?.ToString(3) ?? "Unknown";
@@ -71,7 +63,16 @@ public sealed class MainForm : Form
             [PageKeys.SshConfig] = new(() => new SshConfigControl(services, SetStatus), () => "SSH Config"),
             [PageKeys.GitRewrites] = new(() => new GitRewritesControl(services, SetStatus), () => AppLocalization.T("Git 重写配置", "Git URL Rewrites")),
             [PageKeys.Diagnostics] = new(() => new DiagnosticsControl(services, SetStatus), () => AppLocalization.T("诊断", "Diagnostics")),
-            [PageKeys.Backup] = new(() => new BackupControl(services, SetStatus), () => AppLocalization.T("备份与恢复", "Backup and Restore"))
+            [PageKeys.Backup] = new(() => new BackupControl(services, SetStatus), () => AppLocalization.T("备份与恢复", "Backup and Restore")),
+            [PageKeys.Settings] = new(
+                () => new SettingsControl(
+                    services,
+                    SetStatus,
+                    ChangeLanguageAsync,
+                    ApplyTrayPreference,
+                    ApplyUpdatePreference,
+                    () => CheckForUpdatesAsync(showCurrentMessage: true)),
+                () => AppLocalization.T("设置", "Settings"))
         };
 
         var sidebar = CreateSidebar();
@@ -101,9 +102,8 @@ public sealed class MainForm : Form
         Shown += async (_, _) =>
         {
             await ShowPageAsync(PageKeys.Overview);
-            await InitializeTrayPreferenceAsync();
+            await InitializePreferencesAsync();
             ApplyTraySettings();
-            await InitializeUpdatePreferenceAsync();
             ShowPreviousUpdateResult();
             var toolsReady = await RequiredToolInstallationUi.CheckAndOfferAsync(
                 this,
@@ -115,7 +115,7 @@ public sealed class MainForm : Form
                 await ShowPageAsync(PageKeys.Overview);
             }
 
-            if (_checkForUpdatesOnStartupCheckbox?.Checked == true)
+            if (_checkForUpdatesOnStartup)
             {
                 _ = CheckForUpdatesAsync(showCurrentMessage: false);
             }
@@ -193,26 +193,14 @@ public sealed class MainForm : Form
 
         var navigation = new FlowLayoutPanel
         {
+            Name = "SidebarNavigation",
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
-            AutoScroll = true,
+            AutoScroll = false,
             BackColor = UiHelpers.SidebarBackground,
             Padding = new Padding(12, 8, 12, 8)
         };
-        var navigationLabel = new Label
-        {
-            Text = AppLocalization.T("导航", "NAVIGATION"),
-            Width = 204,
-            Height = 28,
-            ForeColor = UiHelpers.SidebarMuted,
-            Font = new Font("Segoe UI Semibold", 8F),
-            TextAlign = ContentAlignment.MiddleLeft,
-            Padding = new Padding(12, 0, 0, 0),
-            Margin = new Padding(0, 0, 0, 6)
-        };
-        _navigationLabel = navigationLabel;
-        navigation.Controls.Add(navigationLabel);
 
         foreach (var pageKey in _pageDefinitions.Keys)
         {
@@ -221,123 +209,9 @@ public sealed class MainForm : Form
             navigation.Controls.Add(button);
         }
 
-        navigation.SizeChanged += (_, _) => ResizeNavigationItems(navigation, navigationLabel);
-
-        var footer = new TableLayoutPanel
-        {
-            Dock = DockStyle.Bottom,
-            Height = 204,
-            ColumnCount = 1,
-            RowCount = 6,
-            Padding = new Padding(18, 6, 18, 12),
-            BackColor = UiHelpers.SidebarBackground
-        };
-        footer.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-        footer.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
-        footer.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
-        footer.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
-        footer.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
-        footer.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-        var footerHint = new Label
-        {
-            Text = AppLocalization.T("点击左上角品牌可随时返回概览", "Click the brand to return to Overview"),
-            Dock = DockStyle.Fill,
-            ForeColor = UiHelpers.SidebarMuted,
-            Font = new Font("Segoe UI", 8F),
-            TextAlign = ContentAlignment.MiddleLeft
-        };
-        _footerHint = footerHint;
-        var languageLabel = new Label
-        {
-            Text = AppLocalization.T("界面语言", "Interface language"),
-            Dock = DockStyle.Fill,
-            ForeColor = UiHelpers.SidebarMuted,
-            Font = new Font("Segoe UI Semibold", 8F),
-            TextAlign = ContentAlignment.MiddleLeft
-        };
-        _languageLabel = languageLabel;
-        var languageSelector = new ComboBox
-        {
-            Name = "UiLanguageSelector",
-            Dock = DockStyle.Fill,
-            DropDownStyle = ComboBoxStyle.DropDownList
-        };
-        _languageSelector = languageSelector;
-        languageSelector.Items.AddRange(
-        [
-            new LanguageChoice(AppLanguage.SimplifiedChinese),
-            new LanguageChoice(AppLanguage.English)
-        ]);
-        languageSelector.SelectedItem = languageSelector.Items.Cast<LanguageChoice>()
-            .First(item => item.Language == AppLocalization.CurrentLanguage);
-        languageSelector.SelectedIndexChanged += async (_, _) =>
-        {
-            if (!_updatingLanguage && languageSelector.SelectedItem is LanguageChoice choice)
-            {
-                await ChangeLanguageAsync(choice.Language);
-            }
-        };
-        var keepRunningInTray = new CheckBox
-        {
-            Name = "KeepRunningInTrayCheckbox",
-            Text = AppLocalization.T("关闭或最小化主窗口时驻留系统托盘", "Keep running in tray when the window is closed or minimized"),
-            Dock = DockStyle.Fill,
-            ForeColor = UiHelpers.SidebarMuted,
-            Font = new Font("Segoe UI", 8F),
-            Checked = true,
-            AutoSize = false
-        };
-        _keepRunningInTrayCheckbox = keepRunningInTray;
-        keepRunningInTray.CheckedChanged += async (_, _) =>
-        {
-            if (!_updatingTrayPreference)
-            {
-                await PersistTrayPreferenceAsync(keepRunningInTray.Checked);
-            }
-        };
-
-        var checkForUpdatesOnStartup = new CheckBox
-        {
-            Name = "CheckForUpdatesOnStartupCheckbox",
-            Text = AppLocalization.T("启动时检查更新", "Check for updates on startup"),
-            Dock = DockStyle.Fill,
-            ForeColor = UiHelpers.SidebarMuted,
-            Font = new Font("Segoe UI", 8F),
-            Checked = true,
-            AutoSize = false
-        };
-        _checkForUpdatesOnStartupCheckbox = checkForUpdatesOnStartup;
-        checkForUpdatesOnStartup.CheckedChanged += async (_, _) =>
-        {
-            if (!_updatingUpdatePreference)
-            {
-                await PersistUpdatePreferenceAsync(checkForUpdatesOnStartup.Checked);
-            }
-        };
-        var checkForUpdatesButton = new Button
-        {
-            Name = "CheckForUpdatesButton",
-            Text = AppLocalization.T("检查更新", "Check for updates"),
-            Dock = DockStyle.Fill,
-            FlatStyle = FlatStyle.Flat,
-            BackColor = UiHelpers.NavigationActive,
-            ForeColor = Color.White,
-            Font = new Font("Segoe UI Semibold", 8.5F),
-            Cursor = Cursors.Hand,
-            UseVisualStyleBackColor = false
-        };
-        checkForUpdatesButton.FlatAppearance.BorderSize = 0;
-        checkForUpdatesButton.Click += async (_, _) => await CheckForUpdatesAsync(showCurrentMessage: true);
-        _checkForUpdatesButton = checkForUpdatesButton;
-        footer.Controls.Add(footerHint, 0, 0);
-        footer.Controls.Add(languageLabel, 0, 1);
-        footer.Controls.Add(languageSelector, 0, 2);
-        footer.Controls.Add(keepRunningInTray, 0, 3);
-        footer.Controls.Add(checkForUpdatesOnStartup, 0, 4);
-        footer.Controls.Add(checkForUpdatesButton, 0, 5);
+        navigation.SizeChanged += (_, _) => ResizeNavigationItems(navigation);
 
         sidebar.Controls.Add(navigation);
-        sidebar.Controls.Add(footer);
         sidebar.Controls.Add(brand);
         return sidebar;
     }
@@ -348,7 +222,7 @@ public sealed class MainForm : Form
         {
             Text = NavigationText(pageKey),
             Width = 204,
-            Height = 44,
+            Height = 42,
             FlatStyle = FlatStyle.Flat,
             FlatAppearance = { BorderSize = 0 },
             BackColor = UiHelpers.SidebarBackground,
@@ -356,7 +230,7 @@ public sealed class MainForm : Form
             Font = new Font("Segoe UI Semibold", 9.5F),
             TextAlign = ContentAlignment.MiddleLeft,
             Padding = new Padding(12, 0, 8, 0),
-            Margin = new Padding(0, 0, 0, 5),
+            Margin = new Padding(0, 0, 0, 4),
             Cursor = Cursors.Hand,
             Tag = pageKey,
             UseVisualStyleBackColor = false
@@ -367,10 +241,9 @@ public sealed class MainForm : Form
         return button;
     }
 
-    private void ResizeNavigationItems(FlowLayoutPanel navigation, Label navigationLabel)
+    private void ResizeNavigationItems(FlowLayoutPanel navigation)
     {
         var width = Math.Max(140, navigation.ClientSize.Width - navigation.Padding.Horizontal);
-        navigationLabel.Width = width;
         foreach (var button in _navigationButtons.Values)
         {
             button.Width = width;
@@ -449,7 +322,12 @@ public sealed class MainForm : Form
     private string NavigationText(string pageKey)
     {
         var title = _pageDefinitions[pageKey].Title();
-        return pageKey == PageKeys.Overview ? $"⌂   {title}" : $"     {title}";
+        return pageKey switch
+        {
+            PageKeys.Overview => $"⌂   {title}",
+            PageKeys.Settings => $"⚙   {title}",
+            _ => $"     {title}"
+        };
     }
 
     private void ApplyShellLanguage()
@@ -457,26 +335,6 @@ public sealed class MainForm : Form
         if (_brandSubtitle is not null)
         {
             _brandSubtitle.Text = AppLocalization.T("SSH 身份与路由管理", "SSH identity and routing manager");
-        }
-
-        if (_navigationLabel is not null)
-        {
-            _navigationLabel.Text = AppLocalization.T("导航", "NAVIGATION");
-        }
-
-        if (_footerHint is not null)
-        {
-            _footerHint.Text = AppLocalization.T("点击左上角品牌可随时返回概览", "Click the brand to return to Overview");
-        }
-
-        if (_languageLabel is not null)
-        {
-            _languageLabel.Text = AppLocalization.T("界面语言", "Interface language");
-        }
-
-        if (_keepRunningInTrayCheckbox is not null)
-        {
-            _keepRunningInTrayCheckbox.Text = AppLocalization.T("关闭或最小化主窗口时驻留系统托盘", "Keep running in tray when the window is closed or minimized");
         }
 
         if (_trayOpenMenuItem is not null)
@@ -494,37 +352,14 @@ public sealed class MainForm : Form
             _trayExitMenuItem.Text = AppLocalization.T("退出", "Exit");
         }
 
-        if (_checkForUpdatesOnStartupCheckbox is not null)
-        {
-            _checkForUpdatesOnStartupCheckbox.Text = AppLocalization.T("启动时检查更新", "Check for updates on startup");
-        }
-
-        if (_checkForUpdatesButton is not null)
-        {
-            _checkForUpdatesButton.Text = AppLocalization.T("检查更新", "Check for updates");
-        }
-
         foreach (var (pageKey, button) in _navigationButtons)
         {
             button.Text = NavigationText(pageKey);
         }
 
-        if (_languageSelector is not null)
-        {
-            _updatingLanguage = true;
-            try
-            {
-                _languageSelector.SelectedItem = _languageSelector.Items.Cast<LanguageChoice>()
-                    .First(item => item.Language == AppLocalization.CurrentLanguage);
-            }
-            finally
-            {
-                _updatingLanguage = false;
-            }
-        }
     }
 
-    private bool KeepRunningInTray => _keepRunningInTrayCheckbox?.Checked == true;
+    private bool KeepRunningInTray => _keepRunningInTray;
 
     private void BuildTrayIcon()
     {
@@ -559,49 +394,28 @@ public sealed class MainForm : Form
         _trayIcon.DoubleClick += (_, _) => ShowMainWindow();
     }
 
-    private async Task InitializeTrayPreferenceAsync()
-    {
-        if (_keepRunningInTrayCheckbox is null)
-        {
-            return;
-        }
-
-        try
-        {
-            var snapshot = await _services.ConfigStore.LoadSnapshotAsync();
-            _updatingTrayPreference = true;
-            _keepRunningInTrayCheckbox.Checked = snapshot.Config.KeepRunningInTray;
-        }
-        catch (Exception exception)
-        {
-            _services.Logger.Error("Failed to load tray-residence preference.", exception);
-            SetStatus(AppLocalization.T("无法读取托盘驻留偏好", "Could not load the tray-residence preference"));
-        }
-        finally
-        {
-            _updatingTrayPreference = false;
-        }
-    }
-
-    private async Task PersistTrayPreferenceAsync(bool enabled)
+    private async Task InitializePreferencesAsync()
     {
         try
         {
-            var snapshot = await _services.ConfigStore.LoadSnapshotAsync();
-            var config = snapshot.Config;
-            config.KeepRunningInTray = enabled;
-            await _services.ConfigStore.SaveIfUnchangedAsync(config, snapshot.Version);
-            ApplyTraySettings();
-            SetStatus(enabled
-                ? AppLocalization.T("已启用系统托盘驻留", "System tray residence enabled")
-                : AppLocalization.T("已关闭系统托盘驻留", "System tray residence disabled"));
+            var config = await _services.ConfigStore.LoadAsync();
+            _keepRunningInTray = config.KeepRunningInTray;
+            _checkForUpdatesOnStartup = config.CheckForUpdatesOnStartup;
         }
         catch (Exception exception)
         {
-            _services.Logger.Error("Failed to persist tray-residence preference.", exception);
-            SetStatus(AppLocalization.T("托盘驻留偏好保存失败", "Could not save the tray-residence preference"));
+            _services.Logger.Error("Failed to load application preferences.", exception);
+            SetStatus(AppLocalization.T("无法读取应用偏好", "Could not load application preferences"));
         }
     }
+
+    private void ApplyTrayPreference(bool enabled)
+    {
+        _keepRunningInTray = enabled;
+        ApplyTraySettings();
+    }
+
+    private void ApplyUpdatePreference(bool enabled) => _checkForUpdatesOnStartup = enabled;
 
     private void ApplyTraySettings()
     {
@@ -705,49 +519,6 @@ public sealed class MainForm : Form
         _trayIconImage = null;
     }
 
-    private async Task InitializeUpdatePreferenceAsync()
-    {
-        if (_checkForUpdatesOnStartupCheckbox is null)
-        {
-            return;
-        }
-
-        try
-        {
-            var snapshot = await _services.ConfigStore.LoadSnapshotAsync();
-            _updatingUpdatePreference = true;
-            _checkForUpdatesOnStartupCheckbox.Checked = snapshot.Config.CheckForUpdatesOnStartup;
-        }
-        catch (Exception exception)
-        {
-            _services.Logger.Error("Failed to load update-check preference.", exception);
-            SetStatus(AppLocalization.T("无法读取更新检查偏好", "Could not load the update-check preference"));
-        }
-        finally
-        {
-            _updatingUpdatePreference = false;
-        }
-    }
-
-    private async Task PersistUpdatePreferenceAsync(bool enabled)
-    {
-        try
-        {
-            var snapshot = await _services.ConfigStore.LoadSnapshotAsync();
-            var config = snapshot.Config;
-            config.CheckForUpdatesOnStartup = enabled;
-            await _services.ConfigStore.SaveIfUnchangedAsync(config, snapshot.Version);
-            SetStatus(enabled
-                ? AppLocalization.T("已启用启动时检查更新", "Startup update checks enabled")
-                : AppLocalization.T("已关闭启动时检查更新", "Startup update checks disabled"));
-        }
-        catch (Exception exception)
-        {
-            _services.Logger.Error("Failed to persist update-check preference.", exception);
-            SetStatus(AppLocalization.T("更新检查偏好保存失败", "Could not save the update-check preference"));
-        }
-    }
-
     private async Task CheckForUpdatesAsync(bool showCurrentMessage)
     {
         if (_checkingForUpdates)
@@ -766,10 +537,6 @@ public sealed class MainForm : Form
         }
 
         _checkingForUpdates = true;
-        if (_checkForUpdatesButton is not null)
-        {
-            _checkForUpdatesButton.Enabled = false;
-        }
         if (_trayCheckUpdatesMenuItem is not null)
         {
             _trayCheckUpdatesMenuItem.Enabled = false;
@@ -819,10 +586,6 @@ public sealed class MainForm : Form
         finally
         {
             _checkingForUpdates = false;
-            if (_checkForUpdatesButton is not null && !IsDisposed && !Disposing)
-            {
-                _checkForUpdatesButton.Enabled = true;
-            }
             if (_trayCheckUpdatesMenuItem is not null && !IsDisposed && !Disposing)
             {
                 _trayCheckUpdatesMenuItem.Enabled = true;
@@ -1010,9 +773,4 @@ public sealed class MainForm : Form
     }
 
     private sealed record PageDefinition(Func<UserControl> Factory, Func<string> Title);
-
-    private sealed record LanguageChoice(AppLanguage Language)
-    {
-        public override string ToString() => AppLocalization.DisplayName(Language);
-    }
 }
