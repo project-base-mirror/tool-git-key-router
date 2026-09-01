@@ -343,6 +343,8 @@ public static class UiHelpers
 
     public static Control CreatePageHeader(string title, string subtitle, string? helpText = null)
     {
+        var hasHelp = !string.IsNullOrWhiteSpace(helpText);
+        var helpColumnWidth = hasHelp ? 46 : 0;
         var header = new Panel
         {
             Name = "PageHeader",
@@ -355,14 +357,17 @@ public static class UiHelpers
         var layout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 2,
+            ColumnCount = hasHelp ? 2 : 1,
             RowCount = 1,
             Margin = Padding.Empty,
             Padding = Padding.Empty,
             BackColor = AppBackground
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 46));
+        if (hasHelp)
+        {
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, helpColumnWidth));
+        }
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var textPanel = new Panel { Dock = DockStyle.Fill, BackColor = AppBackground };
         var titleLabel = new Label
@@ -371,23 +376,29 @@ public static class UiHelpers
             Text = title,
             Dock = DockStyle.Top,
             Height = 38,
+            MinimumSize = new Size(0, 38),
             Font = new Font("Segoe UI Semibold", 20F),
             ForeColor = TextPrimary,
-            TextAlign = ContentAlignment.MiddleLeft
+            TextAlign = ContentAlignment.MiddleLeft,
+            AutoEllipsis = false,
+            UseMnemonic = false
         };
         var subtitleLabel = new Label
         {
             Name = "PageHeaderSubtitle",
             Text = subtitle,
             Dock = DockStyle.Fill,
+            MinimumSize = new Size(0, 18),
             Font = new Font("Segoe UI", 9F),
             ForeColor = TextSecondary,
-            TextAlign = ContentAlignment.TopLeft
+            TextAlign = ContentAlignment.TopLeft,
+            AutoEllipsis = false,
+            UseMnemonic = false
         };
         textPanel.Controls.Add(subtitleLabel);
         textPanel.Controls.Add(titleLabel);
         layout.Controls.Add(textPanel, 0, 0);
-        if (!string.IsNullOrWhiteSpace(helpText))
+        if (hasHelp)
         {
             var helpButton = new Button
             {
@@ -426,20 +437,28 @@ public static class UiHelpers
                 return;
             }
 
-            var subtitleWidth = Math.Max(1, header.ClientSize.Width - header.Padding.Horizontal - 46);
-            var subtitleHeight = subtitleLabel.GetPreferredSize(new Size(subtitleWidth, 0)).Height;
-            var targetHeight = Math.Max(
-                header.MinimumSize.Height,
-                header.Padding.Vertical + titleLabel.Height + subtitleHeight);
-            if (header.Height == targetHeight)
-            {
-                return;
-            }
-
             adjustingHeaderHeight = true;
             try
             {
-                header.Height = targetHeight;
+                var textWidth = Math.Max(
+                    1,
+                    textPanel.ClientSize.Width > 0
+                        ? textPanel.ClientSize.Width
+                        : header.ClientSize.Width - header.Padding.Horizontal - helpColumnWidth);
+                var titleHeight = Math.Max(
+                    titleLabel.MinimumSize.Height,
+                    titleLabel.GetPreferredSize(new Size(textWidth, 0)).Height);
+                var subtitleHeight = Math.Max(
+                    subtitleLabel.MinimumSize.Height,
+                    subtitleLabel.GetPreferredSize(new Size(textWidth, 0)).Height);
+                var targetHeight = Math.Max(
+                    header.MinimumSize.Height,
+                    header.Padding.Vertical + titleHeight + subtitleHeight);
+                titleLabel.Height = titleHeight;
+                if (header.Height != targetHeight)
+                {
+                    header.Height = targetHeight;
+                }
             }
             finally
             {
@@ -449,6 +468,7 @@ public static class UiHelpers
 
         header.SizeChanged += (_, _) => ResizeHeader();
         header.HandleCreated += (_, _) => ResizeHeader();
+        textPanel.SizeChanged += (_, _) => ResizeHeader();
         return header;
     }
 

@@ -192,7 +192,7 @@ public sealed class WinFormsSmokeTests
                 foreach (var page in pages)
                 {
                     _ = page.Handle;
-                    page.Size = new Size(720, 520);
+                    page.Size = new Size(640, 520);
                     page.PerformLayout();
                     Application.DoEvents();
 
@@ -217,13 +217,16 @@ public sealed class WinFormsSmokeTests
                 }
 
                 using var narrowHeader = UiHelpers.CreatePageHeader(
-                    "Repository Routes",
+                    "Git URL Rewrites and Repository Routing Settings",
                     "Map SSH identities by service, owner, or repository; repository routes override owner routes, which override service routes.",
                     "Help text");
-                narrowHeader.Size = new Size(360, 72);
+                narrowHeader.Size = new Size(320, 72);
                 _ = narrowHeader.Handle;
                 narrowHeader.PerformLayout();
                 Application.DoEvents();
+                var title = Assert.Single(
+                    Descendants<Label>(narrowHeader),
+                    label => label.Name == "PageHeaderTitle");
                 var subtitle = Assert.Single(
                     Descendants<Label>(narrowHeader),
                     label => label.Name == "PageHeaderSubtitle");
@@ -231,12 +234,17 @@ public sealed class WinFormsSmokeTests
                     Descendants<Button>(narrowHeader),
                     button => button.Name == "PageHelpButton");
                 Assert.True(narrowHeader.Height > 72);
+                var titleBounds = narrowHeader.RectangleToClient(
+                    title.RectangleToScreen(title.ClientRectangle));
                 var subtitleBounds = narrowHeader.RectangleToClient(
                     subtitle.RectangleToScreen(subtitle.ClientRectangle));
                 var helpBounds = narrowHeader.RectangleToClient(
                     help.RectangleToScreen(help.ClientRectangle));
+                Assert.True(narrowHeader.ClientRectangle.Contains(titleBounds));
                 Assert.True(narrowHeader.ClientRectangle.Contains(subtitleBounds));
+                Assert.False(titleBounds.IntersectsWith(helpBounds));
                 Assert.False(subtitleBounds.IntersectsWith(helpBounds));
+                Assert.False(titleBounds.IntersectsWith(subtitleBounds));
 
                 using var gridHost = new Form
                 {
@@ -280,7 +288,7 @@ public sealed class WinFormsSmokeTests
                     Descendants<Panel>(main),
                     panel => panel.Name == "MainContentPanel");
                 Assert.True(contentPanel.AutoScroll);
-                Assert.True(contentPanel.AutoScrollMinSize.Width >= 720 + contentPanel.Padding.Horizontal);
+                Assert.True(contentPanel.AutoScrollMinSize.Width >= 640 + contentPanel.Padding.Horizontal);
                 Assert.True(contentPanel.AutoScrollMinSize.Height >= 520 + contentPanel.Padding.Vertical);
             }
             finally

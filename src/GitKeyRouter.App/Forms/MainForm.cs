@@ -7,7 +7,7 @@ namespace GitKeyRouter.App.Forms;
 
 public sealed class MainForm : Form
 {
-    private static readonly Size MinimumPageSize = new(720, 520);
+    private static readonly Size MinimumPageSize = new(640, 520);
     private readonly ApplicationServices _services;
     private readonly Panel _contentPanel = new()
     {
