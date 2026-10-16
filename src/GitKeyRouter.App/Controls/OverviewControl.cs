@@ -9,12 +9,9 @@ public sealed class OverviewControl : UserControl, IAsyncRefreshable
     private readonly ApplicationServices _services;
     private readonly Action<string> _status;
     private readonly Func<string, Task> _navigate;
-    private readonly FlowLayoutPanel _cardsPanel = new()
+    private readonly AutoWidthFlowLayoutPanel _cardsPanel = new(itemWidthInset: 2)
     {
         Dock = DockStyle.Fill,
-        FlowDirection = FlowDirection.TopDown,
-        WrapContents = false,
-        AutoScroll = true,
         BackColor = UiHelpers.AppBackground,
         Padding = new Padding(0, 2, 0, 0),
         Margin = Padding.Empty
@@ -96,8 +93,6 @@ public sealed class OverviewControl : UserControl, IAsyncRefreshable
             _gitRewritesCard,
             _backupCard
         ]);
-        _cardsPanel.SizeChanged += (_, _) => ResizeCards();
-        _cardsPanel.Layout += (_, _) => ResizeCards();
 
         Controls.Add(_cardsPanel);
         Controls.Add(toolbar);
@@ -415,25 +410,6 @@ public sealed class OverviewControl : UserControl, IAsyncRefreshable
             _status("创建备份失败");
             MessageBox.Show(this, error, "创建备份失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
-    }
-
-    private void ResizeCards()
-    {
-        if (_cardsPanel.ClientSize.Width <= 0)
-        {
-            return;
-        }
-
-        // ClientSize already excludes a visible native scrollbar. Reserving it again
-        // leaves an unnecessary gutter and squeezes the descriptions at small sizes.
-        var width = Math.Max(1, _cardsPanel.ClientSize.Width - _cardsPanel.Padding.Horizontal - 2);
-        foreach (var card in _cardsPanel.Controls.OfType<OverviewStatusCard>())
-        {
-            card.Width = width;
-        }
-
-        _cardsPanel.HorizontalScroll.Enabled = false;
-        _cardsPanel.HorizontalScroll.Visible = false;
     }
 
     private static async Task<LoadResult<T>> TryLoadAsync<T>(Func<Task<T>> loader)

@@ -6,15 +6,10 @@ namespace GitKeyRouter.App.Controls;
 /// <summary>
 /// A single-column navigation list that keeps Windows' native scrolling and accessibility.
 /// </summary>
-internal sealed class SidebarNavigationPanel : FlowLayoutPanel
+internal sealed class SidebarNavigationPanel : AutoWidthFlowLayoutPanel
 {
-    private bool _resizingItems;
-
     public SidebarNavigationPanel()
     {
-        FlowDirection = FlowDirection.TopDown;
-        WrapContents = false;
-        AutoScroll = true;
         BackColor = UiHelpers.SidebarBackground;
         Padding = new Padding(12, 8, 12, 8);
         DoubleBuffered = true;
@@ -49,48 +44,6 @@ internal sealed class SidebarNavigationPanel : FlowLayoutPanel
         }
 
         base.OnControlRemoved(e);
-    }
-
-    protected override void OnLayout(LayoutEventArgs e)
-    {
-        if (_resizingItems)
-        {
-            base.OnLayout(e);
-            return;
-        }
-
-        _resizingItems = true;
-        try
-        {
-            ResizeItems();
-            base.OnLayout(e);
-            // Showing or hiding the native vertical scrollbar changes ClientSize.
-            // Fit that final width instead of subtracting the scrollbar a second time.
-            if (ResizeItems())
-            {
-                base.OnLayout(e);
-            }
-        }
-        finally
-        {
-            _resizingItems = false;
-        }
-    }
-
-    private bool ResizeItems()
-    {
-        var changed = false;
-        foreach (Control item in Controls)
-        {
-            var width = Math.Max(1, ClientSize.Width - Padding.Horizontal - item.Margin.Horizontal);
-            if (item.Width != width)
-            {
-                item.Width = width;
-                changed = true;
-            }
-        }
-
-        return changed;
     }
 
     private void RevealFocusedItem(object? sender, EventArgs e)

@@ -421,6 +421,8 @@ public sealed class WinFormsSmokeTests
                 navigation.PerformLayout();
                 Application.DoEvents();
 
+                Assert.Equal(navigation.Padding.Vertical + buttons.Sum(button => button.Height + button.Margin.Vertical),
+                    navigation.AutoScrollMinSize.Height);
                 Assert.True(navigation.VerticalScroll.Visible);
                 Assert.False(navigation.HorizontalScroll.Visible);
                 Assert.All(buttons, button =>
@@ -429,7 +431,8 @@ public sealed class WinFormsSmokeTests
                 Assert.True(buttons[^1].Focus());
                 Application.DoEvents();
                 Assert.True(navigation.AutoScrollPosition.Y < 0);
-                Assert.True(navigation.ClientRectangle.Contains(buttons[^1].Bounds));
+                Assert.True(navigation.ClientRectangle.Contains(buttons[^1].Bounds),
+                    $"Scale {scale}: viewport {navigation.ClientRectangle}, last {buttons[^1].Bounds}, scroll {navigation.AutoScrollPosition}, extent {navigation.AutoScrollMinSize}.");
                 Assert.True(buttons[0].Focus());
                 Application.DoEvents();
                 Assert.True(navigation.ClientRectangle.Contains(buttons[0].Bounds));
@@ -450,7 +453,21 @@ public sealed class WinFormsSmokeTests
                 recreateHandle.Invoke(navigation, null);
                 navigation.ScrollControlIntoView(buttons[^1]);
                 Application.DoEvents();
-                Assert.True(navigation.ClientRectangle.Contains(buttons[^1].Bounds));
+                Assert.True(navigation.ClientRectangle.Contains(buttons[^1].Bounds),
+                    $"Scale {scale}: viewport {navigation.ClientRectangle}, last {buttons[^1].Bounds}, scroll {navigation.AutoScrollPosition}, extent {navigation.AutoScrollMinSize}.");
+                Assert.False(navigation.HorizontalScroll.Visible);
+
+                // The scroll range must include both padding edges, including at the exact fit boundary.
+                host.ClientSize = new Size((int)(260 * scale), navigation.AutoScrollMinSize.Height - 1);
+                navigation.PerformLayout();
+                Application.DoEvents();
+                Assert.True(navigation.VerticalScroll.Visible);
+                Assert.False(navigation.HorizontalScroll.Visible);
+
+                host.ClientSize = new Size((int)(260 * scale), navigation.AutoScrollMinSize.Height);
+                navigation.PerformLayout();
+                Application.DoEvents();
+                Assert.False(navigation.VerticalScroll.Visible);
                 Assert.False(navigation.HorizontalScroll.Visible);
 
                 host.ClientSize = new Size((int)(260 * scale), (int)(700 * scale));
@@ -491,7 +508,8 @@ public sealed class WinFormsSmokeTests
                 Application.DoEvents();
 
                 Assert.Equal(height == 520, cards.VerticalScroll.Visible);
-                Assert.False(cards.HorizontalScroll.Visible);
+                Assert.False(cards.HorizontalScroll.Visible,
+                    $"Height {height}: viewport {cards.ClientRectangle}, display {cards.DisplayRectangle}, first {cards.Controls[0].Bounds}.");
                 Assert.Equal(6, cards.Controls.Count);
                 Assert.All(cards.Controls.Cast<Control>(), card =>
                     Assert.Equal(cards.ClientSize.Width - cards.Padding.Horizontal - 2, card.Width));
