@@ -400,9 +400,14 @@ public sealed class WinFormsSmokeTests
                 AutoScaleMode = AutoScaleMode.None,
                 StartPosition = FormStartPosition.Manual,
                 Location = new Point(-32000, -32000),
-                ShowInTaskbar = false
+                ShowInTaskbar = false,
+                ClientSize = new Size(640, 480)
             };
             host.Controls.Add(navigation);
+            // Resize the control directly: Form bounds are capped to the runner's desktop,
+            // which cannot represent a fully expanded 200% DPI navigation column.
+            navigation.Dock = DockStyle.None;
+            navigation.Location = Point.Empty;
             host.Show();
 
             foreach (var scale in new[] { 1F, 1.25F, 1.5F, 2F })
@@ -417,7 +422,7 @@ public sealed class WinFormsSmokeTests
                     button.Margin = new Padding(0, 0, 0, (int)(4 * scale));
                 }
 
-                host.ClientSize = new Size((int)(260 * scale), (int)(220 * scale));
+                navigation.Size = new Size((int)(260 * scale), (int)(220 * scale));
                 navigation.PerformLayout();
                 Application.DoEvents();
 
@@ -458,19 +463,21 @@ public sealed class WinFormsSmokeTests
                 Assert.False(navigation.HorizontalScroll.Visible);
 
                 // The scroll range must include both padding edges, including at the exact fit boundary.
-                host.ClientSize = new Size((int)(260 * scale), navigation.AutoScrollMinSize.Height - 1);
+                navigation.Size = new Size((int)(260 * scale), navigation.AutoScrollMinSize.Height - 1);
                 navigation.PerformLayout();
                 Application.DoEvents();
                 Assert.True(navigation.VerticalScroll.Visible);
                 Assert.False(navigation.HorizontalScroll.Visible);
 
-                host.ClientSize = new Size((int)(260 * scale), navigation.AutoScrollMinSize.Height);
+                navigation.Size = new Size((int)(260 * scale), navigation.AutoScrollMinSize.Height);
                 navigation.PerformLayout();
                 Application.DoEvents();
-                Assert.False(navigation.VerticalScroll.Visible);
+                Assert.Equal(navigation.AutoScrollMinSize.Height, navigation.ClientSize.Height);
+                Assert.False(navigation.VerticalScroll.Visible,
+                    $"Scale {scale}: viewport {navigation.ClientRectangle}, extent {navigation.AutoScrollMinSize}, maximum {navigation.VerticalScroll.Maximum}.");
                 Assert.False(navigation.HorizontalScroll.Visible);
 
-                host.ClientSize = new Size((int)(260 * scale), (int)(700 * scale));
+                navigation.Size = new Size((int)(260 * scale), (int)(700 * scale));
                 navigation.PerformLayout();
                 Application.DoEvents();
                 Assert.False(navigation.VerticalScroll.Visible);
