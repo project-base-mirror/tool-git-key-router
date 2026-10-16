@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using GitKeyRouter.Core.Abstractions;
 using GitKeyRouter.Core.Models;
 
@@ -702,7 +703,7 @@ public sealed class PortableBackupService : IPortableBackupService
 
         var keys = current.Select(rule => rule.ConfigKey)
             .Concat(targetRules.Select(rule => rule.ConfigKey))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Distinct(StringComparer.Ordinal)
             .ToList();
         foreach (var key in keys)
         {
@@ -725,7 +726,7 @@ public sealed class PortableBackupService : IPortableBackupService
         }
 
         var actual = await _gitStore.GetAllAsync(cancellationToken).ConfigureAwait(false);
-        if (!NormalizeRules(actual).SequenceEqual(NormalizeRules(targetRules), StringComparer.OrdinalIgnoreCase))
+        if (!NormalizeRules(actual).SequenceEqual(NormalizeRules(targetRules), StringComparer.Ordinal))
         {
             return OperationResult.Fail("Git URL rewrites did not match the portable backup after restoration.");
         }
@@ -735,7 +736,7 @@ public sealed class PortableBackupService : IPortableBackupService
 
     private static IEnumerable<string> NormalizeRules(IEnumerable<GitUrlRewriteRule> rules)
         => rules.Select(rule => $"{rule.ConfigKey}\n{rule.InsteadOfUrl}")
-            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase);
+            .OrderBy(value => value, StringComparer.Ordinal);
 
     private static string? RemapSshConfig(
         string? sshConfig,
@@ -746,16 +747,28 @@ public sealed class PortableBackupService : IPortableBackupService
             return null;
         }
 
-        var result = sshConfig;
-        foreach (var mapping in mappings.OrderByDescending(item => item.Key.Length))
+        var normalizedMappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var mapping in mappings)
         {
-            result = result.Replace(mapping.Key, mapping.Value, StringComparison.OrdinalIgnoreCase);
-            var sourceGitPath = mapping.Key.Replace('\\', '/');
-            var targetGitPath = mapping.Value.Replace('\\', '/');
-            result = result.Replace(sourceGitPath, targetGitPath, StringComparison.OrdinalIgnoreCase);
+            normalizedMappings[mapping.Key.Replace('\\', '/')] = mapping.Value.Replace('\\', '/');
         }
 
-        return result;
+        // Match a complete key-path argument, never a filename prefix, comment, or command.
+        return Regex.Replace(
+            sshConfig,
+            """^(?<prefix>[ \t]*(?:IdentityFile|CertificateFile)(?:[ \t]*=[ \t]*|[ \t]+))(?:"(?<quoted>[^"\r\n]*)"|'(?<singleQuoted>[^'\r\n]*)'|(?<unquoted>[^ \t\r\n#]+))(?=[ \t]*(?:#[^\r\n]*)?\r?$)""",
+            match =>
+            {
+                var source = match.Groups["quoted"].Success
+                    ? match.Groups["quoted"].Value
+                    : match.Groups["singleQuoted"].Success
+                        ? match.Groups["singleQuoted"].Value
+                        : match.Groups["unquoted"].Value;
+                return normalizedMappings.TryGetValue(source.Replace('\\', '/'), out var target)
+                    ? $"{match.Groups["prefix"].Value}\"{target}\""
+                    : match.Value;
+            },
+            RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
     }
 
     private static string BuildIdentityDirectoryName(string identityId)

@@ -389,6 +389,11 @@ public sealed class BackupService : IBackupService
         var manifestText = await _fileSystem.ReadAllTextAsync(manifestPath, cancellationToken).ConfigureAwait(false);
         var manifest = JsonSerializer.Deserialize<BackupManifest>(manifestText, JsonOptions)
             ?? throw new InvalidDataException("Backup manifest is invalid.");
+        if (manifest.SchemaVersion < 1 || manifest.SchemaVersion > 2)
+        {
+            throw new InvalidDataException($"Backup schema {manifest.SchemaVersion} is unsupported. Supported schemas are 1 and 2.");
+        }
+
         manifest.BackupDirectory = backupDirectory;
         manifest.Files ??= new Dictionary<string, BackupFileIntegrity>(StringComparer.OrdinalIgnoreCase);
 
@@ -499,13 +504,14 @@ public sealed class BackupService : IBackupService
                 safetySnapshot.Manifest.GitRewriteCaptureError);
         }
 
-        var applyResult = await ReplaceGitRewritesAsync(snapshot.GitUrlRewrites, cancellationToken).ConfigureAwait(false);
+        var applyResult = await TryReplaceGitRewritesAsync(snapshot.GitUrlRewrites, cancellationToken).ConfigureAwait(false);
         if (applyResult.Success)
         {
             return OperationResult.Ok("Git URL rewrites restored from the selected snapshot.");
         }
 
-        var rollbackResult = await ReplaceGitRewritesAsync(safetySnapshot.GitUrlRewrites, cancellationToken).ConfigureAwait(false);
+        // Once replacement starts, cancellation must not prevent restoring the original rules.
+        var rollbackResult = await TryReplaceGitRewritesAsync(safetySnapshot.GitUrlRewrites, CancellationToken.None).ConfigureAwait(false);
         if (rollbackResult.Success)
         {
             return OperationResult.Fail(
@@ -522,6 +528,23 @@ public sealed class BackupService : IBackupService
                 .. rollbackResult.Errors,
                 $"Safety snapshot: {safetyManifest.BackupDirectory}"
             ]);
+    }
+
+    private async Task<OperationResult> TryReplaceGitRewritesAsync(
+        IReadOnlyList<GitUrlRewriteRule> targetRules,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await ReplaceGitRewritesAsync(targetRules, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is OperationCanceledException
+            or IOException
+            or UnauthorizedAccessException
+            or InvalidOperationException)
+        {
+            return OperationResult.Fail("Failed to replace Git URL rewrites.", exception.Message);
+        }
     }
 
     private async Task<OperationResult> ReplaceGitRewritesAsync(
@@ -673,12 +696,12 @@ public sealed class BackupService : IBackupService
     private static bool RulesEqual(
         IReadOnlyList<GitUrlRewriteRule> actual,
         IReadOnlyList<GitUrlRewriteRule> expected)
-        => NormalizeRules(actual).SequenceEqual(NormalizeRules(expected), StringComparer.OrdinalIgnoreCase);
+        => NormalizeRules(actual).SequenceEqual(NormalizeRules(expected), StringComparer.Ordinal);
 
     private static IEnumerable<string> NormalizeRules(IEnumerable<GitUrlRewriteRule> rules)
         => rules
             .Select(rule => $"{rule.ConfigKey}\n{rule.InsteadOfUrl}")
-            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase);
+            .OrderBy(value => value, StringComparer.Ordinal);
 
     private static int? TryReadAppConfigSchemaVersion(string text)
         => AppConfigSchemaReader.TryRead(text);

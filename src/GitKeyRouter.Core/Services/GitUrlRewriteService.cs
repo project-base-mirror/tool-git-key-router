@@ -45,7 +45,7 @@ public sealed class GitUrlRewriteService
         {
             var expectedRule = entry.Rule;
             var exact = actual.Where(item => RuleEquals(item, expectedRule)).ToList();
-            var samePrefix = actual.Where(item => string.Equals(item.InsteadOfUrl, expectedRule.InsteadOfUrl, StringComparison.OrdinalIgnoreCase)).ToList();
+            var samePrefix = actual.Where(item => string.Equals(item.InsteadOfUrl, expectedRule.InsteadOfUrl, StringComparison.Ordinal)).ToList();
             var status = IsLegacyAccountOwnerEntry(entry)
                 ? GitRewriteStatus.LegacyAccountOwner
                 : exact.Count switch
@@ -102,7 +102,7 @@ public sealed class GitUrlRewriteService
         var plan = new GitRewritePlan();
         foreach (var rule in expected)
         {
-            var samePrefix = actual.Any(item => string.Equals(item.InsteadOfUrl, rule.InsteadOfUrl, StringComparison.OrdinalIgnoreCase));
+            var samePrefix = actual.Any(item => string.Equals(item.InsteadOfUrl, rule.InsteadOfUrl, StringComparison.Ordinal));
             if (!samePrefix)
             {
                 plan.Adds.Add(rule);
@@ -116,7 +116,7 @@ public sealed class GitUrlRewriteService
     {
         var actual = await _store.GetAllAsync(cancellationToken).ConfigureAwait(false);
         var plan = new GitRewritePlan();
-        foreach (var group in actual.GroupBy(rule => $"{rule.BaseUrl}\n{rule.InsteadOfUrl}", StringComparer.OrdinalIgnoreCase)
+        foreach (var group in actual.GroupBy(rule => $"{rule.BaseUrl}\n{rule.InsteadOfUrl}", StringComparer.Ordinal)
                      .Where(group => group.Count() > 1))
         {
             var rule = group.First();
@@ -134,8 +134,8 @@ public sealed class GitUrlRewriteService
     {
         var actual = await _store.GetAllAsync(cancellationToken).ConfigureAwait(false);
         var plan = new GitRewritePlan();
-        var rule = actual.FirstOrDefault(item => string.Equals(item.BaseUrl, baseUrl, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(item.InsteadOfUrl, insteadOfUrl, StringComparison.OrdinalIgnoreCase));
+        var rule = actual.FirstOrDefault(item => string.Equals(item.BaseUrl, baseUrl, StringComparison.Ordinal)
+            && string.Equals(item.InsteadOfUrl, insteadOfUrl, StringComparison.Ordinal));
         if (rule is not null)
         {
             plan.Removes.Add(rule);
@@ -206,7 +206,7 @@ public sealed class GitUrlRewriteService
         var plan = new GitRewritePlan();
         foreach (var expectedRule in expected)
         {
-            foreach (var currentRule in actual.Where(item => string.Equals(item.InsteadOfUrl, expectedRule.InsteadOfUrl, StringComparison.OrdinalIgnoreCase)))
+            foreach (var currentRule in actual.Where(item => string.Equals(item.InsteadOfUrl, expectedRule.InsteadOfUrl, StringComparison.Ordinal)))
             {
                 if (!plan.Removes.Any(item => RuleEquals(item, currentRule)))
                 {
@@ -274,13 +274,13 @@ public sealed class GitUrlRewriteService
         var legacy = await BuildLegacyAccountOwnerMigrationPlanAsync(cancellationToken).ConfigureAwait(false);
 
         foreach (var rule in legacy.Removes.Where(rule => prefixes.Any(prefix =>
-                     rule.InsteadOfUrl.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))))
+                     rule.InsteadOfUrl.StartsWith(prefix, StringComparison.Ordinal))))
         {
             AddUnique(plan.Removes, rule);
         }
 
         foreach (var rule in legacy.Adds.Where(rule => prefixes.Any(prefix =>
-                     rule.InsteadOfUrl.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))))
+                     rule.InsteadOfUrl.StartsWith(prefix, StringComparison.Ordinal))))
         {
             AddUnique(plan.Adds, rule);
         }
@@ -383,7 +383,7 @@ public sealed class GitUrlRewriteService
 
         var keys = plan.Adds.Concat(plan.Removes)
             .Select(item => item.ConfigKey)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Distinct(StringComparer.Ordinal)
             .ToList();
         var reconciliations = new List<RewriteReconciliation>();
         try
@@ -404,17 +404,17 @@ public sealed class GitUrlRewriteService
                 }
 
                 var removed = plan.Removes
-                    .Where(item => string.Equals(item.ConfigKey, key, StringComparison.OrdinalIgnoreCase))
+                    .Where(item => string.Equals(item.ConfigKey, key, StringComparison.Ordinal))
                     .Select(item => item.InsteadOfUrl)
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    .ToHashSet(StringComparer.Ordinal);
                 var desired = current.Where(value => !removed.Contains(value))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Distinct(StringComparer.Ordinal)
                     .ToList();
                 foreach (var value in plan.Adds
-                             .Where(item => string.Equals(item.ConfigKey, key, StringComparison.OrdinalIgnoreCase))
+                             .Where(item => string.Equals(item.ConfigKey, key, StringComparison.Ordinal))
                              .Select(item => item.InsteadOfUrl))
                 {
-                    if (!desired.Contains(value, StringComparer.OrdinalIgnoreCase))
+                    if (!desired.Contains(value, StringComparer.Ordinal))
                     {
                         desired.Add(value);
                     }
@@ -681,7 +681,7 @@ public sealed class GitUrlRewriteService
                     reconciliation.Key,
                     cancellationToken).ConfigureAwait(false);
                 var expected = expectedSelector(reconciliation);
-                if (!actual.SequenceEqual(expected, StringComparer.OrdinalIgnoreCase))
+                if (!actual.SequenceEqual(expected, StringComparer.Ordinal))
                 {
                     errors.Add($"{phase} verification failed for '{reconciliation.Key}'.");
                 }
@@ -734,7 +734,7 @@ public sealed class GitUrlRewriteService
         var expectedApplied = expectedMatch is not null && actual.Any(item => RuleEquals(item, expectedMatch));
         var expectedPrefixTargets = expectedMatch is null
             ? new List<GitUrlRewriteRule>()
-            : actual.Where(item => string.Equals(item.InsteadOfUrl, expectedMatch.InsteadOfUrl, StringComparison.OrdinalIgnoreCase)).ToList();
+            : actual.Where(item => string.Equals(item.InsteadOfUrl, expectedMatch.InsteadOfUrl, StringComparison.Ordinal)).ToList();
         var expectationStatus = expectedMatch is null
             ? UrlRewriteExpectationStatus.None
             : expectedApplied
@@ -846,11 +846,11 @@ public sealed class GitUrlRewriteService
     {
         foreach (var key in plan.Adds.Concat(plan.Removes)
                      .Select(item => item.ConfigKey)
-                     .Distinct(StringComparer.OrdinalIgnoreCase))
+                     .Distinct(StringComparer.Ordinal))
         {
             plan.CaptureOriginalValues(
                 key,
-                actual.Where(item => string.Equals(item.ConfigKey, key, StringComparison.OrdinalIgnoreCase))
+                actual.Where(item => string.Equals(item.ConfigKey, key, StringComparison.Ordinal))
                     .Select(item => item.InsteadOfUrl));
         }
 
@@ -871,7 +871,7 @@ public sealed class GitUrlRewriteService
         foreach (var expectedRule in expected)
         {
             var samePrefix = actual.Where(item =>
-                    string.Equals(item.InsteadOfUrl, expectedRule.InsteadOfUrl, StringComparison.OrdinalIgnoreCase))
+                    string.Equals(item.InsteadOfUrl, expectedRule.InsteadOfUrl, StringComparison.Ordinal))
                 .ToList();
             var exactCount = samePrefix.Count(item => RuleEquals(item, expectedRule));
             if (exactCount == 1 && samePrefix.Count == 1)
@@ -898,12 +898,13 @@ public sealed class GitUrlRewriteService
         }
     }
 
+    // Git matches insteadOf values literally, including case in the URL host and path.
     private static bool RuleEquals(GitUrlRewriteRule left, GitUrlRewriteRule right)
-        => string.Equals(left.BaseUrl, right.BaseUrl, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(left.InsteadOfUrl, right.InsteadOfUrl, StringComparison.OrdinalIgnoreCase);
+        => string.Equals(left.BaseUrl, right.BaseUrl, StringComparison.Ordinal)
+            && string.Equals(left.InsteadOfUrl, right.InsteadOfUrl, StringComparison.Ordinal);
 
     private static GitUrlRewriteRule? FindLongestMatch(string originalUrl, IEnumerable<GitUrlRewriteRule> rules)
-        => rules.Where(rule => originalUrl.StartsWith(rule.InsteadOfUrl, StringComparison.OrdinalIgnoreCase))
+        => rules.Where(rule => originalUrl.StartsWith(rule.InsteadOfUrl, StringComparison.Ordinal))
             .OrderByDescending(rule => rule.InsteadOfUrl.Length)
             .FirstOrDefault();
 

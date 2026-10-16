@@ -55,7 +55,7 @@ public sealed class PortableBackupServiceTests
 
         var ssh = await File.ReadAllTextAsync(targetPaths.SshConfigPath);
         Assert.DoesNotContain(source.PrivateKeyPath, ssh, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains(identity.PrivateKeyPath, ssh, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(identity.PrivateKeyPath.Replace('\\', '/'), ssh, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(source.Rule, Assert.Single(targetGit.Rules));
         var encryptedBytes = await File.ReadAllBytesAsync(packagePath);
         Assert.DoesNotContain(
@@ -132,6 +132,62 @@ public sealed class PortableBackupServiceTests
             : Enumerable.Empty<string>());
     }
 
+    [Fact]
+    public async Task Import_RemovesDistinctCaseSensitiveRewriteKeys()
+    {
+        using var temp = new TemporaryDirectory();
+        var packagePath = Path.Combine(temp.Path, "transfer.gkrbackup");
+        var source = await CreateSourceAsync(Path.Combine(temp.Path, "source"), packagePath);
+        var paths = new TestAppPaths(Path.Combine(temp.Path, "target"));
+        var fileSystem = new PhysicalFileSystem();
+        var store = new JsonAppConfigStore(paths, fileSystem);
+        var git = new FakeGitUrlRewriteStore();
+        git.Rules.Add(new GitUrlRewriteRule("git@host:Team/", "https://host/Team/"));
+        git.Rules.Add(new GitUrlRewriteRule("git@host:team/", "https://host/team/"));
+        var service = CreateService(paths, fileSystem, store, git, new RecordingProfileMaterializer());
+
+        var result = await service.ImportAsync(packagePath, Password);
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, [result.Message, .. result.Errors]));
+        Assert.Equal(source.Rule, Assert.Single(git.Rules));
+    }
+
+    [Fact]
+    public async Task Import_RemapChangesOnlyExactKeyPathArgumentsAndQuotesTargetPaths()
+    {
+        using var temp = new TemporaryDirectory();
+        var packagePath = Path.Combine(temp.Path, "transfer.gkrbackup");
+        var source = await CreateSourceAsync(
+            Path.Combine(temp.Path, "source"),
+            packagePath,
+            privatePath =>
+                $"Host git-work\r\n  IdentityFile \"{privatePath}\" # keep {privatePath}\r\n"
+                + $"  CertificateFile = '{privatePath}.pub'\r\n"
+                + $"  identityfile={privatePath.Replace('\\', '/')}\r\n"
+                + $"Host unrelated\r\n  IdentityFile \"{privatePath}_personal\"\r\n"
+                + $"  ProxyCommand echo \"{privatePath}\"\r\n"
+                + $"# IdentityFile \"{privatePath}\"\r\n");
+        var paths = new TestAppPaths(Path.Combine(temp.Path, "target with spaces"));
+        var fileSystem = new PhysicalFileSystem();
+        var store = new JsonAppConfigStore(paths, fileSystem);
+        var git = new FakeGitUrlRewriteStore();
+        var service = CreateService(paths, fileSystem, store, git, new RecordingProfileMaterializer());
+
+        var result = await service.ImportAsync(packagePath, Password);
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Errors));
+        var identity = Assert.Single((await store.LoadAsync()).Identities);
+        var privateTarget = identity.PrivateKeyPath.Replace('\\', '/');
+        var publicTarget = identity.PublicKeyPath.Replace('\\', '/');
+        var expected = $"Host git-work\r\n  IdentityFile \"{privateTarget}\" # keep {source.PrivateKeyPath}\r\n"
+            + $"  CertificateFile = \"{publicTarget}\"\r\n"
+            + $"  identityfile=\"{privateTarget}\"\r\n"
+            + $"Host unrelated\r\n  IdentityFile \"{source.PrivateKeyPath}_personal\"\r\n"
+            + $"  ProxyCommand echo \"{source.PrivateKeyPath}\"\r\n"
+            + $"# IdentityFile \"{source.PrivateKeyPath}\"\r\n";
+        Assert.Equal(expected, await File.ReadAllTextAsync(paths.SshConfigPath));
+    }
+
     private static PortableBackupService CreateService(
         TestAppPaths paths,
         IFileSystem fileSystem,
@@ -150,7 +206,10 @@ public sealed class PortableBackupServiceTests
             new TestClock());
     }
 
-    private static async Task<SourceFixture> CreateSourceAsync(string root, string packagePath)
+    private static async Task<SourceFixture> CreateSourceAsync(
+        string root,
+        string packagePath,
+        Func<string, string>? sshConfigFactory = null)
     {
         var paths = new TestAppPaths(root);
         var fileSystem = new PhysicalFileSystem();
@@ -181,7 +240,8 @@ public sealed class PortableBackupServiceTests
         });
         await File.WriteAllTextAsync(
             paths.SshConfigPath,
-            $"Host git-work{Environment.NewLine}  IdentityFile \"{privatePath}\"{Environment.NewLine}");
+            sshConfigFactory?.Invoke(privatePath)
+                ?? $"Host git-work{Environment.NewLine}  IdentityFile \"{privatePath}\"{Environment.NewLine}");
         var git = new FakeGitUrlRewriteStore();
         var rule = new GitUrlRewriteRule("git@git-work:", "https://github.com/");
         git.Rules.Add(rule);

@@ -235,6 +235,8 @@ git@github-camus:camus0109/panel-terraria.git
 
 OpenSSH 再根据 `Host github-camus` 选择对应私钥。
 
+`insteadOf` 按完整 URL 文本区分大小写（包括主机部分）；预览、诊断和重复清理遵循 Git 的相同规则，保留仅大小写不同的 URL。
+
 因此：
 
 - Git 服务和 Owner / Namespace 决定使用哪个 HostAlias
@@ -353,7 +355,7 @@ git_url_rewrites.json
 - Git URL rewrite
 - 程序配置
 
-恢复 Git rewrite 仍通过 `git config` 逐条精确删除和增加，不替换整个 `.gitconfig`。
+恢复 Git rewrite 仍通过 `git config` 逐条精确删除和增加，不替换整个 `.gitconfig`。恢复中途取消或发生读写错误时，程序会尝试回滚到恢复前的规则；回滚失败会单独报告，并保留安全快照。
 
 ## Git Profiles 与提交身份
 

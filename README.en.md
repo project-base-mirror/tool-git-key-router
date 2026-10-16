@@ -235,6 +235,8 @@ git@github-camus:camus0109/panel-terraria.git
 
 OpenSSH then selects the appropriate private key through `Host github-camus`.
 
+`insteadOf` matches the complete URL text case-sensitively, including its host portion. Preview, diagnostics, and duplicate cleanup follow Git’s matching rules and preserve URLs that differ only in case.
+
 Therefore:
 
 - The Git service and Owner / Namespace select a HostAlias.
@@ -351,7 +353,7 @@ The following can be restored independently:
 - Git URL rewrites
 - Application configuration
 
-Git rewrite restore still removes and adds exact rules through `git config`; it never replaces the complete `.gitconfig`.
+Git rewrite restore still removes and adds exact rules through `git config`; it never replaces the complete `.gitconfig`. If restoration is cancelled midway or encounters an I/O error, the application attempts to roll back to the previous rules; rollback failures are reported separately and the safety snapshot is retained.
 
 ## Git Profiles and commit identity
 

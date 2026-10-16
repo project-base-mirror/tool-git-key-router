@@ -58,10 +58,13 @@ public static class OwnerRouteValidator
             result.Add("The selected identity belongs to a different Git service.");
         }
 
+        var originalRoute = config.RepositoryRoutes.FirstOrDefault(item =>
+            string.Equals(item.Id, route.Id, StringComparison.OrdinalIgnoreCase))
+            ?? (originalNamespacePath is null ? null : config.RepositoryRoutes.FirstOrDefault(item =>
+                string.Equals(item.ServiceInstanceId, originalServiceInstanceId ?? route.ServiceInstanceId, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(item.NamespacePath, originalNamespacePath, StringComparison.OrdinalIgnoreCase)));
         if (route.Enabled && config.RepositoryRoutes.Any(item => item.Enabled
-            && !(string.Equals(item.Id, route.Id, StringComparison.OrdinalIgnoreCase)
-                || (string.Equals(item.ServiceInstanceId, originalServiceInstanceId, StringComparison.OrdinalIgnoreCase)
-                    && string.Equals(item.NamespacePath, originalNamespacePath, StringComparison.OrdinalIgnoreCase)))
+            && !ReferenceEquals(item, originalRoute)
             && string.Equals(item.ServiceInstanceId, route.ServiceInstanceId, StringComparison.OrdinalIgnoreCase)
             && item.Scope == route.Scope
             && string.Equals(item.RoutePath, route.RoutePath, StringComparison.OrdinalIgnoreCase)))

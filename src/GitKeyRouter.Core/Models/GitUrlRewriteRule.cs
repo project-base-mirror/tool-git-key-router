@@ -47,8 +47,9 @@ public sealed class GitRewritePlan
 
     public List<string> RepositoryRouteIdsToRemove { get; } = [];
 
+    // Git URL subsections are case-sensitive even though section and variable names are not.
     public Dictionary<string, List<string>> OriginalValuesByKey { get; } =
-        new(StringComparer.OrdinalIgnoreCase);
+        new(StringComparer.Ordinal);
 
     public AppConfigFileVersion? ConfigVersion { get; set; }
 

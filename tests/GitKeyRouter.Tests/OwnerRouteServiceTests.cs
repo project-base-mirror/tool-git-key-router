@@ -1,10 +1,70 @@
 using GitKeyRouter.Core.Models;
 using GitKeyRouter.Core.Services;
+using GitKeyRouter.Tests.TestSupport;
 
 namespace GitKeyRouter.Tests;
 
 public sealed class OwnerRouteServiceTests
 {
+    [Fact]
+    public async Task Save_NewDisabledRouteDoesNotOverwriteExistingEnabledRoute()
+    {
+        var identity = new GitIdentity { Id = "work", HostAlias = "github-work" };
+        var active = new RepositoryRoute { Owner = "team", NamespacePath = "team", IdentityId = identity.Id };
+        var disabled = new RepositoryRoute { Owner = "team", IdentityId = identity.Id, Enabled = false };
+        var store = new InMemoryAppConfigStore
+        {
+            Config = new AppConfig { Identities = [identity], RepositoryRoutes = [active] }
+        };
+        var service = new OwnerRouteService(store, new NoOpBackupService());
+
+        var result = await service.SaveAsync(disabled);
+
+        Assert.True(result.Success);
+        Assert.Equal(2, store.Config.RepositoryRoutes.Count);
+        Assert.True(active.Enabled);
+        Assert.Contains(store.Config.RepositoryRoutes, route => route.Id == disabled.Id && !route.Enabled);
+    }
+
+    [Fact]
+    public async Task Save_EnablingDisabledDuplicateRejectsConflictEvenWhenOriginalPathMatches()
+    {
+        var identity = new GitIdentity { Id = "work", HostAlias = "github-work" };
+        var active = new RepositoryRoute { Owner = "team", NamespacePath = "team", IdentityId = identity.Id };
+        var disabled = new RepositoryRoute { Owner = "team", NamespacePath = "team", IdentityId = identity.Id, Enabled = false };
+        var store = new InMemoryAppConfigStore
+        {
+            Config = new AppConfig { Identities = [identity], RepositoryRoutes = [active, disabled] }
+        };
+        var backup = new NoOpBackupService();
+        var service = new OwnerRouteService(store, backup);
+        var edited = new RepositoryRoute { Id = disabled.Id, Owner = "team", IdentityId = identity.Id, Enabled = true };
+
+        var result = await service.SaveAsync(edited, disabled.ServiceInstanceId, disabled.NamespacePath);
+
+        Assert.False(result.Success);
+        Assert.False(disabled.Enabled);
+        Assert.True(active.Enabled);
+        Assert.Equal(0, backup.SnapshotCount);
+    }
+
+    [Fact]
+    public async Task Save_LegacyRenameUsesExplicitOriginalPath()
+    {
+        var identity = new GitIdentity { Id = "work", HostAlias = "github-work" };
+        var original = new RepositoryRoute { Owner = "old-team", NamespacePath = "old-team", IdentityId = identity.Id };
+        var store = new InMemoryAppConfigStore
+        {
+            Config = new AppConfig { Identities = [identity], RepositoryRoutes = [original] }
+        };
+        var service = new OwnerRouteService(store, new NoOpBackupService());
+
+        var result = await service.SaveAsync(new RepositoryRoute { Owner = "new-team", IdentityId = identity.Id }, "old-team");
+
+        Assert.True(result.Success);
+        Assert.Equal("new-team", Assert.Single(store.Config.RepositoryRoutes).NamespacePath);
+    }
+
     [Fact]
     public void BuildExpectedRules_GeneratesHttpsAndSshRules()
     {

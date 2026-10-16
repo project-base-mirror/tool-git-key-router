@@ -9,6 +9,31 @@ public sealed class DiagnosticServiceTests
 {
     private const string OpenSsh = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f first@example.com";
 
+    [Theory]
+    [InlineData("https://example.test/Team/", "git@other:Team/", false)]
+    [InlineData("https://example.test/team/", "git@managed:Team/", true)]
+    public async Task RewriteConflict_UsesExactSourcePrefixes(string secondPrefix, string secondBaseUrl, bool hasConflict)
+    {
+        using var directory = new TemporaryDirectory();
+        var paths = new TestAppPaths(directory.Path);
+        var config = new InMemoryAppConfigStore();
+        var fileSystem = new PhysicalFileSystem();
+        var backup = new NoOpBackupService();
+        var git = new FakeGitUrlRewriteStore();
+        git.Rules.Add(new GitUrlRewriteRule("git@managed:team/", "https://example.test/team/"));
+        git.Rules.Add(new GitUrlRewriteRule(secondBaseUrl, secondPrefix));
+        var diagnostics = new DiagnosticService(
+            config, paths, fileSystem,
+            new FixedToolchainService("git.exe"),
+            new SshConfigService(fileSystem, paths, backup),
+            new GitUrlRewriteService(config, git, backup),
+            new TestClock());
+
+        var report = await diagnostics.RunAsync();
+
+        Assert.Equal(hasConflict, report.Items.Any(item => item.Code == "GIT_REWRITE_SOURCE_MULTIPLE_IDENTITIES"));
+    }
+
     [Fact]
     public async Task AcceptsGitHubDefaultIdentityWhenManagedServiceRouteExists()
     {

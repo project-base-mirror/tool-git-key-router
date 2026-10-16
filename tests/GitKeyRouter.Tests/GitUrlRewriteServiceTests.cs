@@ -36,6 +36,56 @@ public sealed class GitUrlRewriteServiceTests
         Assert.Equal("git@github-camus:camus0109/panel-terraria.git", preview.RewrittenUrl);
     }
 
+    [Theory]
+    [InlineData("https://github.com/Camus0109/repo.git")]
+    [InlineData("https://GITHUB.COM/camus0109/repo.git")]
+    public async Task Preview_UsesGitCaseSensitivePrefixMatching(string url)
+    {
+        var git = new FakeGitUrlRewriteStore();
+        git.Rules.Add(new GitUrlRewriteRule("git@github-camus:camus0109/", "https://github.com/camus0109/"));
+        var service = new GitUrlRewriteService(ConfigStore(), git, new NoOpBackupService());
+
+        var preview = await service.PreviewAsync(url);
+
+        Assert.Null(preview.ActualMatchedPrefix);
+        Assert.Null(preview.ExpectedMatchedPrefix);
+        Assert.Equal(url, preview.RewrittenUrl);
+        Assert.Equal(UrlRewriteExpectationStatus.None, preview.ExpectationStatus);
+    }
+
+    [Fact]
+    public async Task Reconcile_AddsMissingCaseSensitivePrefixWithoutRemovingOtherRoute()
+    {
+        var git = new FakeGitUrlRewriteStore();
+        var other = new GitUrlRewriteRule("git@github-camus:camus0109/", "https://github.com/Camus0109/");
+        git.Rules.Add(other);
+        var service = new GitUrlRewriteService(ConfigStore(), git, new NoOpBackupService());
+
+        var plan = await service.BuildReconcilePlanAsync();
+
+        Assert.Contains(plan.Adds, rule => rule.InsteadOfUrl == "https://github.com/camus0109/");
+        Assert.DoesNotContain(other, plan.Removes);
+        Assert.True((await service.ApplyPlanAsync(plan, "preserve case-sensitive routes")).Success);
+        Assert.Contains(other, git.Rules);
+        Assert.Contains(git.Rules, rule => rule.InsteadOfUrl == "https://github.com/camus0109/");
+    }
+
+    [Fact]
+    public async Task CleanupDuplicates_PreservesDifferentUrlCasing()
+    {
+        var git = new FakeGitUrlRewriteStore();
+        var lower = new GitUrlRewriteRule("git@managed:", "https://example.test/team/");
+        var upper = new GitUrlRewriteRule("git@managed:", "https://example.test/Team/");
+        git.Rules.AddRange([lower, lower, upper]);
+        var service = new GitUrlRewriteService(ConfigStore(), git, new NoOpBackupService());
+
+        var result = await service.ApplyPlanAsync(await service.BuildCleanupDuplicatesPlanAsync(), "case-sensitive cleanup");
+
+        Assert.True(result.Success);
+        Assert.Single(git.Rules, rule => rule == lower);
+        Assert.Single(git.Rules, rule => rule == upper);
+    }
+
     [Fact]
     public async Task CleanupDuplicates_RemovesAllThenAddsOne()
     {

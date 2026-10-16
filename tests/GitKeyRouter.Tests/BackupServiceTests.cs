@@ -360,6 +360,180 @@ public sealed class BackupServiceTests
         Assert.Equal([originalRule], git.Rules);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RestoreGitRewrites_RollsBackWhenMutationThrowsOrIsCancelled(bool cancel)
+    {
+        using var temp = new TemporaryDirectory();
+        using var cancellation = new CancellationTokenSource();
+        var paths = new TestAppPaths(temp.Path);
+        var inner = new FakeGitUrlRewriteStore();
+        var git = new InterceptingGitUrlRewriteStore(inner);
+        var targetRule = new GitUrlRewriteRule("git@target:", "https://target.example/");
+        var originalRule = new GitUrlRewriteRule("git@original:", "https://original.example/");
+        inner.Rules.Add(targetRule);
+        var service = new BackupService(paths, new PhysicalFileSystem(), git, new TestClock());
+        var selected = await service.CreateSnapshotAsync("selected target");
+        inner.Rules.Clear();
+        inner.Rules.Add(originalRule);
+        if (cancel)
+        {
+            git.CancelOnNextAdd = cancellation;
+        }
+        else
+        {
+            git.AddExceptions.Enqueue(new IOException("Simulated mutation exception."));
+        }
+
+        var result = await service.RestoreGitRewritesAsync(selected.BackupDirectory, cancellation.Token);
+
+        Assert.False(result.Success);
+        Assert.Contains("restored automatically", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal([originalRule], inner.Rules);
+        Assert.Equal(cancel, cancellation.IsCancellationRequested);
+    }
+
+    [Fact]
+    public async Task RestoreGitRewrites_ReportsRollbackExceptionAndSafetySnapshot()
+    {
+        using var temp = new TemporaryDirectory();
+        var paths = new TestAppPaths(temp.Path);
+        var inner = new FakeGitUrlRewriteStore();
+        var git = new InterceptingGitUrlRewriteStore(inner);
+        inner.Rules.Add(new GitUrlRewriteRule("git@target:", "https://target.example/"));
+        var service = new BackupService(paths, new PhysicalFileSystem(), git, new TestClock());
+        var selected = await service.CreateSnapshotAsync("selected target");
+        var originalRule = new GitUrlRewriteRule("git@original:", "https://original.example/");
+        inner.Rules.Clear();
+        inner.Rules.Add(originalRule);
+        git.AddExceptions.Enqueue(new IOException("Simulated apply exception."));
+        git.AddExceptions.Enqueue(new IOException("Simulated rollback exception."));
+
+        var result = await service.RestoreGitRewritesAsync(selected.BackupDirectory);
+
+        Assert.False(result.Success);
+        Assert.Contains("rollback also failed", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(result.Errors, error => error.Contains("Simulated rollback exception.", StringComparison.Ordinal));
+        var safety = Assert.Single(await service.ListAsync(), item => item.BackupDirectory != selected.BackupDirectory);
+        Assert.Equal([originalRule], (await service.ReadAsync(safety.BackupDirectory)).GitUrlRewrites);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RestoreGitRewrites_RejectsCaseChangedRewriteAndRollsBack(bool changeBaseUrl)
+    {
+        using var temp = new TemporaryDirectory();
+        var paths = new TestAppPaths(temp.Path);
+        var inner = new FakeGitUrlRewriteStore();
+        var git = new InterceptingGitUrlRewriteStore(inner);
+        var targetRule = new GitUrlRewriteRule("git@target:Team/", "https://target.example/Team/");
+        var originalRule = new GitUrlRewriteRule("git@original:", "https://original.example/");
+        inner.Rules.Add(targetRule);
+        var service = new BackupService(paths, new PhysicalFileSystem(), git, new TestClock());
+        var selected = await service.CreateSnapshotAsync("selected target");
+        inner.Rules.Clear();
+        inner.Rules.Add(originalRule);
+        git.NextAddedRule = changeBaseUrl
+            ? targetRule with { BaseUrl = targetRule.BaseUrl.ToLowerInvariant() }
+            : targetRule with { InsteadOfUrl = targetRule.InsteadOfUrl.ToLowerInvariant() };
+
+        var result = await service.RestoreGitRewritesAsync(selected.BackupDirectory);
+
+        Assert.False(result.Success);
+        Assert.Contains("restored automatically", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal([originalRule], inner.Rules);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(3)]
+    [InlineData(999)]
+    public async Task Restore_RejectsUnsupportedBackupSchemaBeforeAnyMutation(int schemaVersion)
+    {
+        using var temp = new TemporaryDirectory();
+        var paths = new TestAppPaths(temp.Path);
+        Directory.CreateDirectory(paths.AppDataDirectory);
+        Directory.CreateDirectory(paths.SshDirectory);
+        await File.WriteAllTextAsync(paths.ConfigPath, "{\"SchemaVersion\":4}");
+        await File.WriteAllTextAsync(paths.SshConfigPath, "# snapshot ssh");
+        var git = new FakeGitUrlRewriteStore();
+        var service = new BackupService(paths, new PhysicalFileSystem(), git, new TestClock());
+        var selected = await service.CreateSnapshotAsync("unsupported schema");
+        selected.SchemaVersion = schemaVersion;
+        await File.WriteAllTextAsync(
+            Path.Combine(selected.BackupDirectory, "manifest.json"),
+            JsonSerializer.Serialize(selected));
+        const string currentConfig = "{\"SchemaVersion\":4,\"UiLanguage\":\"en-US\"}";
+        const string currentSsh = "# current ssh";
+        await File.WriteAllTextAsync(paths.ConfigPath, currentConfig);
+        await File.WriteAllTextAsync(paths.SshConfigPath, currentSsh);
+        var originalRule = new GitUrlRewriteRule("git@original:", "https://original.example/");
+        git.Rules.Add(originalRule);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => service.ReadAsync(selected.BackupDirectory));
+        Assert.False((await service.RestoreAppConfigAsync(selected.BackupDirectory)).Success);
+        Assert.False((await service.RestoreSshConfigAsync(selected.BackupDirectory)).Success);
+        Assert.False((await service.RestoreGitRewritesAsync(selected.BackupDirectory)).Success);
+
+        Assert.Equal(currentConfig, await File.ReadAllTextAsync(paths.ConfigPath));
+        Assert.Equal(currentSsh, await File.ReadAllTextAsync(paths.SshConfigPath));
+        Assert.Equal([originalRule], git.Rules);
+        Assert.Single(Directory.EnumerateDirectories(paths.BackupRootDirectory));
+    }
+
+    private sealed class InterceptingGitUrlRewriteStore(FakeGitUrlRewriteStore inner) : IGitUrlRewriteStore
+    {
+        public CancellationTokenSource? CancelOnNextAdd { get; set; }
+
+        public Queue<Exception> AddExceptions { get; } = new();
+
+        public GitUrlRewriteRule? NextAddedRule { get; set; }
+
+        public string? GitExecutablePath => inner.GitExecutablePath;
+
+        public Task<IReadOnlyList<GitUrlRewriteRule>> GetAllAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return inner.GetAllAsync(cancellationToken);
+        }
+
+        public Task<IReadOnlyList<string>> GetValuesAsync(string configKey, CancellationToken cancellationToken = default)
+            => inner.GetValuesAsync(configKey, cancellationToken);
+
+        public Task<OperationResult<IReadOnlyList<string>>> GetGlobalConfigOriginsAsync(CancellationToken cancellationToken = default)
+            => inner.GetGlobalConfigOriginsAsync(cancellationToken);
+
+        public Task<ProcessResult> AddAsync(GitUrlRewriteRule rule, CancellationToken cancellationToken = default)
+        {
+            CancelOnNextAdd?.Cancel();
+            CancelOnNextAdd = null;
+            cancellationToken.ThrowIfCancellationRequested();
+            if (AddExceptions.TryDequeue(out var exception))
+            {
+                throw exception;
+            }
+
+            var actual = NextAddedRule ?? rule;
+            NextAddedRule = null;
+            return inner.AddAsync(actual, cancellationToken);
+        }
+
+        public Task<ProcessResult> RemoveAllAsync(GitUrlRewriteRule rule, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return inner.RemoveAllAsync(rule, cancellationToken);
+        }
+
+        public Task<ProcessResult> RemoveAllForKeyAsync(string configKey, CancellationToken cancellationToken = default)
+            => inner.RemoveAllForKeyAsync(configKey, cancellationToken);
+
+        public Task<ProcessResult> TestRemoteAsync(string originalUrl, CancellationToken cancellationToken = default)
+            => inner.TestRemoteAsync(originalUrl, cancellationToken);
+    }
+
     private static BackupInventoryItem Find(
         IEnumerable<BackupInventoryItem> inventory,
         string directory)

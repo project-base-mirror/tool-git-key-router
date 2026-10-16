@@ -61,9 +61,9 @@ public sealed class OwnerRouteService
             cancellationToken).ConfigureAwait(false);
         var existing = config.RepositoryRoutes.FirstOrDefault(item =>
             string.Equals(item.Id, route.Id, StringComparison.OrdinalIgnoreCase))
-            ?? config.RepositoryRoutes.FirstOrDefault(item =>
+            ?? (originalNamespacePath is null ? null : config.RepositoryRoutes.FirstOrDefault(item =>
                 string.Equals(item.ServiceInstanceId, originalServiceInstanceId ?? route.ServiceInstanceId, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(item.NamespacePath, originalNamespacePath ?? route.NamespacePath, StringComparison.OrdinalIgnoreCase));
+                && string.Equals(item.NamespacePath, originalNamespacePath, StringComparison.OrdinalIgnoreCase)));
         if (existing is null)
         {
             config.RepositoryRoutes.Add(route);

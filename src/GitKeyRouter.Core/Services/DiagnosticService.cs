@@ -507,11 +507,11 @@ public sealed partial class DiagnosticService
             }
 
             var actualRules = await _gitUrlRewriteService.GetActualRulesAsync(cancellationToken).ConfigureAwait(false);
-            foreach (var conflict in actualRules.GroupBy(item => item.InsteadOfUrl, StringComparer.OrdinalIgnoreCase)
-                         .Where(group => group.Select(item => item.BaseUrl).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1))
+            foreach (var conflict in actualRules.GroupBy(item => item.InsteadOfUrl, StringComparer.Ordinal)
+                         .Where(group => group.Select(item => item.BaseUrl).Distinct(StringComparer.Ordinal).Count() > 1))
             {
                 Add(report, "GIT_REWRITE_SOURCE_MULTIPLE_IDENTITIES", "Git URL rewrite", "One source prefix routes to multiple identities",
-                    $"Source: {conflict.Key}{Environment.NewLine}Targets: {string.Join(", ", conflict.Select(item => item.BaseUrl).Distinct(StringComparer.OrdinalIgnoreCase))}",
+                    $"Source: {conflict.Key}{Environment.NewLine}Targets: {string.Join(", ", conflict.Select(item => item.BaseUrl).Distinct(StringComparer.Ordinal))}",
                     DiagnosticSeverity.Error, "Keep exactly one target for each source prefix.");
             }
 

@@ -72,6 +72,41 @@ public sealed class GitUrlRewriteStoreIntegrationTests
         Assert.True(File.Exists(isolatedConfig));
     }
 
+    [Fact]
+    public async Task CleanupKeepsCaseSensitiveUrlSubsectionsAndValues()
+    {
+        var gitPath = FindGit();
+        if (gitPath is null)
+        {
+            return;
+        }
+
+        using var temp = new TemporaryDirectory();
+        var store = new GitUrlRewriteStore(
+            new ProcessRunner(),
+            new FixedToolchainService(gitPath),
+            new Dictionary<string, string?>
+            {
+                ["GIT_CONFIG_GLOBAL"] = Path.Combine(temp.Path, "global.gitconfig"),
+                ["GIT_CONFIG_NOSYSTEM"] = "1"
+            });
+        var lower = new GitUrlRewriteRule("git@managed:team/", "https://example.test/team/");
+        var upper = new GitUrlRewriteRule("git@managed:Team/", "https://example.test/Team/");
+        var alternatePrefix = new GitUrlRewriteRule(lower.BaseUrl, upper.InsteadOfUrl);
+        foreach (var rule in new[] { lower, lower, upper, upper, alternatePrefix })
+        {
+            Assert.True((await store.AddAsync(rule)).Succeeded);
+        }
+
+        var service = new GitKeyRouter.Core.Services.GitUrlRewriteService(
+            new InMemoryAppConfigStore(), store, new NoOpBackupService());
+        var result = await service.ApplyPlanAsync(await service.BuildCleanupDuplicatesPlanAsync(), "isolated case-sensitive cleanup");
+
+        Assert.True(result.Success, result.Message + " " + string.Join(" ", result.Errors));
+        Assert.Equal([alternatePrefix.InsteadOfUrl, lower.InsteadOfUrl], await store.GetValuesAsync(lower.ConfigKey));
+        Assert.Equal([upper.InsteadOfUrl], await store.GetValuesAsync(upper.ConfigKey));
+    }
+
     private static string? FindGit()
     {
         var executableName = OperatingSystem.IsWindows() ? "git.exe" : "git";
