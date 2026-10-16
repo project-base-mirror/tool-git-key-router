@@ -191,15 +191,10 @@ public sealed class MainForm : Form
             control.Click += async (_, _) => await ShowPageAsync(PageKeys.Overview);
         }
 
-        var navigation = new FlowLayoutPanel
+        var navigation = new SidebarNavigationPanel
         {
             Name = "SidebarNavigation",
-            Dock = DockStyle.Fill,
-            FlowDirection = FlowDirection.TopDown,
-            WrapContents = false,
-            AutoScroll = false,
-            BackColor = UiHelpers.SidebarBackground,
-            Padding = new Padding(12, 8, 12, 8)
+            Dock = DockStyle.Fill
         };
 
         foreach (var pageKey in _pageDefinitions.Keys)
@@ -208,8 +203,6 @@ public sealed class MainForm : Form
             _navigationButtons[pageKey] = button;
             navigation.Controls.Add(button);
         }
-
-        navigation.SizeChanged += (_, _) => ResizeNavigationItems(navigation);
 
         sidebar.Controls.Add(navigation);
         sidebar.Controls.Add(brand);
@@ -239,15 +232,6 @@ public sealed class MainForm : Form
         button.FlatAppearance.MouseDownBackColor = UiHelpers.NavigationActive;
         button.Click += async (_, _) => await ShowPageAsync((string)button.Tag);
         return button;
-    }
-
-    private void ResizeNavigationItems(FlowLayoutPanel navigation)
-    {
-        var width = Math.Max(140, navigation.ClientSize.Width - navigation.Padding.Horizontal);
-        foreach (var button in _navigationButtons.Values)
-        {
-            button.Width = width;
-        }
     }
 
     private async Task ShowPageAsync(string pageKey)
@@ -316,6 +300,12 @@ public sealed class MainForm : Form
             var active = string.Equals(pageKey, activePageKey, StringComparison.OrdinalIgnoreCase);
             button.BackColor = active ? UiHelpers.NavigationActive : UiHelpers.SidebarBackground;
             button.ForeColor = active ? Color.White : Color.FromArgb(224, 230, 240);
+        }
+
+        if (_navigationButtons.TryGetValue(activePageKey, out var activeButton)
+            && activeButton.Parent is ScrollableControl navigation)
+        {
+            navigation.ScrollControlIntoView(activeButton);
         }
     }
 

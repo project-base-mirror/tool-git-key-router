@@ -357,7 +357,7 @@ public sealed class WinFormsSmokeTests
                 var navigation = Assert.Single(
                     Descendants<FlowLayoutPanel>(main),
                     panel => panel.Name == "SidebarNavigation");
-                Assert.False(navigation.AutoScroll);
+                Assert.True(navigation.AutoScroll);
                 Assert.False(navigation.VerticalScroll.Visible);
                 Assert.DoesNotContain(
                     Descendants<Label>(main),
@@ -380,6 +380,121 @@ public sealed class WinFormsSmokeTests
                 }
 
                 AppLocalization.SetLanguage(AppLanguage.SimplifiedChinese);
+            }
+        });
+
+    [Fact]
+    public void SidebarNavigation_KeepsOverflowReachableAndRemovesScrollbarsWhenItFits()
+        => StaTest.Run(() =>
+        {
+            using var main = new MainForm(AppBootstrapper.CreateServices());
+            var navigation = Assert.Single(
+                Descendants<FlowLayoutPanel>(main),
+                panel => panel.Name == "SidebarNavigation");
+            var buttons = navigation.Controls.OfType<Button>().ToArray();
+            Assert.Equal(10, buttons.Length);
+
+            // Host only the navigation: showing MainForm would run tool detection and updates.
+            using var host = new Form
+            {
+                AutoScaleMode = AutoScaleMode.None,
+                StartPosition = FormStartPosition.Manual,
+                Location = new Point(-32000, -32000),
+                ShowInTaskbar = false
+            };
+            host.Controls.Add(navigation);
+            host.Show();
+
+            foreach (var scale in new[] { 1F, 1.25F, 1.5F, 2F })
+            {
+                // Exercise the layout with the dimensions produced by common DPI scales.
+                // Native per-monitor DPI and visual theme switching also need a Windows UI check.
+                navigation.Padding = new Padding(
+                    (int)(12 * scale), (int)(8 * scale), (int)(12 * scale), (int)(8 * scale));
+                foreach (var button in buttons)
+                {
+                    button.Height = (int)(42 * scale);
+                    button.Margin = new Padding(0, 0, 0, (int)(4 * scale));
+                }
+
+                host.ClientSize = new Size((int)(260 * scale), (int)(220 * scale));
+                navigation.PerformLayout();
+                Application.DoEvents();
+
+                Assert.True(navigation.VerticalScroll.Visible);
+                Assert.False(navigation.HorizontalScroll.Visible);
+                Assert.All(buttons, button =>
+                    Assert.Equal(navigation.ClientSize.Width - navigation.Padding.Horizontal, button.Width));
+
+                Assert.True(buttons[^1].Focus());
+                Application.DoEvents();
+                Assert.True(navigation.AutoScrollPosition.Y < 0);
+                Assert.True(navigation.ClientRectangle.Contains(buttons[^1].Bounds));
+                Assert.True(buttons[0].Focus());
+                Application.DoEvents();
+                Assert.True(navigation.ClientRectangle.Contains(buttons[0].Bounds));
+
+                if (SystemInformation.MouseWheelScrollLines != 0)
+                {
+                    var mouseWheel = typeof(ScrollableControl).GetMethod(
+                        "OnMouseWheel", BindingFlags.Instance | BindingFlags.NonPublic);
+                    Assert.NotNull(mouseWheel);
+                    mouseWheel.Invoke(navigation, [new MouseEventArgs(MouseButtons.None, 0, 20, 20, -120)]);
+                    Assert.True(navigation.AutoScrollPosition.Y < 0);
+                }
+
+                // Recreate the native handle, then repeat scrolling so theme setup cannot break it.
+                var recreateHandle = typeof(Control).GetMethod(
+                    "RecreateHandle", BindingFlags.Instance | BindingFlags.NonPublic);
+                Assert.NotNull(recreateHandle);
+                recreateHandle.Invoke(navigation, null);
+                navigation.ScrollControlIntoView(buttons[^1]);
+                Application.DoEvents();
+                Assert.True(navigation.ClientRectangle.Contains(buttons[^1].Bounds));
+                Assert.False(navigation.HorizontalScroll.Visible);
+
+                host.ClientSize = new Size((int)(260 * scale), (int)(700 * scale));
+                navigation.PerformLayout();
+                Application.DoEvents();
+                Assert.False(navigation.VerticalScroll.Visible);
+                Assert.False(navigation.HorizontalScroll.Visible);
+                Assert.Equal(Point.Empty, navigation.AutoScrollPosition);
+                Assert.All(buttons, button =>
+                    Assert.True(navigation.ClientRectangle.Contains(button.Bounds)));
+            }
+        });
+
+    [Fact]
+    public void OverviewCards_UseAvailableWidthWithAndWithoutVerticalOverflow()
+        => StaTest.Run(() =>
+        {
+            using var host = new Form
+            {
+                AutoScaleMode = AutoScaleMode.None,
+                StartPosition = FormStartPosition.Manual,
+                Location = new Point(-32000, -32000),
+                ShowInTaskbar = false
+            };
+            using var page = new OverviewControl(
+                AppBootstrapper.CreateServices(), _ => { }, _ => Task.CompletedTask)
+            {
+                Dock = DockStyle.Fill
+            };
+            host.Controls.Add(page);
+            host.Show();
+            var cards = Assert.Single(page.Controls.OfType<FlowLayoutPanel>(), panel => panel.AutoScroll);
+
+            foreach (var height in new[] { 520, 900, 520 })
+            {
+                host.ClientSize = new Size(640, height);
+                page.PerformLayout();
+                Application.DoEvents();
+
+                Assert.Equal(height == 520, cards.VerticalScroll.Visible);
+                Assert.False(cards.HorizontalScroll.Visible);
+                Assert.Equal(6, cards.Controls.Count);
+                Assert.All(cards.Controls.Cast<Control>(), card =>
+                    Assert.Equal(cards.ClientSize.Width - cards.Padding.Horizontal - 2, card.Width));
             }
         });
 

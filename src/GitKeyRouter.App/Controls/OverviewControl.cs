@@ -424,13 +424,9 @@ public sealed class OverviewControl : UserControl, IAsyncRefreshable
             return;
         }
 
-        var contentHeight = _cardsPanel.Padding.Vertical
-            + _cardsPanel.Controls.Cast<Control>().Sum(control => control.Height + control.Margin.Vertical);
-        var reservedScrollbarWidth = contentHeight > _cardsPanel.ClientSize.Height
-            ? SystemInformation.VerticalScrollBarWidth
-            : 0;
-        reservedScrollbarWidth += 2;
-        var width = Math.Max(1, _cardsPanel.ClientSize.Width - _cardsPanel.Padding.Horizontal - reservedScrollbarWidth);
+        // ClientSize already excludes a visible native scrollbar. Reserving it again
+        // leaves an unnecessary gutter and squeezes the descriptions at small sizes.
+        var width = Math.Max(1, _cardsPanel.ClientSize.Width - _cardsPanel.Padding.Horizontal - 2);
         foreach (var card in _cardsPanel.Controls.OfType<OverviewStatusCard>())
         {
             card.Width = width;
