@@ -11,7 +11,7 @@ public sealed partial class CliApplication
     {
         if (args.Length != 1)
         {
-            Console.Error.WriteLine(
+            Error.WriteLine(
                 "Usage: GitKeyRouter.exe gh-login <identity-id-or-host-alias>");
             return 3;
         }
@@ -36,7 +36,7 @@ public sealed partial class CliApplication
             || args.Count(argument => string.Equals(argument, "--json", StringComparison.OrdinalIgnoreCase)) > 1
             || args.Count(argument => string.Equals(argument, "--all", StringComparison.OrdinalIgnoreCase)) > 1)
         {
-            Console.Error.WriteLine(
+            Error.WriteLine(
                 "Usage: GitKeyRouter.exe gh-status [identity-id-or-host-alias] [--json] | gh-status --all [--json]");
             return 3;
         }
@@ -46,7 +46,7 @@ public sealed partial class CliApplication
             var results = await _services.GitHubCliService.StatusAllAsync(cancellationToken).ConfigureAwait(false);
             if (json)
             {
-                Console.WriteLine(JsonSerializer.Serialize(
+                Output.WriteLine(JsonSerializer.Serialize(
                     results,
                     new JsonSerializerOptions { WriteIndented = true }));
             }
@@ -54,7 +54,7 @@ public sealed partial class CliApplication
             {
                 foreach (var item in results)
                 {
-                    var writer = item.Success ? Console.Out : Console.Error;
+                    var writer = item.Success ? Output : Error;
                     writer.WriteLine($"{item.IdentityId ?? "<unknown>"}: {item.Message}");
                 }
             }
@@ -68,7 +68,7 @@ public sealed partial class CliApplication
             cancellationToken).ConfigureAwait(false);
         if (json)
         {
-            Console.WriteLine(JsonSerializer.Serialize(
+            Output.WriteLine(JsonSerializer.Serialize(
                 result,
                 new JsonSerializerOptions { WriteIndented = true }));
             return result.ExitCode;
@@ -87,7 +87,7 @@ public sealed partial class CliApplication
         if (selectors.Count != 1
             || args.Count(argument => string.Equals(argument, "--yes", StringComparison.OrdinalIgnoreCase)) != 1)
         {
-            Console.Error.WriteLine(
+            Error.WriteLine(
                 "Usage: GitKeyRouter.exe gh-logout <identity-id-or-host-alias> --yes");
             return 3;
         }
@@ -171,13 +171,13 @@ public sealed partial class CliApplication
 
         if (json)
         {
-            Console.WriteLine(JsonSerializer.Serialize(
+            Output.WriteLine(JsonSerializer.Serialize(
                 result,
                 new JsonSerializerOptions { WriteIndented = true }));
         }
         else
         {
-            var writer = result.Success ? Console.Out : Console.Error;
+            var writer = result.Success ? Output : Error;
             writer.WriteLine(result.Message);
             writer.WriteLine($"gh: {result.GitHubCliPath ?? "<not found>"}");
             writer.WriteLine($"gh source: {result.GitHubCliSource ?? "<unknown>"}");
@@ -199,9 +199,9 @@ public sealed partial class CliApplication
         return result.ExitCode;
     }
 
-    private static int PrintGitHubResolveUsage()
+    private int PrintGitHubResolveUsage()
     {
-        Console.Error.WriteLine(
+        Error.WriteLine(
             "Usage: GitKeyRouter.exe gh-resolve [--identity <identity-id-or-host-alias>] [-R|--repo <host/owner/repo>] [--json]");
         return 3;
     }
@@ -213,7 +213,7 @@ public sealed partial class CliApplication
         var separator = Array.IndexOf(args, "--");
         if (separator < 0)
         {
-            Console.Error.WriteLine(
+            Error.WriteLine(
                 "Usage: GitKeyRouter.exe gh [--identity <identity-id-or-host-alias>] -- <gh-arguments>");
             return 3;
         }
@@ -225,7 +225,7 @@ public sealed partial class CliApplication
                 || index + 1 >= separator
                 || identity is not null)
             {
-                Console.Error.WriteLine(
+                Error.WriteLine(
                     "Only one --identity <identity-id-or-host-alias> option is allowed before --.");
                 return 3;
             }
@@ -236,7 +236,7 @@ public sealed partial class CliApplication
         var forwardedArguments = args[(separator + 1)..];
         if (forwardedArguments.Length == 0)
         {
-            Console.Error.WriteLine("At least one GitHub CLI argument is required after --.");
+            Error.WriteLine("At least one GitHub CLI argument is required after --.");
             return 3;
         }
 
@@ -248,7 +248,7 @@ public sealed partial class CliApplication
         return PrintGitHubCliResult(result, printSuccess: false);
     }
 
-    private static int PrintGitHubCliResult(
+    private int PrintGitHubCliResult(
         GitHubCliCommandResult result,
         bool printSuccess)
     {
@@ -256,12 +256,12 @@ public sealed partial class CliApplication
         {
             if (printSuccess && !string.IsNullOrWhiteSpace(result.Message))
             {
-                Console.WriteLine(result.Message);
+                Output.WriteLine(result.Message);
             }
         }
         else if (!string.IsNullOrWhiteSpace(result.Message))
         {
-            Console.Error.WriteLine(result.Message);
+            Error.WriteLine(result.Message);
         }
 
         return result.ExitCode;

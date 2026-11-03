@@ -57,7 +57,7 @@ GitKeyRouter 以“管理方便、状态透明、操作可恢复”为目标：
 - Git rewrite 使用 `git config --global` 精确读写，不覆盖整个 `.gitconfig`
 - 危险操作先显示文本 diff 或结构化变更计划
 - 修改前创建快照，恢复操作本身也会先创建新快照
-- GUI 和带 `--yes` 的写入型 CLI 共享当前 Windows 用户的单实例锁；只读、预览、诊断、测试、版本和帮助命令可在 GUI 运行时使用
+- GUI 和带 `--yes` 的写入型 CLI 共享单实例保护；GUI 运行时写命令自动交给 GUI 执行，无需退出托盘。只读、预览、诊断、测试、版本和帮助命令可独立运行
 - 日志中的私钥块、URL 凭据、Bearer、常见 secret/Token/ASKPASS 赋值和 GitHub/GitLab Token 会被脱敏；日志默认每 5 MB 轮转并保留 3 份历史文件，日志写入失败不会中断主操作
 
 ## 系统要求
@@ -416,11 +416,18 @@ GitKeyRouter.exe help
 
 配置写入会校验加载时的文件存在状态和 SHA-256；如果配置被其他程序替换或编辑，本次保存会拒绝覆盖并要求重新加载。Git rewrite 计划也保存所有受影响 key 在预览时的精确有序值，应用时只要这些值发生变化就拒绝旧计划；计划外 key 的变化不受影响。
 
-GUI 与带 `--yes` 的 `apply` / `apply-profiles` / `ssh-backend` / `trust-host` 及 `rename-service`、全部 `save-*` / `delete-*` 共享排他锁，防止跨进程并发写入。上述命令的预览模式及其余只读 CLI 不取得该锁；`version` / `--version` 和 `help` / `--help` 还会在加载配置与创建应用服务之前直接返回，因此 GUI 运行时仍可用于脚本和发布验证。
+GUI 与带 `--yes` 的 `apply` / `apply-profiles` / `ssh-backend` / `trust-host` 及 `rename-service`、全部 `save-*` / `delete-*` 保留排他锁，并在 GUI 运行时将写命令转发给 GUI 串行执行，防止跨进程并发写入。上述命令的预览模式及其余只读 CLI 不取得该锁；`version` / `--version` 和 `help` / `--help` 还会在加载配置与创建应用服务之前直接返回，因此 GUI 运行时仍可用于脚本和发布验证。
 
 `test-route --connect` 必须同时提供真实 `--url`，避免程序对虚构仓库发起网络请求。
 
 ### AI 与脚本管理
+
+### GUI 运行时执行写命令
+
+从 v0.4.28 起，`save-*`、`delete-*`、`rename-service`、`apply --yes`、`apply-profiles --yes` 等写命令可以在 GUI（包括托盘）运行时执行，输出和退出码不变。GUI 使用现有服务执行命令，成功后刷新当前页面并保留列表选择。JSON 文件在 CLI 所在目录解析，标准输入也可照常使用。
+
+GUI 正在编辑、预览确认或执行操作时返回退出码 4、`gui_busy`；完成或取消该操作后重试即可，**不用退出 GUI**。这个保护覆盖编辑窗口、备份、写入、验证和回滚，避免旧表单覆盖命令行修改。GUI 未运行时仍由 CLI 独占执行；旧版 GUI 或其他独占进程不支持转发时返回 `instance_busy`，不会绕过锁。如果管道连接中断，先查询当前配置再重试，避免重复执行结果未知的写入。
+
 
 无需启动 GUI 或配置 MCP。AI 可以调用现有 EXE，先查询 JSON，再保存记录、预览并应用。`diagnose`、全部 `list-*`、`parse-url`、`resolve-profile`、`test-route`（离线预览）、`apply` 和 `apply-profiles` 支持 `--json`；新管理命令也支持。
 
@@ -450,7 +457,7 @@ GitKeyRouter.exe delete-route team-route --yes --json
 
 对应的 `delete-service` / `delete-identity` / `delete-route` / `delete-profile` / `delete-profile-rule` 接受**精确 Id**，不按显示名或 HostAlias 删除。保存和删除都必须带 `--yes`；缺少确认会返回 3 且不写入，没有交互式询问。删除身份不删密钥文件，删除 Profile 同时删除其规则；仍被身份/路由引用的服务无法删除。保存/删除遵循现有校验、快照备份及并发版本检查，仅修改应用记录；路由和 Profile 生效或撤销仍需分别预览并执行 `apply --yes`、`apply-profiles --yes`。两次命令之间若配置被编辑，应用会重新计算当前计划，请重新检查预览。
 
-写入前请关闭 GUI（包括托盘），占用时返回结构化的 `instance_busy` 错误。参数错误在启动恢复和写入前被拒绝。配置、身份列表仅包含密钥路径，不读取密钥正文；保存身份也不会创建、导入或删除密钥。`test-route --json` 不接受 `--connect`，需要联网测试时单独使用现有文本命令。
+写入无需关闭 GUI 或托盘；有未完成编辑或操作时返回结构化的 `gui_busy` 错误。参数错误在启动恢复和写入前被拒绝。配置、身份列表仅包含密钥路径，不读取密钥正文；保存身份也不会创建、导入或删除密钥。`test-route --json` 不接受 `--connect`，需要联网测试时单独使用现有文本命令。
 
 服务编辑窗口现在显示可编辑的“服务 ID”（内置 GitHub.com 只读）。已有非内置服务也可以用 `GitKeyRouter.exe rename-service <当前Id> <新Id> --yes --json` 改名；它会在一次带备份、并发校验的保存中同步更新身份、路由、服务默认路由 ID 和 Profile 引用，拒绝已有 ID 冲突，不修改密钥路径或 HostAlias。Gitee 推荐使用 `gitee.com`。读取旧配置不会擅自改名；自建模板的新服务留空 ID 时按主机名生成。
 

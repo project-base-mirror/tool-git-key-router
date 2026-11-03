@@ -51,9 +51,9 @@ public sealed class GitRewritesControl : UserControl, IAsyncRefreshable
         testPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         testPanel.Controls.Add(_urlInput, 0, 0);
         var previewButton = new Button { Text = AppLocalization.T("本地预览", "Local preview"), Dock = DockStyle.Fill };
-        previewButton.Click += async (_, _) => await PreviewUrlAsync();
+        previewButton.Click += async (_, _) => await UiHelpers.RunOperationAsync(() => PreviewUrlAsync(), this);
         var connectButton = new Button { Text = AppLocalization.T("实际连接测试", "Actual connection test"), Dock = DockStyle.Fill };
-        connectButton.Click += async (_, _) => await TestConnectionAsync();
+        connectButton.Click += async (_, _) => await UiHelpers.RunOperationAsync(() => TestConnectionAsync(), this);
         testPanel.Controls.Add(previewButton, 1, 0);
         testPanel.Controls.Add(connectButton, 2, 0);
         var previewPanel = UiHelpers.CreateOutputPanel(_previewOutput);

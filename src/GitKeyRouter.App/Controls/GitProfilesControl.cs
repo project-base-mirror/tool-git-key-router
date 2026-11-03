@@ -54,8 +54,8 @@ public sealed class GitProfilesControl : UserControl, IAsyncRefreshable
         Controls.Add(header);
         HandleCreated += (_, _) => ScheduleSplitLayout();
         _profilesGrid.SelectionChanged += (_, _) => RefreshRulesGrid();
-        _profilesGrid.CellDoubleClick += async (_, _) => await EditProfileAsync();
-        _rulesGrid.CellDoubleClick += async (_, _) => await EditRuleAsync();
+        _profilesGrid.CellDoubleClick += async (_, _) => await UiHelpers.RunOperationAsync(() => EditProfileAsync(), this);
+        _rulesGrid.CellDoubleClick += async (_, _) => await UiHelpers.RunOperationAsync(() => EditRuleAsync(), this);
     }
 
     private void ScheduleSplitLayout()

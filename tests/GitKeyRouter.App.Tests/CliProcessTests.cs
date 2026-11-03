@@ -44,32 +44,37 @@ public sealed class CliProcessTests
     }
 
     private static (int ExitCode, string Output, string Error) RunChild(params string[] arguments)
+        => RunChildAsync(null, arguments).GetAwaiter().GetResult();
+
+    internal static async Task<(int ExitCode, string Output, string Error)> RunChildAsync(string? input, params string[] arguments)
     {
         var start = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet")
         {
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,
-            RedirectStandardError = true
+            RedirectStandardError = true,
+            RedirectStandardInput = true
         };
         start.ArgumentList.Add("exec");
         start.ArgumentList.Add("--runtimeconfig");
         start.ArgumentList.Add(Path.ChangeExtension(typeof(CliProcessTests).Assembly.Location, ".runtimeconfig.json"));
         start.ArgumentList.Add(typeof(CliApplication).Assembly.Location);
-        foreach (var argument in arguments)
-        {
-            start.ArgumentList.Add(argument);
-        }
-
+        foreach (var argument in arguments) start.ArgumentList.Add(argument);
         using var process = Process.Start(start) ?? throw new InvalidOperationException("Could not start CLI.");
         var stdout = process.StandardOutput.ReadToEndAsync();
         var stderr = process.StandardError.ReadToEndAsync();
-        if (!process.WaitForExit(30_000))
+        if (input is not null) await process.StandardInput.WriteAsync(input);
+        process.StandardInput.Close();
+        try
+        {
+            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30));
+        }
+        catch (TimeoutException)
         {
             process.Kill(entireProcessTree: true);
-            throw new TimeoutException("CLI did not exit.");
+            throw;
         }
-
-        return (process.ExitCode, stdout.GetAwaiter().GetResult(), stderr.GetAwaiter().GetResult());
+        return (process.ExitCode, await stdout, await stderr);
     }
 }

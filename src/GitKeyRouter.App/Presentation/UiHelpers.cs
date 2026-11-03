@@ -165,6 +165,67 @@ public static class UiHelpers
     public static FlowLayoutPanel CreateToolbar()
         => new WrappingToolbar();
 
+    public static Button Button(string text, Func<object?, EventArgs, Task> onClick)
+        => Button(text, OperationHandler(onClick));
+
+    public static EventHandler OperationHandler(Func<object?, EventArgs, Task> onClick)
+        => async (sender, args) => await RunOperationAsync(() => onClick(sender, args), sender as Control);
+
+    public static async Task RunOperationAsync(Func<Task> action, Control? owner)
+    {
+        using var operation = Coordination.GuiOperationGate.Shared.TryEnter();
+        if (operation is null)
+        {
+            MessageBox.Show(owner,
+                AppLocalization.T("另一个操作或编辑窗口正在使用配置，请完成后重试。", "Another operation or editor is using the configuration. Finish it and retry."),
+                "GitKeyRouter", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        var form = owner?.FindForm();
+        var wasEnabled = form?.Enabled == true;
+        if (form is not null) form.Enabled = false;
+        try
+        {
+            await action();
+        }
+        finally
+        {
+            if (form is not null && !form.IsDisposed) form.Enabled = wasEnabled;
+        }
+    }
+
+    public static async Task RefreshPreservingSelectionAsync(Control view, Func<Task> refresh)
+    {
+        var selections = Grids(view).Where(grid => grid.CurrentRow is not null && grid.Columns.Count > 0)
+            .Select(grid =>
+            {
+                var column = grid.Columns.Cast<DataGridViewColumn>()
+                    .FirstOrDefault(item => item.DataPropertyName == "Id") ?? grid.Columns[0];
+                return (Grid: grid, Column: column.Name, Value: grid.CurrentRow!.Cells[column.Index].Value,
+                    Scroll: grid.FirstDisplayedScrollingRowIndex);
+            }).ToList();
+        await refresh();
+        foreach (var selection in selections)
+        {
+            var grid = selection.Grid;
+            if (grid.IsDisposed || !grid.Columns.Contains(selection.Column)) continue;
+            var row = grid.Rows.Cast<DataGridViewRow>()
+                .FirstOrDefault(item => Equals(item.Cells[selection.Column].Value, selection.Value));
+            var visibleColumn = grid.Columns.Cast<DataGridViewColumn>().FirstOrDefault(column => column.Visible);
+            if (row is not null && visibleColumn is not null)
+                grid.CurrentCell = row.Cells[visibleColumn.Index];
+            if (selection.Scroll >= 0 && selection.Scroll < grid.Rows.Count)
+                grid.FirstDisplayedScrollingRowIndex = selection.Scroll;
+        }
+
+        static IEnumerable<DataGridView> Grids(Control parent)
+        {
+            if (parent is DataGridView grid) yield return grid;
+            foreach (Control child in parent.Controls)
+                foreach (var nested in Grids(child)) yield return nested;
+        }
+    }
+
     public static Button Button(string text, EventHandler onClick)
     {
         var button = new Button

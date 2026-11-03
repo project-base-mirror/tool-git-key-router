@@ -34,7 +34,7 @@ public sealed class GitServicesControl : UserControl, IAsyncRefreshable
         Controls.Add(_grid);
         Controls.Add(toolbar);
         Controls.Add(header);
-        _grid.CellDoubleClick += async (_, _) => await EditAsync();
+        _grid.CellDoubleClick += async (_, _) => await UiHelpers.RunOperationAsync(() => EditAsync(), this);
     }
 
     public async Task RefreshAsync()

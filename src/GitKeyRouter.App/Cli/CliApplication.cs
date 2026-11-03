@@ -8,9 +8,19 @@ public sealed partial class CliApplication
 {
     private readonly ApplicationServices _services;
 
-    public CliApplication(ApplicationServices services)
+    private readonly TextReader? _input;
+    private readonly TextWriter? _output;
+    private readonly TextWriter? _error;
+    private TextReader Input => _input ?? Console.In;
+    private TextWriter Output => _output ?? Console.Out;
+    private TextWriter Error => _error ?? Console.Error;
+
+    public CliApplication(ApplicationServices services, TextReader? input = null, TextWriter? output = null, TextWriter? error = null)
     {
         _services = services;
+        _input = input;
+        _output = output;
+        _error = error;
     }
 
     public static bool CanRunWithoutServices(string[] args)
@@ -46,7 +56,7 @@ public sealed partial class CliApplication
             var validationError = ValidateArguments(args);
             if (validationError is not null)
             {
-                return ReportError(args, 3, "invalid_arguments", validationError);
+                return ReportError(args, 3, "invalid_arguments", validationError, Output, Error);
             }
 
             var commandArgs = _command.StartsWith("gh", StringComparison.Ordinal)
@@ -56,19 +66,19 @@ public sealed partial class CliApplication
         }
         catch (System.Text.Json.JsonException)
         {
-            return ReportError(args, 3, "invalid_json", "Expected a JSON record with known fields, valid types and string enum names. Input was not saved.");
+            return ReportError(args, 3, "invalid_json", "Expected a JSON record with known fields, valid types and string enum names. Input was not saved.", Output, Error);
         }
         catch (AppConfigConcurrencyException exception)
         {
-            return ReportError(args, 4, "config_conflict", exception.Message);
+            return ReportError(args, 4, "config_conflict", exception.Message, Output, Error);
         }
         catch (OperationCanceledException)
         {
-            return ReportError(args, 2, "cancelled", "Operation cancelled; inspect the current configuration before retrying.");
+            return ReportError(args, 2, "cancelled", "Operation cancelled; inspect the current configuration before retrying.", Output, Error);
         }
         catch (Exception exception)
         {
-            return ReportError(args, 2, "operation_failed", exception.Message);
+            return ReportError(args, 2, "operation_failed", exception.Message, Output, Error);
         }
     }
 
@@ -117,7 +127,7 @@ public sealed partial class CliApplication
             return WriteJson(report, report.ErrorCount > 0 ? 2 : report.WarningCount > 0 ? 1 : 0);
         }
 
-        Console.WriteLine(DiagnosticReportFormatter.Format(report));
+        Output.WriteLine(DiagnosticReportFormatter.Format(report));
         return report.ErrorCount > 0 ? 2 : report.WarningCount > 0 ? 1 : 0;
     }
 
@@ -131,7 +141,7 @@ public sealed partial class CliApplication
 
         foreach (var service in services)
         {
-            Console.WriteLine($"{service.Id}\t{service.DisplayName}\t{service.ProviderKind}\t{service.SshUser}@{service.HostName}:{service.SshPort ?? 22}\t{service.WebBaseUrl}\tBuiltIn={service.IsBuiltIn}");
+            Output.WriteLine($"{service.Id}\t{service.DisplayName}\t{service.ProviderKind}\t{service.SshUser}@{service.HostName}:{service.SshPort ?? 22}\t{service.WebBaseUrl}\tBuiltIn={service.IsBuiltIn}");
         }
 
         return 0;
@@ -148,7 +158,7 @@ public sealed partial class CliApplication
         foreach (var identity in config.Identities.OrderBy(item => item.DisplayName, StringComparer.CurrentCultureIgnoreCase))
         {
             var service = config.FindService(identity.ServiceInstanceId);
-            Console.WriteLine($"{identity.Id}\t{service?.DisplayName ?? identity.ServiceInstanceId}\t{identity.DisplayName}\t{identity.AccountName}\t{identity.HostAlias}\t{identity.PrivateKeyPath}");
+            Output.WriteLine($"{identity.Id}\t{service?.DisplayName ?? identity.ServiceInstanceId}\t{identity.DisplayName}\t{identity.AccountName}\t{identity.HostAlias}\t{identity.PrivateKeyPath}");
         }
 
         return 0;
@@ -166,7 +176,7 @@ public sealed partial class CliApplication
         {
             var ruleCount = config.GitProfileRules.Count(item =>
                 string.Equals(item.ProfileId, profile.Id, StringComparison.OrdinalIgnoreCase));
-            Console.WriteLine(
+            Output.WriteLine(
                 $"{profile.Id}\t{profile.DisplayName}\t{profile.UserName}\t{profile.UserEmail}\tSigning={profile.EnableCommitSigning}\tRules={ruleCount}");
         }
 
@@ -187,7 +197,7 @@ public sealed partial class CliApplication
         {
             var identity = config.Identities.FirstOrDefault(item => string.Equals(item.Id, route.IdentityId, StringComparison.OrdinalIgnoreCase));
             var service = config.FindService(route.ServiceInstanceId);
-            Console.WriteLine($"{service?.DisplayName ?? route.ServiceInstanceId}\t{route.NamespacePath}\t{identity?.HostAlias ?? "<missing identity>"}\tEnabled={route.Enabled}");
+            Output.WriteLine($"{service?.DisplayName ?? route.ServiceInstanceId}\t{route.NamespacePath}\t{identity?.HostAlias ?? "<missing identity>"}\tEnabled={route.Enabled}");
         }
 
         return 0;
@@ -203,10 +213,10 @@ public sealed partial class CliApplication
 
         if (!_json)
         {
-            Console.WriteLine("SSH config changes:");
-            Console.WriteLine(sshPreview.DiffText);
-            Console.WriteLine();
-            Console.WriteLine(FormatGitPlan(gitPlan));
+            Output.WriteLine("SSH config changes:");
+            Output.WriteLine(sshPreview.DiffText);
+            Output.WriteLine();
+            Output.WriteLine(FormatGitPlan(gitPlan));
         }
 
         if (!confirmed)
@@ -217,7 +227,7 @@ public sealed partial class CliApplication
                     sshPreview.HasChanges || gitPlan.HasChanges ? 1 : 0);
             }
 
-            Console.WriteLine("Preview only. Re-run with --yes to apply these changes.");
+            Output.WriteLine("Preview only. Re-run with --yes to apply these changes.");
             return sshPreview.HasChanges || gitPlan.HasChanges ? 1 : 0;
         }
 
@@ -243,7 +253,7 @@ public sealed partial class CliApplication
             return WriteJson(new { applied = true, ssh = sshPreview, git = gitPlan });
         }
 
-        Console.WriteLine("Configuration applied successfully.");
+        Output.WriteLine("Configuration applied successfully.");
         return 0;
     }
 
@@ -252,7 +262,7 @@ public sealed partial class CliApplication
         var preview = await _services.GitProfileService.BuildPreviewAsync(cancellationToken).ConfigureAwait(false);
         if (!_json)
         {
-            Console.WriteLine(preview.DiffText);
+            Output.WriteLine(preview.DiffText);
         }
 
         if (!args.Contains("--yes", StringComparer.OrdinalIgnoreCase))
@@ -262,7 +272,7 @@ public sealed partial class CliApplication
                 return WriteJson(new { applied = false, preview }, preview.HasChanges ? 1 : 0);
             }
 
-            Console.Error.WriteLine("Preview only. Re-run with --yes to apply Git Profile conditional config.");
+            Error.WriteLine("Preview only. Re-run with --yes to apply Git Profile conditional config.");
             return preview.HasChanges ? 2 : 0;
         }
 
@@ -278,8 +288,8 @@ public sealed partial class CliApplication
             return WriteJson(new { applied = true, result.Value });
         }
 
-        Console.WriteLine($"Applied {result.Value.ProfileFileCount} profile files.");
-        Console.WriteLine($"Master include: {result.Value.MasterConfigPath}");
+        Output.WriteLine($"Applied {result.Value.ProfileFileCount} profile files.");
+        Output.WriteLine($"Master include: {result.Value.MasterConfigPath}");
         return 0;
     }
 
@@ -287,7 +297,7 @@ public sealed partial class CliApplication
     {
         if (args.Length == 0)
         {
-            Console.Error.WriteLine("Usage: GitKeyRouter.exe resolve-profile <repository-directory> [--url <remote-url>]");
+            Error.WriteLine("Usage: GitKeyRouter.exe resolve-profile <repository-directory> [--url <remote-url>]");
             return 3;
         }
 
@@ -304,14 +314,14 @@ public sealed partial class CliApplication
 
         if (profile is null)
         {
-            Console.Error.WriteLine("No Git Profile rule matched the repository context.");
+            Error.WriteLine("No Git Profile rule matched the repository context.");
             return 1;
         }
 
-        Console.WriteLine($"Profile: {profile.DisplayName} ({profile.Id})");
-        Console.WriteLine($"user.name: {profile.UserName}");
-        Console.WriteLine($"user.email: {profile.UserEmail}");
-        Console.WriteLine($"Signing: {profile.EnableCommitSigning}");
+        Output.WriteLine($"Profile: {profile.DisplayName} ({profile.Id})");
+        Output.WriteLine($"user.name: {profile.UserName}");
+        Output.WriteLine($"user.email: {profile.UserEmail}");
+        Output.WriteLine($"Signing: {profile.EnableCommitSigning}");
         return 0;
     }
 
@@ -319,7 +329,7 @@ public sealed partial class CliApplication
     {
         if (args.Length == 0)
         {
-            Console.Error.WriteLine("Usage: GitKeyRouter.exe test-route <namespace> [--service <id-or-host>] [--url <repository-url>] [--connect]");
+            Error.WriteLine("Usage: GitKeyRouter.exe test-route <namespace> [--service <id-or-host>] [--url <repository-url>] [--connect]");
             return 3;
         }
 
@@ -339,14 +349,14 @@ public sealed partial class CliApplication
             return WriteJson(preview, preview.WasRewritten ? 0 : 1);
         }
 
-        Console.WriteLine($"Original:          {preview.OriginalUrl}");
-        Console.WriteLine($"Actual matched:    {preview.ActualMatchedPrefix ?? "<none>"}");
-        Console.WriteLine($"Actual base URL:   {preview.ActualMatchedBaseUrl ?? "<none>"}");
-        Console.WriteLine($"Actual rewritten:  {preview.ActualRewrittenUrl ?? preview.OriginalUrl}");
-        Console.WriteLine($"Expected matched:  {preview.ExpectedMatchedPrefix ?? "<none>"}");
-        Console.WriteLine($"Expected base URL: {preview.ExpectedMatchedBaseUrl ?? "<none>"}");
-        Console.WriteLine($"Expected rewrite:  {preview.ExpectedRewrittenUrl ?? preview.RewrittenUrl}");
-        Console.WriteLine($"Expected status:   {preview.ExpectationStatus}");
+        Output.WriteLine($"Original:          {preview.OriginalUrl}");
+        Output.WriteLine($"Actual matched:    {preview.ActualMatchedPrefix ?? "<none>"}");
+        Output.WriteLine($"Actual base URL:   {preview.ActualMatchedBaseUrl ?? "<none>"}");
+        Output.WriteLine($"Actual rewritten:  {preview.ActualRewrittenUrl ?? preview.OriginalUrl}");
+        Output.WriteLine($"Expected matched:  {preview.ExpectedMatchedPrefix ?? "<none>"}");
+        Output.WriteLine($"Expected base URL: {preview.ExpectedMatchedBaseUrl ?? "<none>"}");
+        Output.WriteLine($"Expected rewrite:  {preview.ExpectedRewrittenUrl ?? preview.RewrittenUrl}");
+        Output.WriteLine($"Expected status:   {preview.ExpectationStatus}");
 
         if (!args.Contains("--connect", StringComparer.OrdinalIgnoreCase))
         {
@@ -355,7 +365,7 @@ public sealed partial class CliApplication
 
         if (GetOption(args, "--url") is null)
         {
-            Console.Error.WriteLine("--connect requires an explicit --url so GitKeyRouter does not contact a fabricated repository.");
+            Error.WriteLine("--connect requires an explicit --url so GitKeyRouter does not contact a fabricated repository.");
             return 3;
         }
 
@@ -369,19 +379,19 @@ public sealed partial class CliApplication
         PrintSshBackend(backend.Value);
         if (!backend.Value.IsOpenSsh)
         {
-            Console.Error.WriteLine(
+            Error.WriteLine(
                 "Connection was not attempted because GitKeyRouter routing requires Git to use OpenSSH. " +
                 "Run 'ssh-backend --use-openssh' to preview the repair.");
             return 2;
         }
 
         var result = await _services.GitUrlRewriteService.TestRemoteRouteAsync(url, cancellationToken).ConfigureAwait(false);
-        Console.WriteLine($"Connection: {result.Classification}");
-        Console.WriteLine($"Password fallback: {result.PasswordFallbackDetected}");
+        Output.WriteLine($"Connection: {result.Classification}");
+        Output.WriteLine($"Password fallback: {result.PasswordFallbackDetected}");
         PrintProcess(result.Process);
         if (SshHostTrustService.IsHostKeyVerificationFailure(result.Process))
         {
-            Console.Error.WriteLine($"Preview the server fingerprints with: GitKeyRouter.exe trust-host {service.Id}");
+            Error.WriteLine($"Preview the server fingerprints with: GitKeyRouter.exe trust-host {service.Id}");
         }
 
         return result.AuthenticationSucceeded ? 0 : 2;
@@ -391,7 +401,7 @@ public sealed partial class CliApplication
     {
         if (args.Length == 0)
         {
-            Console.Error.WriteLine("Usage: GitKeyRouter.exe parse-url <repository-url>");
+            Error.WriteLine("Usage: GitKeyRouter.exe parse-url <repository-url>");
             return 3;
         }
 
@@ -403,15 +413,15 @@ public sealed partial class CliApplication
 
         if (result is null)
         {
-            Console.Error.WriteLine("The repository URL does not match any configured Git service.");
+            Error.WriteLine("The repository URL does not match any configured Git service.");
             return 1;
         }
 
-        Console.WriteLine($"Service:    {result.ServiceDisplayName} ({result.ServiceInstanceId})");
-        Console.WriteLine($"Format:     {result.PatternKind}");
-        Console.WriteLine($"Namespace:  {result.NamespacePath}");
-        Console.WriteLine($"Repository: {result.RepositoryName}");
-        Console.WriteLine($"Prefix:     {result.MatchedPrefix}");
+        Output.WriteLine($"Service:    {result.ServiceDisplayName} ({result.ServiceInstanceId})");
+        Output.WriteLine($"Format:     {result.PatternKind}");
+        Output.WriteLine($"Namespace:  {result.NamespacePath}");
+        Output.WriteLine($"Repository: {result.RepositoryName}");
+        Output.WriteLine($"Prefix:     {result.MatchedPrefix}");
         return 0;
     }
 
@@ -419,7 +429,7 @@ public sealed partial class CliApplication
     {
         if (args.Length == 0)
         {
-            Console.Error.WriteLine("Usage: GitKeyRouter.exe test-ssh <host-alias> [--verbose]");
+            Error.WriteLine("Usage: GitKeyRouter.exe test-ssh <host-alias> [--verbose]");
             return 3;
         }
 
@@ -438,14 +448,14 @@ public sealed partial class CliApplication
             var service = config.FindService(identity.ServiceInstanceId);
             if (service is null)
             {
-                Console.Error.WriteLine($"Git service '{identity.ServiceInstanceId}' was not found.");
+                Error.WriteLine($"Git service '{identity.ServiceInstanceId}' was not found.");
                 return 2;
             }
 
             result = await _services.SshKeyService.TestAsync(service, identity, verbose, cancellationToken).ConfigureAwait(false);
         }
 
-        Console.WriteLine($"Classification: {result.Classification}");
+        Output.WriteLine($"Classification: {result.Classification}");
         PrintProcess(result.Process);
         return result.Authenticated ? 0 : 2;
     }
@@ -454,7 +464,7 @@ public sealed partial class CliApplication
     {
         if (args.Length == 0)
         {
-            Console.Error.WriteLine("Usage: GitKeyRouter.exe test-service <id-or-host>");
+            Error.WriteLine("Usage: GitKeyRouter.exe test-service <id-or-host>");
             return 3;
         }
 
@@ -472,7 +482,7 @@ public sealed partial class CliApplication
             return 2;
         }
 
-        Console.WriteLine($"Classification: {result.Value.Classification}");
+        Output.WriteLine($"Classification: {result.Value.Classification}");
         PrintProcess(result.Value.Process);
         return result.Value.Authenticated ? 0 : 2;
     }
@@ -498,13 +508,13 @@ public sealed partial class CliApplication
 
         if (inspection.IsOpenSsh)
         {
-            Console.WriteLine("Git already uses OpenSSH; no setting was changed.");
+            Output.WriteLine("Git already uses OpenSSH; no setting was changed.");
             return 0;
         }
 
         if (!args.Contains("--yes", StringComparer.OrdinalIgnoreCase))
         {
-            Console.Error.WriteLine("Preview only. Re-run with --use-openssh --yes to write the global Git settings.");
+            Error.WriteLine("Preview only. Re-run with --use-openssh --yes to write the global Git settings.");
             return inspection.IsOpenSsh ? 0 : 1;
         }
 
@@ -517,7 +527,7 @@ public sealed partial class CliApplication
             return 2;
         }
 
-        Console.WriteLine("Git now uses OpenSSH.");
+        Output.WriteLine("Git now uses OpenSSH.");
         PrintSshBackend(apply.Value.After);
         return 0;
     }
@@ -526,7 +536,7 @@ public sealed partial class CliApplication
     {
         if (args.Length == 0)
         {
-            Console.Error.WriteLine("Usage: GitKeyRouter.exe trust-host <id-or-host> [--yes]");
+            Error.WriteLine("Usage: GitKeyRouter.exe trust-host <id-or-host> [--yes]");
             return 3;
         }
 
@@ -540,7 +550,7 @@ public sealed partial class CliApplication
         if (!backend.Value.IsOpenSsh)
         {
             PrintSshBackend(backend.Value);
-            Console.Error.WriteLine(
+            Error.WriteLine(
                 "Host trust was not changed because Git does not use OpenSSH. " +
                 "Run 'ssh-backend --use-openssh' first.");
             return 2;
@@ -563,31 +573,31 @@ public sealed partial class CliApplication
         }
 
         var preview = previewResult.Value;
-        Console.WriteLine($"Service:     {preview.ServiceDisplayName}");
-        Console.WriteLine($"Endpoint:    {preview.HostIdentifier}");
-        Console.WriteLine($"known_hosts: {preview.KnownHostsPath}");
-        Console.WriteLine($"Status:      {preview.Status}");
-        Console.WriteLine("Scanned server fingerprints:");
+        Output.WriteLine($"Service:     {preview.ServiceDisplayName}");
+        Output.WriteLine($"Endpoint:    {preview.HostIdentifier}");
+        Output.WriteLine($"known_hosts: {preview.KnownHostsPath}");
+        Output.WriteLine($"Status:      {preview.Status}");
+        Output.WriteLine("Scanned server fingerprints:");
         foreach (var key in preview.ScannedKeys)
         {
-            Console.WriteLine($"  {key.KeyType}\t{key.Fingerprint}");
+            Output.WriteLine($"  {key.KeyType}\t{key.Fingerprint}");
         }
 
         if (preview.Status == SshHostTrustStatus.Conflict)
         {
-            Console.Error.WriteLine("Existing known_hosts entries conflict with the scan; no automatic change is allowed.");
+            Error.WriteLine("Existing known_hosts entries conflict with the scan; no automatic change is allowed.");
             return 2;
         }
 
         if (preview.Status == SshHostTrustStatus.Trusted)
         {
-            Console.WriteLine("The scanned host keys are already trusted.");
+            Output.WriteLine("The scanned host keys are already trusted.");
             return 0;
         }
 
         if (!args.Contains("--yes", StringComparer.OrdinalIgnoreCase))
         {
-            Console.Error.WriteLine(
+            Error.WriteLine(
                 "Preview only. Verify every SHA-256 fingerprint through a trusted channel, then re-run with --yes.");
             return 1;
         }
@@ -601,25 +611,25 @@ public sealed partial class CliApplication
             return 2;
         }
 
-        Console.WriteLine($"Trusted {apply.Value.AddedKeyCount} host key(s).");
+        Output.WriteLine($"Trusted {apply.Value.AddedKeyCount} host key(s).");
         if (!string.IsNullOrWhiteSpace(apply.Value.BackupPath))
         {
-            Console.WriteLine($"Backup: {apply.Value.BackupPath}");
+            Output.WriteLine($"Backup: {apply.Value.BackupPath}");
         }
 
         return 0;
     }
 
-    private static void PrintSshBackend(GitSshBackendInspection inspection)
+    private void PrintSshBackend(GitSshBackendInspection inspection)
     {
-        Console.WriteLine($"Backend:          {inspection.DisplayName}");
-        Console.WriteLine($"Source:           {inspection.Source}");
-        Console.WriteLine($"Executable:       {inspection.EffectiveExecutable ?? "<Git default>"}");
-        Console.WriteLine($"Variant:          {inspection.EffectiveVariant ?? "<automatic>"}");
-        Console.WriteLine($"Detected OpenSSH: {inspection.SelectedOpenSshPath ?? "<not found>"}");
+        Output.WriteLine($"Backend:          {inspection.DisplayName}");
+        Output.WriteLine($"Source:           {inspection.Source}");
+        Output.WriteLine($"Executable:       {inspection.EffectiveExecutable ?? "<Git default>"}");
+        Output.WriteLine($"Variant:          {inspection.EffectiveVariant ?? "<automatic>"}");
+        Output.WriteLine($"Detected OpenSSH: {inspection.SelectedOpenSshPath ?? "<not found>"}");
         foreach (var blocker in inspection.EnvironmentBlockers)
         {
-            Console.WriteLine($"Environment blocker: {blocker}");
+            Output.WriteLine($"Environment blocker: {blocker}");
         }
     }
 
@@ -664,9 +674,9 @@ public sealed partial class CliApplication
         return 0;
     }
 
-    private static int UnknownCommand(string command)
+    private int UnknownCommand(string command)
     {
-        Console.Error.WriteLine($"Unknown command: {command}");
+        Error.WriteLine($"Unknown command: {command}");
         PrintHelp();
         return 3;
     }
@@ -708,25 +718,25 @@ public sealed partial class CliApplication
         return string.Join(Environment.NewLine, lines);
     }
 
-    private static void PrintProcess(ProcessResult result)
+    private void PrintProcess(ProcessResult result)
     {
-        Console.WriteLine($"Executable: {result.ExecutablePath}");
-        Console.WriteLine($"Arguments:  {string.Join(" | ", result.Arguments)}");
-        Console.WriteLine($"Exit code:  {result.ExitCode?.ToString() ?? "<none>"}");
-        Console.WriteLine($"Timed out:  {result.TimedOut}");
-        Console.WriteLine($"Cancelled:  {result.Cancelled}");
-        Console.WriteLine($"Kill failed: {result.KillFailed}");
-        Console.WriteLine($"stdout truncated: {result.StandardOutputTruncated}");
-        Console.WriteLine($"stderr truncated: {result.StandardErrorTruncated}");
+        Output.WriteLine($"Executable: {result.ExecutablePath}");
+        Output.WriteLine($"Arguments:  {string.Join(" | ", result.Arguments)}");
+        Output.WriteLine($"Exit code:  {result.ExitCode?.ToString() ?? "<none>"}");
+        Output.WriteLine($"Timed out:  {result.TimedOut}");
+        Output.WriteLine($"Cancelled:  {result.Cancelled}");
+        Output.WriteLine($"Kill failed: {result.KillFailed}");
+        Output.WriteLine($"stdout truncated: {result.StandardOutputTruncated}");
+        Output.WriteLine($"stderr truncated: {result.StandardErrorTruncated}");
         if (!string.IsNullOrWhiteSpace(result.TerminationError))
         {
-            Console.WriteLine($"Termination error: {result.TerminationError}");
+            Output.WriteLine($"Termination error: {result.TerminationError}");
         }
 
-        Console.WriteLine("stdout:");
-        Console.WriteLine(result.StandardOutput);
-        Console.WriteLine("stderr:");
-        Console.WriteLine(result.StandardError);
+        Output.WriteLine("stdout:");
+        Output.WriteLine(result.StandardOutput);
+        Output.WriteLine("stderr:");
+        Output.WriteLine(result.StandardError);
     }
 
     private void PrintErrors(OperationResult result)
@@ -737,10 +747,10 @@ public sealed partial class CliApplication
             return;
         }
 
-        Console.Error.WriteLine(result.Message);
+        Error.WriteLine(result.Message);
         foreach (var error in result.Errors)
         {
-            Console.Error.WriteLine(error);
+            Error.WriteLine(error);
         }
     }
 }

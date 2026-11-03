@@ -1,11 +1,13 @@
 using System.Diagnostics;
 using GitKeyRouter.App.Controls;
 using GitKeyRouter.App.Presentation;
+using GitKeyRouter.App.Cli;
+using GitKeyRouter.App.Coordination;
 using GitKeyRouter.App.Updates;
 
 namespace GitKeyRouter.App.Forms;
 
-public sealed class MainForm : Form
+public sealed partial class MainForm : Form
 {
     private static readonly Size MinimumPageSize = new(640, 520);
     private readonly ApplicationServices _services;
@@ -35,6 +37,7 @@ public sealed class MainForm : Form
     private Icon? _trayIconImage;
     private string _activePageKey = PageKeys.Overview;
     private bool _checkingForUpdates;
+    private bool _allowOperationExit;
     private bool _keepRunningInTray = true;
     private bool _checkForUpdatesOnStartup = true;
     private bool _exitRequested;
@@ -99,7 +102,7 @@ public sealed class MainForm : Form
         BuildTrayIcon();
         FormClosing += MainForm_FormClosing;
         Resize += MainForm_Resize;
-        Shown += async (_, _) =>
+        Shown += async (_, _) => await UiHelpers.RunOperationAsync(async () =>
         {
             await ShowPageAsync(PageKeys.Overview);
             await InitializePreferencesAsync();
@@ -117,9 +120,9 @@ public sealed class MainForm : Form
 
             if (_checkForUpdatesOnStartup)
             {
-                _ = CheckForUpdatesAsync(showCurrentMessage: false);
+                await CheckForUpdatesAsync(showCurrentMessage: false);
             }
-        };
+        }, this);
     }
 
     private Panel CreateSidebar()
@@ -188,7 +191,7 @@ public sealed class MainForm : Form
         brand.Controls.Add(mark);
         foreach (var control in new Control[] { brand, mark, brandText, title, subtitle })
         {
-            control.Click += async (_, _) => await ShowPageAsync(PageKeys.Overview);
+            control.Click += async (_, _) => await UiHelpers.RunOperationAsync(() => ShowPageAsync(PageKeys.Overview), this);
         }
 
         var navigation = new SidebarNavigationPanel
@@ -230,7 +233,7 @@ public sealed class MainForm : Form
         };
         button.FlatAppearance.MouseOverBackColor = Color.FromArgb(35, 48, 72);
         button.FlatAppearance.MouseDownBackColor = UiHelpers.NavigationActive;
-        button.Click += async (_, _) => await ShowPageAsync((string)button.Tag);
+        button.Click += async (_, _) => await UiHelpers.RunOperationAsync(() => ShowPageAsync((string)button.Tag), this);
         return button;
     }
 
@@ -359,11 +362,11 @@ public sealed class MainForm : Form
         {
             Name = "TrayCheckUpdatesMenuItem"
         };
-        _trayCheckUpdatesMenuItem.Click += async (_, _) =>
+        _trayCheckUpdatesMenuItem.Click += async (_, _) => await UiHelpers.RunOperationAsync(async () =>
         {
             ShowMainWindow();
             await CheckForUpdatesAsync(showCurrentMessage: true);
-        };
+        }, this);
         _trayExitMenuItem = new ToolStripMenuItem(AppLocalization.T("退出", "Exit"));
         _trayExitMenuItem.Click += (_, _) => RequestExit();
 
@@ -435,6 +438,13 @@ public sealed class MainForm : Form
 
     private void MainForm_FormClosing(object? sender, FormClosingEventArgs eventArgs)
     {
+        if (GuiOperationGate.Shared.IsBusy && !_allowOperationExit)
+        {
+            eventArgs.Cancel = true;
+            _exitRequested = false;
+            SetStatus(AppLocalization.T("正在完成操作，请稍后退出。", "Finishing an operation; exit again when it completes."));
+            return;
+        }
         if (TrayResidencePolicy.ShouldHideOnClose(KeepRunningInTray, _exitRequested, eventArgs.CloseReason))
         {
             eventArgs.Cancel = true;
@@ -487,8 +497,9 @@ public sealed class MainForm : Form
 
     internal void ActivateFromSecondaryInstance() => ShowMainWindow();
 
-    internal void RequestExit()
+    internal void RequestExit(bool afterCompletedUpdate = false)
     {
+        _allowOperationExit = afterCompletedUpdate;
         _exitRequested = true;
         ShowMainWindow();
         Close();
@@ -624,7 +635,7 @@ public sealed class MainForm : Form
             }
 
             SetStatus(AppLocalization.T("安装程序已就绪，正在退出以完成更新…", "Installer ready; closing GitKeyRouter to finish the update…"));
-            RequestExit();
+            RequestExit(afterCompletedUpdate: true);
             return;
         }
 

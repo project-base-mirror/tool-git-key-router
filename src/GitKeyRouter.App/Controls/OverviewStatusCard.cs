@@ -14,6 +14,11 @@ internal sealed class OverviewStatusCard : Panel
     private readonly Button _actionButton;
     private readonly Panel _actionPanel;
 
+    public OverviewStatusCard(string title, string actionText, Func<object?, EventArgs, Task> onClick)
+        : this(title, actionText, UiHelpers.OperationHandler(onClick))
+    {
+    }
+
     public OverviewStatusCard(string title, string actionText, EventHandler onClick)
     {
         Height = 84;

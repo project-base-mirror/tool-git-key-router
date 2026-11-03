@@ -799,6 +799,133 @@ public sealed class WinFormsSmokeTests
             Assert.Equal(GitProviderKind.Generic, service.ProviderKind);
         });
 
+    [Fact]
+    public void ConcurrentCliProcessesWriteThroughGuiAndRefreshItsSelection()
+        => StaTest.Run(() =>
+        {
+            using var fixture = new CliManagementTests.CliFixture();
+            using var guard = SingleInstanceGuard.TryAcquire(signalExistingInstance: false);
+            Assert.True(guard.IsPrimaryInstance);
+            using var main = new MainForm(fixture.Services);
+            _ = main.Handle;
+            Pump(ShowServicesPage(main));
+            var grid = Assert.Single(Descendants<DataGridView>(main));
+            var selected = grid.CurrentRow?.Cells["Id"].Value;
+            using var server = new GitKeyRouter.App.Coordination.GuiCommandServer(
+                SingleInstanceGuard.CommandPipeName, main.RunForwardedCommandAsync);
+            var writes = Enumerable.Range(0, 4).Select(index => CliProcessTests.RunChildAsync(
+                $$"""{"Id":"test-{{index}}","DisplayName":"Mock {{index}}","ProviderKind":"Generic","HostName":"mock{{index}}.test","WebBaseUrl":"https://mock{{index}}.test"}""",
+                "save-service", "--file", "-", "--yes", "--json")).ToArray();
+            var all = Task.WhenAll(writes);
+            Pump(all);
+            Assert.All(all.Result, result =>
+            {
+                Assert.Equal(0, result.ExitCode);
+                Assert.Empty(result.Error);
+                using var json = System.Text.Json.JsonDocument.Parse(result.Output);
+                Assert.Equal(0, json.RootElement.GetProperty("exitCode").GetInt32());
+            });
+            Assert.Equal(5, fixture.Store.LoadAsync().GetAwaiter().GetResult().GitServices.Count);
+            Assert.Equal(5, grid.Rows.Count);
+            Assert.Equal(selected, grid.CurrentRow?.Cells["Id"].Value);
+            Assert.False(File.Exists(fixture.Paths.SshConfigPath));
+            Assert.Empty(fixture.Git.Rules);
+        });
+
+    [Fact]
+    public void OpenGuiEditorBlocksCliWithoutChangingItsDraftThenAllowsRetry()
+        => StaTest.Run(() =>
+        {
+            using var fixture = new CliManagementTests.CliFixture();
+            using var guard = SingleInstanceGuard.TryAcquire(signalExistingInstance: false);
+            Assert.True(guard.IsPrimaryInstance);
+            using var main = new MainForm(fixture.Services);
+            _ = main.Handle;
+            Pump(ShowServicesPage(main));
+            using var server = new GitKeyRouter.App.Coordination.GuiCommandServer(
+                SingleInstanceGuard.CommandPipeName, main.RunForwardedCommandAsync);
+            var page = Assert.Single(Descendants<GitServicesControl>(main));
+            var create = Assert.Single(Descendants<Button>(page), button => button.Text is "新建" or "New");
+            Exception? editorFailure = null;
+            var checkedEditor = false;
+            using var timer = new System.Windows.Forms.Timer { Interval = 20 };
+            timer.Tick += async (_, _) =>
+            {
+                timer.Stop();
+                var editor = Application.OpenForms.OfType<GitServiceEditForm>().Single();
+                try
+                {
+                    var draft = Assert.IsType<TextBox>(Assert.Single(editor.Controls.Find("ServiceId", true)));
+                    draft.Text = "unsaved-id";
+                    var blocked = await CliProcessTests.RunChildAsync(null, "delete-route", "missing", "--yes", "--json");
+                    Assert.Equal(4, blocked.ExitCode);
+                    using var json = System.Text.Json.JsonDocument.Parse(blocked.Output);
+                    Assert.Equal("gui_busy", json.RootElement.GetProperty("error").GetProperty("code").GetString());
+                    Assert.Equal("unsaved-id", draft.Text);
+                    Assert.False(File.Exists(fixture.Paths.ConfigPath));
+                    checkedEditor = true;
+                }
+                catch (Exception exception) { editorFailure = exception; }
+                finally { editor.DialogResult = DialogResult.Cancel; editor.Close(); }
+            };
+            timer.Start();
+            typeof(Button).GetMethod("OnClick", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(create, [EventArgs.Empty]);
+            Assert.Null(editorFailure);
+            Assert.True(checkedEditor);
+            var retry = CliProcessTests.RunChildAsync(
+                """{"Id":"gitee.com","DisplayName":"Gitee","ProviderKind":"Gitee","HostName":"gitee.com","WebBaseUrl":"https://gitee.com"}""",
+                "save-service", "--file", "-", "--yes", "--json");
+            Pump(retry);
+            Assert.Equal(0, retry.Result.ExitCode);
+            Assert.NotNull(fixture.Store.LoadAsync().GetAwaiter().GetResult().FindService("gitee.com"));
+        });
+
+    [Fact]
+    public void AsyncToolbarActionHoldsOperationGateUntilItsAwaitCompletes()
+        => StaTest.Run(() =>
+        {
+            var started = false;
+            var finished = false;
+            var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var host = new Form();
+            var button = UiHelpers.Button("Mock operation", async (_, _) =>
+            {
+                started = true;
+                await resume.Task;
+                finished = true;
+            });
+            host.Controls.Add(button);
+            host.Show();
+            button.PerformClick();
+            Assert.True(started);
+            Assert.Null(GitKeyRouter.App.Coordination.GuiOperationGate.Shared.TryEnter());
+            Assert.False(host.Enabled);
+            resume.SetResult();
+            var until = DateTime.UtcNow.AddSeconds(10);
+            while ((!finished || !host.Enabled) && DateTime.UtcNow < until) Application.DoEvents();
+            Assert.True(finished);
+            using var next = GitKeyRouter.App.Coordination.GuiOperationGate.Shared.TryEnter();
+            Assert.NotNull(next);
+            Assert.True(host.Enabled);
+        });
+
+    private static Task ShowServicesPage(MainForm main)
+        => (Task)typeof(MainForm).GetMethod("ShowPageAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(main, [PageKeys.GitServices])!;
+
+    private static void Pump(Task task)
+    {
+        var until = DateTime.UtcNow.AddSeconds(30);
+        while (!task.IsCompleted && DateTime.UtcNow < until)
+        {
+            Application.DoEvents();
+            Thread.Sleep(5);
+        }
+        Assert.True(task.IsCompleted, "The UI operation did not finish.");
+        task.GetAwaiter().GetResult();
+    }
+
     private static class StaTest
     {
         public static void Run(Action action)

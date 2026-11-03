@@ -36,15 +36,15 @@ public sealed partial class CliApplication
             .Contains("--json", StringComparer.OrdinalIgnoreCase);
     }
 
-    public static int ReportError(string[] args, int exitCode, string code, string message)
+    public static int ReportError(string[] args, int exitCode, string code, string message, TextWriter? output = null, TextWriter? error = null)
     {
         if (WantsJson(args))
         {
-            WriteJsonResponse(NormalizeCommand(args), null, exitCode, new { code, message });
+            WriteJsonResponse(NormalizeCommand(args), null, exitCode, new { code, message }, output);
         }
         else
         {
-            Console.Error.WriteLine(SensitiveDataRedactor.Redact(message));
+            (error ?? Console.Error).WriteLine(SensitiveDataRedactor.Redact(message));
         }
 
         return exitCode;
@@ -52,12 +52,12 @@ public sealed partial class CliApplication
 
     private int WriteJson(object? data, int exitCode = 0, object? error = null)
     {
-        WriteJsonResponse(_command, data, exitCode, error);
+        WriteJsonResponse(_command, data, exitCode, error, Output);
         return exitCode;
     }
 
-    private static void WriteJsonResponse(string command, object? data, int exitCode, object? error)
-        => Console.WriteLine(JsonSerializer.Serialize(new { schemaVersion = 1, command, exitCode, data, error }, OutputJsonOptions));
+    private static void WriteJsonResponse(string command, object? data, int exitCode, object? error, TextWriter? output = null)
+        => (output ?? Console.Out).WriteLine(JsonSerializer.Serialize(new { schemaVersion = 1, command, exitCode, data, error }, OutputJsonOptions));
 
     // Validate before any service call. In particular, a typo next to --yes must never write.
     public static string? ValidateArguments(string[] args)
@@ -162,7 +162,7 @@ public sealed partial class CliApplication
 
         foreach (var template in templates)
         {
-            Console.WriteLine($"{template.name}\t{template.service.ProviderKind}\t{template.service.HostName}");
+            Output.WriteLine($"{template.name}\t{template.service.ProviderKind}\t{template.service.HostName}");
         }
 
         return 0;
@@ -178,7 +178,7 @@ public sealed partial class CliApplication
 
         foreach (var rule in config.GitProfileRules)
         {
-            Console.WriteLine($"{rule.Id}\t{rule.ProfileId}\t{rule.Kind}\t{rule.Pattern}\tEnabled={rule.Enabled}");
+            Output.WriteLine($"{rule.Id}\t{rule.ProfileId}\t{rule.Kind}\t{rule.Pattern}\tEnabled={rule.Enabled}");
         }
 
         return 0;
@@ -213,7 +213,7 @@ public sealed partial class CliApplication
             return exitCode;
         }
 
-        Console.WriteLine(result.Message);
+        Output.WriteLine(result.Message);
         return exitCode;
     }
 
@@ -228,11 +228,11 @@ public sealed partial class CliApplication
         return await _services.GitServiceService.SaveAsync(service, cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task<T> ReadRecordAsync<T>(string[] args, CancellationToken cancellationToken)
+    private async Task<T> ReadRecordAsync<T>(string[] args, CancellationToken cancellationToken)
     {
         var path = GetOption(args, "--file")!;
         var json = path == "-"
-            ? await Console.In.ReadToEndAsync(cancellationToken).ConfigureAwait(false)
+            ? await Input.ReadToEndAsync(cancellationToken).ConfigureAwait(false)
             : await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;

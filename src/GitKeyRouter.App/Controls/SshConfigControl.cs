@@ -222,7 +222,9 @@ public sealed class SshConfigControl : UserControl, IAsyncRefreshable
             return;
         }
 
-        using var editor = new TextViewForm("编辑 SSH Config 原始文本", _raw, editable: true);
+        // Freeze the editor's conflict baseline even if a refresh occurs while it is open.
+        var originalRaw = _raw;
+        using var editor = new TextViewForm("编辑 SSH Config 原始文本", originalRaw, editable: true);
         if (editor.ShowDialog(this) != DialogResult.OK)
         {
             return;
@@ -231,7 +233,7 @@ public sealed class SshConfigControl : UserControl, IAsyncRefreshable
         var updated = editor.ContentTextBox.Text;
         var preview = _services.SshConfigService.CreatePreview(
             "Replace SSH config raw text",
-            _raw,
+            originalRaw,
             updated);
         using var diff = new DiffPreviewForm("SSH Config 完整文件 diff", preview.DiffText, "确认保存完整文件");
         if (diff.ShowDialog(this) != DialogResult.OK)

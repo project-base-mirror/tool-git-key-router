@@ -178,11 +178,12 @@ public sealed class CliManagementTests
         Assert.Contains("[REDACTED]", result.GetProperty("data")[0].GetProperty("DisplayName").GetString());
     }
 
-    private sealed class CliFixture : IDisposable
+    internal sealed class CliFixture : IDisposable
     {
         private readonly TemporaryDirectory _temp = new();
         private readonly CliApplication _cli;
         public string Root => _temp.Path;
+        public ApplicationServices Services { get; }
         public TestAppPaths Paths { get; }
         public JsonAppConfigStore Store { get; }
         public NoOpBackupService Backup { get; } = new();
@@ -198,7 +199,7 @@ public sealed class CliManagementTests
             var runner = new StubProcessRunner(_ => throw new InvalidOperationException("No real process expected."));
             var tools = new FixedToolchainService("git.exe");
             var ssh = new SshConfigService(fileSystem, Paths, Backup, providers);
-            _cli = new CliApplication(new ApplicationServices
+            Services = new ApplicationServices
             {
                 Paths = Paths,
                 FileSystem = fileSystem,
@@ -223,8 +224,9 @@ public sealed class CliManagementTests
                 UpdateChecker = null!,
                 UpdateDownloadService = null!,
                 UpdateInstallerLauncher = null!,
-                Logger = null!
-            });
+                Logger = new GitKeyRouter.Infrastructure.Logging.SafeFileLogger(Paths)
+            };
+            _cli = new CliApplication(Services);
         }
 
         public async Task<JsonElement> SaveAsync(string kind, string json, int expectedExitCode = 0)

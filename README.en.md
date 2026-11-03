@@ -57,7 +57,7 @@ GitKeyRouter is designed around convenient management, transparent state, and re
 - Git rewrites are read and written precisely through `git config --global`; the complete `.gitconfig` is never replaced.
 - Dangerous operations show a text diff or structured change plan first.
 - A snapshot is created before changes, and restore operations create another safety snapshot before restoring.
-- The GUI and write-capable CLI commands used with `--yes` share a single-instance lock for the current Windows user. Read-only, preview, diagnostic, test, version, and help commands remain available while the GUI is running.
+- The GUI and confirmed CLI writes retain single-instance protection. While the GUI is running, writes are automatically forwarded to it, including while it resides in the tray. Read-only, preview, diagnostic, test, version, and help commands run independently.
 - Private-key blocks, credential URLs, Bearer values, common secret/token/ASKPASS assignments, and prefixed GitHub/GitLab tokens are redacted from logs. Logs rotate at 5 MB by default, retain three historical files, and never interrupt the primary operation when logging fails.
 
 ## System requirements
@@ -410,11 +410,18 @@ GitKeyRouter.exe help
 
 `apply` displays the SSH diff and Git rewrite plan by default. Changes are executed only with `--yes`. `apply-profiles` follows the same policy and displays the conditional Git Config diff by default.
 
-The GUI and confirmed `apply`, `apply-profiles`, `ssh-backend`, `trust-host`, `rename-service`, and all `save-*` / `delete-*` writes share the exclusive lock to prevent cross-process changes. Their preview modes and other read-only CLI commands do not acquire it. `version` / `--version` and `help` / `--help` return before configuration loading or application-service construction, so scripts and release validation can use them while the GUI is running.
+The GUI and confirmed `apply`, `apply-profiles`, `ssh-backend`, `trust-host`, `rename-service`, and all `save-*` / `delete-*` writes retain the exclusive lock and forward writes to the running GUI for serialized execution. Their preview modes and other read-only CLI commands do not acquire it. `version` / `--version` and `help` / `--help` return before configuration loading or application-service construction, so scripts and release validation can use them while the GUI is running.
 
 `test-route --connect` also requires a real `--url`, preventing the application from sending network requests for an invented repository.
 
 ### AI and script management
+
+### Writing while the GUI is running
+
+Starting with v0.4.28, `save-*`, `delete-*`, `rename-service`, `apply --yes`, `apply-profiles --yes`, and other confirmed writes can run while the GUI is open or in the tray. Output and exit codes stay the same. The GUI executes the existing services and refreshes the active page while preserving selection. JSON file paths are resolved in the CLI's working directory, and standard input is supported.
+
+An active editor, confirmation dialog, or GUI operation returns exit code 4 with `gui_busy`. Finish or cancel that operation and retry; **the GUI can remain open**. Coordination covers editing, backup, writing, verification, and rollback so stale forms cannot overwrite CLI changes. Without a GUI, the CLI still owns the exclusive instance. An older GUI or another exclusive process returns `instance_busy` rather than bypassing protection. If the pipe connection is interrupted, inspect the current configuration before retrying a write whose outcome may be unknown.
+
 
 AI runners can invoke the existing EXE without starting the GUI or configuring MCP: query JSON, save records, preview, then apply. `diagnose`, every `list-*` command, `parse-url`, `resolve-profile`, `test-route` (offline preview), `apply`, `apply-profiles`, and the new management commands support `--json`.
 
@@ -444,7 +451,7 @@ GitKeyRouter.exe delete-route team-route --yes --json
 
 The matching `delete-service`, `delete-identity`, `delete-route`, `delete-profile`, and `delete-profile-rule` commands take an **exact Id**, not a display name or HostAlias. Saves and deletes require `--yes`; without it they return 3 without writing or prompting. Deleting an identity never deletes key files. Deleting a profile also removes its rules. Services referenced by identities/routes cannot be deleted. These commands reuse existing validation, snapshot backups and concurrency checks and only change app records. To activate or remove materialized routing/profile settings, preview and run `apply --yes` / `apply-profiles --yes` separately. Apply recomputes the current plan; inspect a new preview if records change between commands.
 
-Close the GUI (including its tray icon) before writing; an active instance produces a structured `instance_busy` error. Invalid arguments are rejected before recovery or writes. Identity records contain key paths only; saving an identity does not read, create, import or delete keys. `test-route --json` rejects `--connect`; use the existing text command for an explicit network test.
+The GUI and tray may stay open while writing; an unfinished editor or operation produces a structured `gui_busy` error. Invalid arguments are rejected before recovery or writes. Identity records contain key paths only; saving an identity does not read, create, import or delete keys. `test-route --json` rejects `--connect`; use the existing text command for an explicit network test.
 
 The service editor now exposes an editable **Service ID** (read-only for built-in GitHub.com). Rename an existing custom service with `GitKeyRouter.exe rename-service <current-id> <new-id> --yes --json`. A single backed-up, concurrency-checked save updates identity, route, managed default-route ID, and profile references, rejects ID collisions, and preserves key paths and HostAlias. The suggested Gitee ID is `gitee.com`. Loading old configurations never silently renames them; new self-hosted templates derive a readable ID from the host when the ID is left blank.
 

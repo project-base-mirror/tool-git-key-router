@@ -44,7 +44,7 @@ public sealed class IdentitiesControl : UserControl, IAsyncRefreshable
         Controls.Add(_grid);
         Controls.Add(toolbar);
         Controls.Add(header);
-        _grid.CellDoubleClick += async (_, _) => await EditAsync();
+        _grid.CellDoubleClick += async (_, _) => await UiHelpers.RunOperationAsync(() => EditAsync(), this);
         UiHelpers.EnableStatusColors(
             _grid,
             nameof(IdentityRow.私钥),

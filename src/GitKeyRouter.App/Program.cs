@@ -1,4 +1,5 @@
 using GitKeyRouter.App.Cli;
+using GitKeyRouter.App.Coordination;
 using GitKeyRouter.App.Forms;
 using GitKeyRouter.App.Presentation;
 
@@ -26,7 +27,7 @@ internal static class Program
             : null;
         if (instanceGuard is { IsPrimaryInstance: false })
         {
-            return args.Length == 0 ? 0 : ReportExistingInstance(args);
+            return args.Length == 0 ? 0 : ForwardToGui(args);
         }
 
         ApplicationServices? services = null;
@@ -87,6 +88,7 @@ internal static class Program
                 });
             }
 
+            using var commandServer = new GuiCommandServer(SingleInstanceGuard.CommandPipeName, mainForm.RunForwardedCommandAsync);
             Application.Run(mainForm);
             return 0;
         }
@@ -111,10 +113,26 @@ internal static class Program
         }
     }
 
-    private static int ReportExistingInstance(string[] args)
+    private static int ForwardToGui(string[] args)
     {
         ConsoleBridge.Attach();
-        return CliApplication.ReportError(args, 4, "instance_busy",
-            "GitKeyRouter is already running for this Windows user. Close the GUI (including the tray) and retry this write.");
+        try
+        {
+            var request = GuiCommandPipe.CreateRequestAsync(args).GetAwaiter().GetResult();
+            var response = GuiCommandPipe.SendAsync(SingleInstanceGuard.CommandPipeName, request).GetAwaiter().GetResult();
+            Console.Out.Write(response.StandardOutput);
+            Console.Error.Write(response.StandardError);
+            return response.ExitCode;
+        }
+        catch (TimeoutException)
+        {
+            return CliApplication.ReportError(args, 4, "instance_busy",
+                "The current instance is busy or does not support CLI forwarding. Retry after its operation finishes; upgrade an older GUI to use forwarding.");
+        }
+        catch (Exception exception)
+        {
+            return CliApplication.ReportError(args, 2, "forwarding_failed",
+                $"Could not complete the forwarded command: {exception.Message}. If the connection was interrupted, inspect the current configuration before retrying.");
+        }
     }
 }

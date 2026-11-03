@@ -159,6 +159,17 @@ public sealed class SingleInstanceGuard : IDisposable
         }
     }
 
+    public static string CommandPipeName
+    {
+        get
+        {
+            using var process = System.Diagnostics.Process.GetCurrentProcess();
+            var scope = $"{CreateDefaultMutexName()}.{process.SessionId}";
+            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(scope)));
+            return $"GitKeyRouter.Commands.{hash[..24]}";
+        }
+    }
+
     private static string CreateDefaultMutexName()
     {
         var applicationDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);

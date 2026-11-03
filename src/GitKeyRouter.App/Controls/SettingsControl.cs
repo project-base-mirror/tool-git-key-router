@@ -43,25 +43,25 @@ public sealed class SettingsControl : UserControl, IAsyncRefreshable
 
         _simplifiedChineseButton = CreateOptionButton("SettingsLanguageChineseButton", "简体中文");
         _englishButton = CreateOptionButton("SettingsLanguageEnglishButton", "English");
-        _simplifiedChineseButton.Click += async (_, _) => await ChangeLanguageAsync(AppLanguage.SimplifiedChinese);
-        _englishButton.Click += async (_, _) => await ChangeLanguageAsync(AppLanguage.English);
+        _simplifiedChineseButton.Click += async (_, _) => await UiHelpers.RunOperationAsync(() => ChangeLanguageAsync(AppLanguage.SimplifiedChinese), this);
+        _englishButton.Click += async (_, _) => await UiHelpers.RunOperationAsync(() => ChangeLanguageAsync(AppLanguage.English), this);
         var languageActions = CreateActionPanel(_simplifiedChineseButton, _englishButton);
 
         _keepRunningInTrayToggle = CreateOptionButton("KeepRunningInTrayToggle", string.Empty, 126);
         _keepRunningInTrayToggle.AccessibleName = AppLocalization.T("系统托盘驻留", "System tray residence");
-        _keepRunningInTrayToggle.Click += async (_, _) => await ChangeTrayPreferenceAsync(!_keepRunningInTray);
+        _keepRunningInTrayToggle.Click += async (_, _) => await UiHelpers.RunOperationAsync(() => ChangeTrayPreferenceAsync(!_keepRunningInTray), this);
 
         _checkForUpdatesOnStartupToggle = CreateOptionButton("CheckForUpdatesOnStartupToggle", string.Empty, 126);
         _checkForUpdatesOnStartupToggle.AccessibleName = AppLocalization.T("启动时检查更新", "Check for updates on startup");
         _checkForUpdatesOnStartupToggle.Click += async (_, _) =>
-            await ChangeUpdatePreferenceAsync(!_checkForUpdatesOnStartup);
+            await UiHelpers.RunOperationAsync(() => ChangeUpdatePreferenceAsync(!_checkForUpdatesOnStartup), this);
 
         _checkForUpdatesButton = CreateOptionButton(
             "CheckForUpdatesButton",
             AppLocalization.T("立即检查更新", "Check now"),
             138);
         ApplyPrimaryStyle(_checkForUpdatesButton);
-        _checkForUpdatesButton.Click += async (_, _) => await CheckForUpdatesAsync();
+        _checkForUpdatesButton.Click += async (_, _) => await UiHelpers.RunOperationAsync(() => CheckForUpdatesAsync(), this);
         var updateActions = CreateActionPanel(_checkForUpdatesOnStartupToggle, _checkForUpdatesButton);
 
         var body = new TableLayoutPanel
