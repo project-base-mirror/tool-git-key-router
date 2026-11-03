@@ -811,6 +811,11 @@ public sealed class WinFormsSmokeTests
             Pump(ShowServicesPage(main));
             var grid = Assert.Single(Descendants<DataGridView>(main));
             var selected = grid.CurrentRow?.Cells["Id"].Value;
+            var transactionDirectory = Path.Combine(fixture.Services.GitProfileService.TransactionRootDirectory, "transaction-active");
+            Directory.CreateDirectory(transactionDirectory);
+            var journal = Path.Combine(transactionDirectory, "transaction.json");
+            const string activeJournal = """{"State":"applying","Files":[],"IncludePaths":[]}""";
+            File.WriteAllText(journal, activeJournal);
             using var server = new GitKeyRouter.App.Coordination.GuiCommandServer(
                 SingleInstanceGuard.CommandPipeName, main.RunForwardedCommandAsync);
             var writes = Enumerable.Range(0, 4).Select(index => CliProcessTests.RunChildAsync(
@@ -830,6 +835,7 @@ public sealed class WinFormsSmokeTests
             Assert.Equal(selected, grid.CurrentRow?.Cells["Id"].Value);
             Assert.False(File.Exists(fixture.Paths.SshConfigPath));
             Assert.Empty(fixture.Git.Rules);
+            Assert.Equal(activeJournal, File.ReadAllText(journal)); // Forwarding never runs another startup recovery.
         });
 
     [Fact]
@@ -839,13 +845,22 @@ public sealed class WinFormsSmokeTests
             using var fixture = new CliManagementTests.CliFixture();
             using var guard = SingleInstanceGuard.TryAcquire(signalExistingInstance: false);
             Assert.True(guard.IsPrimaryInstance);
+            fixture.Store.SaveAsync(new AppConfig
+            {
+                GitServices = [GitKeyRouter.Core.Services.GitServiceService.CreateTemplate("Gitee")]
+            }).GetAwaiter().GetResult();
+            var originalConfig = File.ReadAllText(fixture.Paths.ConfigPath);
             using var main = new MainForm(fixture.Services);
             _ = main.Handle;
             Pump(ShowServicesPage(main));
             using var server = new GitKeyRouter.App.Coordination.GuiCommandServer(
                 SingleInstanceGuard.CommandPipeName, main.RunForwardedCommandAsync);
             var page = Assert.Single(Descendants<GitServicesControl>(main));
-            var create = Assert.Single(Descendants<Button>(page), button => button.Text is "新建" or "New");
+            var grid = Assert.Single(Descendants<DataGridView>(page));
+            var selected = grid.Rows.Cast<DataGridViewRow>().Single(row => Equals(row.Cells["Id"].Value, "gitee.com"));
+            grid.CurrentCell = selected.Cells[0];
+            var create = Assert.Single(Descendants<Button>(page), button => button.Text is "编辑" or "Edit");
+            const string update = """{"Id":"gitee.com","DisplayName":"CLI updated","ProviderKind":"Gitee","HostName":"gitee.com","WebBaseUrl":"https://gitee.com"}""";
             Exception? editorFailure = null;
             var checkedEditor = false;
             using var timer = new System.Windows.Forms.Timer { Interval = 20 };
@@ -857,12 +872,12 @@ public sealed class WinFormsSmokeTests
                 {
                     var draft = Assert.IsType<TextBox>(Assert.Single(editor.Controls.Find("ServiceId", true)));
                     draft.Text = "unsaved-id";
-                    var blocked = await CliProcessTests.RunChildAsync(null, "delete-route", "missing", "--yes", "--json");
+                    var blocked = await CliProcessTests.RunChildAsync(update, "save-service", "--file", "-", "--yes", "--json");
                     Assert.Equal(4, blocked.ExitCode);
                     using var json = System.Text.Json.JsonDocument.Parse(blocked.Output);
                     Assert.Equal("gui_busy", json.RootElement.GetProperty("error").GetProperty("code").GetString());
                     Assert.Equal("unsaved-id", draft.Text);
-                    Assert.False(File.Exists(fixture.Paths.ConfigPath));
+                    Assert.Equal(originalConfig, File.ReadAllText(fixture.Paths.ConfigPath));
                     checkedEditor = true;
                 }
                 catch (Exception exception) { editorFailure = exception; }
@@ -874,11 +889,11 @@ public sealed class WinFormsSmokeTests
             Assert.Null(editorFailure);
             Assert.True(checkedEditor);
             var retry = CliProcessTests.RunChildAsync(
-                """{"Id":"gitee.com","DisplayName":"Gitee","ProviderKind":"Gitee","HostName":"gitee.com","WebBaseUrl":"https://gitee.com"}""",
+                update,
                 "save-service", "--file", "-", "--yes", "--json");
             Pump(retry);
             Assert.Equal(0, retry.Result.ExitCode);
-            Assert.NotNull(fixture.Store.LoadAsync().GetAwaiter().GetResult().FindService("gitee.com"));
+            Assert.Equal("CLI updated", fixture.Store.LoadAsync().GetAwaiter().GetResult().FindService("gitee.com")?.DisplayName);
         });
 
     [Fact]
