@@ -762,6 +762,43 @@ public sealed class WinFormsSmokeTests
             Assert.Equal("github.com", id.Text);
         });
 
+    [Fact]
+    public void GiteeTemplateSelectsVisibleGiteeProviderType()
+        => StaTest.Run(() =>
+        {
+            using var form = new GitServiceEditForm();
+            form.Show();
+            var template = Assert.IsType<ComboBox>(Assert.Single(form.Controls.Find("ServiceTemplate", true)));
+            var provider = Assert.IsType<ComboBox>(Assert.Single(form.Controls.Find("ServiceProviderKind", true)));
+            Assert.Contains(GitProviderKind.Gitee, provider.Items.Cast<GitProviderKind>());
+            template.SelectedItem = "Gitee";
+            Assert.Equal(GitProviderKind.Gitee, provider.SelectedItem);
+            Assert.IsType<Button>(form.AcceptButton).PerformClick();
+            Assert.Equal(GitProviderKind.Gitee, form.ResultService?.ProviderKind);
+            Assert.Equal("gitee.com", form.ResultService?.Id);
+        });
+
+    [Fact]
+    public void ExistingGenericServiceCanSelectGiteeWithoutLosingSettings()
+        => StaTest.Run(() =>
+        {
+            var service = GitKeyRouter.Core.Services.GitServiceService.CreateTemplate("Gitee");
+            service.ProviderKind = GitProviderKind.Generic;
+            service.Id = "gitea-local";
+            service.EnableExtendedSshUrlRewrites = false;
+            using var form = new GitServiceEditForm(service);
+            form.Show();
+            var provider = Assert.IsType<ComboBox>(Assert.Single(form.Controls.Find("ServiceProviderKind", true)));
+            Assert.True(provider.Enabled);
+            provider.SelectedItem = GitProviderKind.Gitee;
+            Assert.IsType<Button>(form.AcceptButton).PerformClick();
+            Assert.Equal(GitProviderKind.Gitee, form.ResultService?.ProviderKind);
+            Assert.Equal("gitea-local", form.ResultService?.Id);
+            Assert.Equal("gitee.com", form.ResultService?.HostName);
+            Assert.False(form.ResultService?.EnableExtendedSshUrlRewrites);
+            Assert.Equal(GitProviderKind.Generic, service.ProviderKind);
+        });
+
     private static class StaTest
     {
         public static void Run(Action action)

@@ -16,6 +16,7 @@ public sealed class CliManagementTests
         using var fixture = new CliFixture();
         var templates = await fixture.RunAsync("list-templates", "--json");
         var template = templates.GetProperty("data").EnumerateArray().Single(item => item.GetProperty("name").GetString() == "Gitee");
+        Assert.Equal("Gitee", template.GetProperty("service").GetProperty("ProviderKind").GetString());
         await fixture.SaveAsync("service", template.GetProperty("service").GetRawText());
         var identity = JsonSerializer.Serialize(new
         {
@@ -93,10 +94,10 @@ public sealed class CliManagementTests
         var renamed = await fixture.RunAsync("rename-service", "gitea-local", "gitee.com", "--yes", "--json");
         Assert.Equal(0, renamed.GetProperty("exitCode").GetInt32());
         Assert.Null((await fixture.Store.LoadAsync()).FindService("gitea-local"));
-        Assert.NotNull((await fixture.Store.LoadAsync()).FindService("gitee.com"));
+        Assert.Equal(GitProviderKind.Gitee, (await fixture.Store.LoadAsync()).FindService("gitee.com")?.ProviderKind);
         var collision = await fixture.RunAsync("rename-service", "gitee.com", "github.com", "--yes", "--json");
         Assert.Equal(2, collision.GetProperty("exitCode").GetInt32());
-        Assert.NotNull((await fixture.Store.LoadAsync()).FindService("gitee.com"));
+        Assert.Equal(GitProviderKind.Gitee, (await fixture.Store.LoadAsync()).FindService("gitee.com")?.ProviderKind);
         Assert.False(File.Exists(fixture.Paths.SshConfigPath));
     }
 

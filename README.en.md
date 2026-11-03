@@ -451,7 +451,7 @@ The service editor now exposes an editable **Service ID** (read-only for built-i
 Minimal record examples (replace paths with existing key paths; never put private-key contents here):
 
 ```json
-{"Id":"gitee.com","DisplayName":"Gitee","ProviderKind":"Generic","HostName":"gitee.com","SshPort":22,"SshUser":"git","WebBaseUrl":"https://gitee.com"}
+{"Id":"gitee.com","DisplayName":"Gitee","ProviderKind":"Gitee","HostName":"gitee.com","SshPort":22,"SshUser":"git","WebBaseUrl":"https://gitee.com"}
 ```
 
 ```json
@@ -470,7 +470,7 @@ Minimal record examples (replace paths with existing key paths; never put privat
 {"Id":"work-directory","ProfileId":"work","Kind":"Directory","Pattern":"C:/code/work/","Enabled":true}
 ```
 
-The Gitee template appears in both the GUI and `list-templates`. It uses `gitee.com:22`, SSH user `git`, and `https://gitee.com` through the existing Generic adapter. It does not use Gitea-specific rewrites, enable legacy RSA-SHA1 options, or automatically add a service to existing configurations. See the [official Gitee SSH documentation](https://help.gitee.com/repository/ssh-key).
+The Gitee template appears in both the GUI and `list-templates`. It uses `gitee.com:22`, SSH user `git`, and `https://gitee.com` with a directly selectable **Gitee** provider type and the same standard routing behavior as older Generic configurations. Existing Generic services whose host is exactly `gitee.com` are recognized as Gitee when loaded, preserving IDs and identity/route references. Read-only loading does not write the file; the type is persisted on a later explicit save. Other Generic services remain unchanged. The template does not use Gitea-specific rewrites, enable legacy RSA-SHA1 options, or automatically add a service to existing configurations. See the [official Gitee SSH documentation](https://help.gitee.com/repository/ssh-key).
 
 ### GitHub CLI multi-account routing
 

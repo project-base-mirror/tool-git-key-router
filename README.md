@@ -457,7 +457,7 @@ GitKeyRouter.exe delete-route team-route --yes --json
 最小记录示例（路径替换为已有密钥路径，不要放私钥正文）：
 
 ```json
-{"Id":"gitee.com","DisplayName":"Gitee","ProviderKind":"Generic","HostName":"gitee.com","SshPort":22,"SshUser":"git","WebBaseUrl":"https://gitee.com"}
+{"Id":"gitee.com","DisplayName":"Gitee","ProviderKind":"Gitee","HostName":"gitee.com","SshPort":22,"SshUser":"git","WebBaseUrl":"https://gitee.com"}
 ```
 
 ```json
@@ -476,7 +476,7 @@ GitKeyRouter.exe delete-route team-route --yes --json
 {"Id":"work-directory","ProfileId":"work","Kind":"Directory","Pattern":"C:/code/work/","Enabled":true}
 ```
 
-Gitee 模板同时出现在 GUI 快速模板和 `list-templates` 中，使用 `gitee.com:22`、SSH 用户 `git`、`https://gitee.com`，复用 Generic 适配器，不引入 Gitea 专属重写或旧 RSA-SHA1 选项。模板不会自动添加到现有配置。协议地址参考 [Gitee 官方说明](https://help.gitee.com/repository/ssh-key)。
+Gitee 模板同时出现在 GUI 快速模板和 `list-templates` 中，使用 `gitee.com:22`、SSH 用户 `git`、`https://gitee.com`，服务类型下拉框可直接选择 **Gitee**，使用与旧 Generic 配置相同的标准路由行为，不引入 Gitea 专属重写或旧 RSA-SHA1 选项。已有 Generic 且主机精确为 `gitee.com` 的配置在加载时识别为 Gitee，保留服务 ID、身份和路由引用；只读加载不写配置文件，后续显式保存时持久化类型。其他 Generic 服务不变，模板不会自动添加到现有配置。协议地址参考 [Gitee 官方说明](https://help.gitee.com/repository/ssh-key)。
 
 ### GitHub CLI 多账号路由
 

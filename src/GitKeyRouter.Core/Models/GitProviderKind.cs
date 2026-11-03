@@ -2,8 +2,9 @@ namespace GitKeyRouter.Core.Models;
 
 public enum GitProviderKind
 {
-    GitHub,
-    GitLab,
-    Gitea,
-    Generic
+    GitHub = 0,
+    GitLab = 1,
+    Gitea = 2,
+    Generic = 3,
+    Gitee = 4
 }

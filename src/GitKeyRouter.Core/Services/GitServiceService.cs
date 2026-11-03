@@ -286,7 +286,7 @@ public sealed class GitServiceService
             {
                 Id = "gitee.com",
                 DisplayName = "Gitee",
-                ProviderKind = GitProviderKind.Generic,
+                ProviderKind = GitProviderKind.Gitee,
                 HostName = "gitee.com",
                 SshPort = 22,
                 SshUser = "git",

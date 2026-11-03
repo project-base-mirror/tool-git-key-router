@@ -6,14 +6,14 @@ namespace GitKeyRouter.App.Forms;
 
 public sealed class GitServiceEditForm : Form
 {
-    private readonly ComboBox _template = new() { DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly ComboBox _template = new() { Name = "ServiceTemplate", DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly TextBox _id = new()
     {
         Name = "ServiceId",
         PlaceholderText = AppLocalization.T("新建时留空，按主机名生成", "Leave blank for a new service to use its host name")
     };
     private readonly TextBox _displayName = new();
-    private readonly ComboBox _provider = new() { DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly ComboBox _provider = new() { Name = "ServiceProviderKind", DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly TextBox _hostName = new();
     private readonly NumericUpDown _sshPort = new() { Minimum = 1, Maximum = 65535, Value = 22 };
     private readonly TextBox _sshUser = new() { Text = "git" };

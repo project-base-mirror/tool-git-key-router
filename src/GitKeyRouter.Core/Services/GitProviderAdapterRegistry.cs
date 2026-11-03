@@ -18,7 +18,8 @@ public sealed class GitProviderAdapterRegistry
             new GitHubProviderAdapter(),
             new GitLabProviderAdapter(),
             new GiteaProviderAdapter(),
-            new GenericGitProviderAdapter()
+            new GenericGitProviderAdapter(),
+            new GiteeProviderAdapter()
         ]);
 
     public IGitProviderAdapter Get(GitProviderKind kind)

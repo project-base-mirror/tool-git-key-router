@@ -65,6 +65,13 @@ public sealed class AppConfig
         foreach (var service in GitServices)
         {
             service.HostName = service.HostName.Trim();
+            // Versions through 0.4.26 represented Gitee with the Generic adapter.
+            // Preserve IDs and references; the Gitee adapter has identical routing behavior.
+            if (service.ProviderKind == GitProviderKind.Generic
+                && string.Equals(service.HostName, "gitee.com", StringComparison.OrdinalIgnoreCase))
+            {
+                service.ProviderKind = GitProviderKind.Gitee;
+            }
             service.WebBaseUrl = service.WebBaseUrl.TrimEnd('/');
             service.SshPort ??= 22;
         }
