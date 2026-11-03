@@ -32,15 +32,58 @@ public sealed partial class CliApplication
         }
 
         var command = NormalizeCommand(args);
-        return command is "apply" or "apply-profiles" or "ssh-backend" or "trust-host"
+        return (command is "apply" or "apply-profiles" or "ssh-backend" or "trust-host"
+            || IsManagementCommand(command))
             && args.Skip(1).Contains("--yes", StringComparer.OrdinalIgnoreCase);
     }
 
     public async Task<int> RunAsync(string[] args, CancellationToken cancellationToken = default)
     {
+        _command = NormalizeCommand(args);
+        _json = WantsJson(args);
+        try
+        {
+            var validationError = ValidateArguments(args);
+            if (validationError is not null)
+            {
+                return ReportError(args, 3, "invalid_arguments", validationError);
+            }
+
+            var commandArgs = _command.StartsWith("gh", StringComparison.Ordinal)
+                ? args
+                : args.Where(argument => !string.Equals(argument, "--json", StringComparison.OrdinalIgnoreCase)).ToArray();
+            return await RunCommandAsync(commandArgs, cancellationToken).ConfigureAwait(false);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return ReportError(args, 3, "invalid_json", "Expected a JSON record with known fields, valid types and string enum names. Input was not saved.");
+        }
+        catch (AppConfigConcurrencyException exception)
+        {
+            return ReportError(args, 4, "config_conflict", exception.Message);
+        }
+        catch (OperationCanceledException)
+        {
+            return ReportError(args, 2, "cancelled", "Operation cancelled; inspect the current configuration before retrying.");
+        }
+        catch (Exception exception)
+        {
+            return ReportError(args, 2, "operation_failed", exception.Message);
+        }
+    }
+
+    private async Task<int> RunCommandAsync(string[] args, CancellationToken cancellationToken)
+    {
         var command = NormalizeCommand(args);
+        if (IsManagementCommand(command))
+        {
+            return await ManageAsync(command, args[1..], cancellationToken).ConfigureAwait(false);
+        }
+
         return command switch
         {
+            "list-templates" => ListTemplates(),
+            "list-profile-rules" => await ListProfileRulesAsync(cancellationToken).ConfigureAwait(false),
             "diagnose" => await DiagnoseAsync(cancellationToken).ConfigureAwait(false),
             "list-services" => await ListServicesAsync(cancellationToken).ConfigureAwait(false),
             "list-identities" => await ListIdentitiesAsync(cancellationToken).ConfigureAwait(false),
@@ -69,6 +112,11 @@ public sealed partial class CliApplication
     private async Task<int> DiagnoseAsync(CancellationToken cancellationToken)
     {
         var report = await _services.DiagnosticService.RunAsync(cancellationToken).ConfigureAwait(false);
+        if (_json)
+        {
+            return WriteJson(report, report.ErrorCount > 0 ? 2 : report.WarningCount > 0 ? 1 : 0);
+        }
+
         Console.WriteLine(DiagnosticReportFormatter.Format(report));
         return report.ErrorCount > 0 ? 2 : report.WarningCount > 0 ? 1 : 0;
     }
@@ -76,6 +124,11 @@ public sealed partial class CliApplication
     private async Task<int> ListServicesAsync(CancellationToken cancellationToken)
     {
         var services = await _services.GitServiceService.ListAsync(cancellationToken).ConfigureAwait(false);
+        if (_json)
+        {
+            return WriteJson(services);
+        }
+
         foreach (var service in services)
         {
             Console.WriteLine($"{service.Id}\t{service.DisplayName}\t{service.ProviderKind}\t{service.SshUser}@{service.HostName}:{service.SshPort ?? 22}\t{service.WebBaseUrl}\tBuiltIn={service.IsBuiltIn}");
@@ -87,6 +140,11 @@ public sealed partial class CliApplication
     private async Task<int> ListIdentitiesAsync(CancellationToken cancellationToken)
     {
         var config = await _services.ConfigStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        if (_json)
+        {
+            return WriteJson(config.Identities);
+        }
+
         foreach (var identity in config.Identities.OrderBy(item => item.DisplayName, StringComparer.CurrentCultureIgnoreCase))
         {
             var service = config.FindService(identity.ServiceInstanceId);
@@ -99,6 +157,11 @@ public sealed partial class CliApplication
     private async Task<int> ListProfilesAsync(CancellationToken cancellationToken)
     {
         var config = await _services.ConfigStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        if (_json)
+        {
+            return WriteJson(config.GitProfiles);
+        }
+
         foreach (var profile in config.GitProfiles.OrderBy(item => item.DisplayName, StringComparer.CurrentCultureIgnoreCase))
         {
             var ruleCount = config.GitProfileRules.Count(item =>
@@ -113,6 +176,11 @@ public sealed partial class CliApplication
     private async Task<int> ListRoutesAsync(CancellationToken cancellationToken)
     {
         var config = await _services.ConfigStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        if (_json)
+        {
+            return WriteJson(config.RepositoryRoutes);
+        }
+
         foreach (var route in config.RepositoryRoutes
                      .OrderBy(item => item.ServiceInstanceId, StringComparer.OrdinalIgnoreCase)
                      .ThenBy(item => item.NamespacePath, StringComparer.OrdinalIgnoreCase))
@@ -133,13 +201,22 @@ public sealed partial class CliApplication
         var sshPreview = _services.SshConfigService.PreviewSynchronizeAll(raw, config);
         var gitPlan = await _services.GitUrlRewriteService.BuildReconcilePlanAsync(cancellationToken).ConfigureAwait(false);
 
-        Console.WriteLine("SSH config changes:");
-        Console.WriteLine(sshPreview.DiffText);
-        Console.WriteLine();
-        Console.WriteLine(FormatGitPlan(gitPlan));
+        if (!_json)
+        {
+            Console.WriteLine("SSH config changes:");
+            Console.WriteLine(sshPreview.DiffText);
+            Console.WriteLine();
+            Console.WriteLine(FormatGitPlan(gitPlan));
+        }
 
         if (!confirmed)
         {
+            if (_json)
+            {
+                return WriteJson(new { applied = false, ssh = sshPreview, git = gitPlan },
+                    sshPreview.HasChanges || gitPlan.HasChanges ? 1 : 0);
+            }
+
             Console.WriteLine("Preview only. Re-run with --yes to apply these changes.");
             return sshPreview.HasChanges || gitPlan.HasChanges ? 1 : 0;
         }
@@ -161,6 +238,11 @@ public sealed partial class CliApplication
             return 2;
         }
 
+        if (_json)
+        {
+            return WriteJson(new { applied = true, ssh = sshPreview, git = gitPlan });
+        }
+
         Console.WriteLine("Configuration applied successfully.");
         return 0;
     }
@@ -168,9 +250,18 @@ public sealed partial class CliApplication
     private async Task<int> ApplyProfilesAsync(string[] args, CancellationToken cancellationToken)
     {
         var preview = await _services.GitProfileService.BuildPreviewAsync(cancellationToken).ConfigureAwait(false);
-        Console.WriteLine(preview.DiffText);
+        if (!_json)
+        {
+            Console.WriteLine(preview.DiffText);
+        }
+
         if (!args.Contains("--yes", StringComparer.OrdinalIgnoreCase))
         {
+            if (_json)
+            {
+                return WriteJson(new { applied = false, preview }, preview.HasChanges ? 1 : 0);
+            }
+
             Console.Error.WriteLine("Preview only. Re-run with --yes to apply Git Profile conditional config.");
             return preview.HasChanges ? 2 : 0;
         }
@@ -180,6 +271,11 @@ public sealed partial class CliApplication
         {
             PrintErrors(result);
             return 2;
+        }
+
+        if (_json)
+        {
+            return WriteJson(new { applied = true, result.Value });
         }
 
         Console.WriteLine($"Applied {result.Value.ProfileFileCount} profile files.");
@@ -201,6 +297,11 @@ public sealed partial class CliApplication
             config,
             args[0],
             remoteUrl is null ? [] : [remoteUrl]);
+        if (_json)
+        {
+            return WriteJson(profile, profile is null ? 1 : 0);
+        }
+
         if (profile is null)
         {
             Console.Error.WriteLine("No Git Profile rule matched the repository context.");
@@ -227,13 +328,17 @@ public sealed partial class CliApplication
         var service = ResolveService(config, GetOption(args, "--service"));
         if (service is null)
         {
-            Console.Error.WriteLine("The selected Git service was not found.");
-            return 3;
+            return ReportError(_json ? [_command, "--json"] : [_command], 3, "not_found", "The selected Git service was not found.");
         }
 
         var url = GetOption(args, "--url")
             ?? $"{service.WebBaseUrl.TrimEnd('/')}/{namespacePath}/__route_preview__.git";
         var preview = await _services.GitUrlRewriteService.PreviewAsync(url, cancellationToken).ConfigureAwait(false);
+        if (_json)
+        {
+            return WriteJson(preview, preview.WasRewritten ? 0 : 1);
+        }
+
         Console.WriteLine($"Original:          {preview.OriginalUrl}");
         Console.WriteLine($"Actual matched:    {preview.ActualMatchedPrefix ?? "<none>"}");
         Console.WriteLine($"Actual base URL:   {preview.ActualMatchedBaseUrl ?? "<none>"}");
@@ -291,6 +396,11 @@ public sealed partial class CliApplication
         }
 
         var result = await _services.GitUrlRewriteService.ParseRemoteUrlAsync(args[0], cancellationToken).ConfigureAwait(false);
+        if (_json)
+        {
+            return WriteJson(result, result is null ? 1 : 0);
+        }
+
         if (result is null)
         {
             Console.Error.WriteLine("The repository URL does not match any configured Git service.");
@@ -352,8 +462,7 @@ public sealed partial class CliApplication
         var service = ResolveService(config, args[0]);
         if (service is null)
         {
-            Console.Error.WriteLine("The selected Git service was not found.");
-            return 3;
+            return ReportError(_json ? [_command, "--json"] : [_command], 3, "not_found", "The selected Git service was not found.");
         }
 
         var result = await _services.GitServiceService.TestConnectionAsync(service, cancellationToken).ConfigureAwait(false);
@@ -441,8 +550,7 @@ public sealed partial class CliApplication
         var service = ResolveService(config, args[0]);
         if (service is null)
         {
-            Console.Error.WriteLine("The selected Git service was not found.");
-            return 3;
+            return ReportError(_json ? [_command, "--json"] : [_command], 3, "not_found", "The selected Git service was not found.");
         }
 
         var previewResult = await _services.SshHostTrustService
@@ -524,6 +632,13 @@ public sealed partial class CliApplication
     private static int PrintHelp()
     {
         Console.WriteLine("GitKeyRouter commands:");
+        Console.WriteLine("  list-templates [--json]");
+        Console.WriteLine("  list-profile-rules [--json]");
+        Console.WriteLine("  save-service|save-identity|save-route|save-profile|save-profile-rule --file <record.json|-> --yes [--json]");
+        Console.WriteLine("  delete-service|delete-identity|delete-route|delete-profile|delete-profile-rule <id> --yes [--json]");
+        Console.WriteLine("  Saves replace records by explicit Id; deletes use exact Id. These edit app records; use apply/apply-profiles separately.");
+        Console.WriteLine("  --json: supported for diagnose, list-*, parse-url, resolve-profile, test-route (preview), apply and apply-profiles.");
+        Console.WriteLine("  JSON envelope: schemaVersion, command, exitCode, data, error. Exit 0=success, 1=preview/no match/warnings, 2=failure, 3=invalid input, 4=busy/conflict.");
         Console.WriteLine("  diagnose");
         Console.WriteLine("  list-services");
         Console.WriteLine("  list-identities");
@@ -613,8 +728,14 @@ public sealed partial class CliApplication
         Console.WriteLine(result.StandardError);
     }
 
-    private static void PrintErrors(OperationResult result)
+    private void PrintErrors(OperationResult result)
     {
+        if (_json)
+        {
+            WriteJson(null, 2, new { code = "operation_failed", message = result.Message, details = result.Errors });
+            return;
+        }
+
         Console.Error.WriteLine(result.Message);
         foreach (var error in result.Errors)
         {

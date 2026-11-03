@@ -10,14 +10,14 @@
 
 GitKeyRouter is a local desktop application for Windows 10 and Windows 11 that centrally manages:
 
-- GitHub.com, GitLab.com, self-hosted GitLab, Gitea, and generic Git service instances
+- GitHub.com, GitLab.com, self-hosted GitLab, Gitee, Gitea, and generic Git service instances
 - Multiple SSH identities, accounts, and key paths for each service
 - Service-specific HostAlias entries generated in `%USERPROFILE%\.ssh\config`
 - Default-identity fallback routing for each Git service plus precise Owner / Repository routing through global `url.*.insteadOf` Git configuration
 - Git Profiles that automatically select `user.name`, `user.email`, and signing keys by directory or remote URL
 - Diffs, command output, backups, and selective restore before configuration changes
 - GitHub CLI API identity isolation and selection from the repository SSH HostAlias
-- A WinForms GUI and a simple CLI that can also be invoked by DevRunner
+- A WinForms GUI and a JSON management CLI for AI runners and DevRunner
 
 The project uses C#, .NET 10, and WinForms without a database, WebView, Node.js, or Electron. Core Git/SSH routing does not call hosting-provider APIs. The optional GitHub CLI wrapper only launches the user-installed `gh.exe`; GitHub CLI and the operating system own OAuth login and credential storage, and GitKeyRouter never handles the token.
 
@@ -406,9 +406,65 @@ GitKeyRouter.exe help
 
 `apply` displays the SSH diff and Git rewrite plan by default. Changes are executed only with `--yes`. `apply-profiles` follows the same policy and displays the conditional Git Config diff by default.
 
-The GUI and confirmed `apply`, `apply-profiles`, `ssh-backend`, and `trust-host` writes share the exclusive lock to prevent cross-process changes. Their preview modes and other read-only CLI commands do not acquire it. `version` / `--version` and `help` / `--help` return before configuration loading or application-service construction, so scripts and release validation can use them while the GUI is running.
+The GUI and confirmed `apply`, `apply-profiles`, `ssh-backend`, `trust-host`, and all `save-*` / `delete-*` writes share the exclusive lock to prevent cross-process changes. Their preview modes and other read-only CLI commands do not acquire it. `version` / `--version` and `help` / `--help` return before configuration loading or application-service construction, so scripts and release validation can use them while the GUI is running.
 
 `test-route --connect` also requires a real `--url`, preventing the application from sending network requests for an invented repository.
+
+### AI and script management
+
+AI runners can invoke the existing EXE without starting the GUI or configuring MCP: query JSON, save records, preview, then apply. `diagnose`, every `list-*` command, `parse-url`, `resolve-profile`, `test-route` (offline preview), `apply`, `apply-profiles`, and the new management commands support `--json`.
+
+JSON mode writes one stdout object: `{"schemaVersion":1,"command":"list-services","exitCode":0,"data":[],"error":null}`. Model properties in `data` use PascalCase and enums use string names. Errors include `error.code` / `message`, plus `details` for validation failures. Exit codes: `0` success, `1` pending changes/no match/diagnostic warnings, `2` operation or validation failure, `3` invalid arguments or JSON, `4` another writer/GUI is active or configuration changed. Existing `gh-* --json` and text commands retain their output and exit-code contracts.
+
+```powershell
+GitKeyRouter.exe list-templates --json
+GitKeyRouter.exe list-services --json
+GitKeyRouter.exe list-identities --json
+GitKeyRouter.exe list-routes --json
+GitKeyRouter.exe list-profiles --json
+GitKeyRouter.exe list-profile-rules --json
+GitKeyRouter.exe save-service --file gitee.json --yes --json
+GitKeyRouter.exe save-identity --file identity.json --yes --json
+GitKeyRouter.exe save-route --file route.json --yes --json
+GitKeyRouter.exe test-route team --service gitee.com --url https://gitee.com/team/repo.git --json
+GitKeyRouter.exe apply --json
+GitKeyRouter.exe apply --yes --json
+GitKeyRouter.exe save-profile --file profile.json --yes --json
+GitKeyRouter.exe save-profile-rule --file rule.json --yes --json
+GitKeyRouter.exe apply-profiles --json
+GitKeyRouter.exe apply-profiles --yes --json
+GitKeyRouter.exe delete-route team-route --yes --json
+```
+
+`save-service`, `save-identity`, `save-route`, `save-profile`, and `save-profile-rule` accept a **complete record** from a UTF-8 JSON file, or stdin with `--file -`. Supply an explicit stable `Id`. Saving the same Id replaces that record; omitted fields take model defaults. To edit an existing record, retrieve the whole record from the corresponding `list-* --json` response's `data` first. Do not submit the response envelope as a record. Unknown/duplicate properties, invalid enums, and null for non-nullable fields are rejected.
+
+The matching `delete-service`, `delete-identity`, `delete-route`, `delete-profile`, and `delete-profile-rule` commands take an **exact Id**, not a display name or HostAlias. Saves and deletes require `--yes`; without it they return 3 without writing or prompting. Deleting an identity never deletes key files. Deleting a profile also removes its rules. Services referenced by identities/routes cannot be deleted. These commands reuse existing validation, snapshot backups and concurrency checks and only change app records. To activate or remove materialized routing/profile settings, preview and run `apply --yes` / `apply-profiles --yes` separately. Apply recomputes the current plan; inspect a new preview if records change between commands.
+
+Close the GUI (including its tray icon) before writing; an active instance produces a structured `instance_busy` error. Invalid arguments are rejected before recovery or writes. Identity records contain key paths only; saving an identity does not read, create, import or delete keys. `test-route --json` rejects `--connect`; use the existing text command for an explicit network test.
+
+Minimal record examples (replace paths with existing key paths; never put private-key contents here):
+
+```json
+{"Id":"gitee.com","DisplayName":"Gitee","ProviderKind":"Generic","HostName":"gitee.com","SshPort":22,"SshUser":"git","WebBaseUrl":"https://gitee.com"}
+```
+
+```json
+{"Id":"gitee-work","ServiceInstanceId":"gitee.com","DisplayName":"Gitee Work","AccountName":"your-account","HostAlias":"gitee-work","PrivateKeyPath":"C:/Users/you/.ssh/id_ed25519_gitee","PublicKeyPath":"C:/Users/you/.ssh/id_ed25519_gitee.pub"}
+```
+
+```json
+{"Id":"team-route","ServiceInstanceId":"gitee.com","Scope":"Owner","NamespacePath":"team","IdentityId":"gitee-work","Enabled":true}
+```
+
+```json
+{"Id":"work","DisplayName":"Work","UserName":"Your Name","UserEmail":"you@example.com"}
+```
+
+```json
+{"Id":"work-directory","ProfileId":"work","Kind":"Directory","Pattern":"C:/code/work/","Enabled":true}
+```
+
+The Gitee template appears in both the GUI and `list-templates`. It uses `gitee.com:22`, SSH user `git`, and `https://gitee.com` through the existing Generic adapter. It does not use Gitea-specific rewrites, enable legacy RSA-SHA1 options, or automatically add a service to existing configurations. See the [official Gitee SSH documentation](https://help.gitee.com/repository/ssh-key).
 
 ### GitHub CLI multi-account routing
 

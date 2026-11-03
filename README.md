@@ -10,14 +10,14 @@
 
 GitKeyRouter 是一个面向 Windows 10 / Windows 11 的本地桌面工具，用于统一管理：
 
-- GitHub.com、GitLab.com、自建 GitLab、Gitea 和通用 Git 服务实例
+- GitHub.com、GitLab.com、自建 GitLab、Gitee、Gitea 和通用 Git 服务实例
 - 每个服务下的多个 SSH 身份、账号和密钥路径
 - `%USERPROFILE%\.ssh\config` 中按服务生成的 HostAlias
 - 各 Git 服务的默认身份回退路由，以及 Owner / Repository 精确路由的 `url.*.insteadOf` 全局 Git 配置
 - 按目录或远程 URL 自动选择 `user.name`、`user.email` 和签名密钥的 Git Profiles
 - 配置修改前的 diff、命令输出、备份和选择性恢复
 - 根据仓库 SSH HostAlias 隔离并选择 GitHub CLI API 身份
-- GUI 与 DevRunner 可调用的简单 CLI
+- GUI 与 AI / DevRunner 可调用的 JSON 管理 CLI
 
 项目使用 C#、.NET 10 和 WinForms，不使用数据库、WebView、Node.js 或 Electron。核心 Git/SSH 路由不调用托管平台 API；可选的 GitHub CLI 包装功能只启动用户安装的 `gh.exe`，OAuth 登录和凭据存储均由 GitHub CLI 与操作系统负责，GitKeyRouter 不接触 Token。
 
@@ -412,9 +412,65 @@ GitKeyRouter.exe help
 
 配置写入会校验加载时的文件存在状态和 SHA-256；如果配置被其他程序替换或编辑，本次保存会拒绝覆盖并要求重新加载。Git rewrite 计划也保存所有受影响 key 在预览时的精确有序值，应用时只要这些值发生变化就拒绝旧计划；计划外 key 的变化不受影响。
 
-GUI 与带 `--yes` 的 `apply` / `apply-profiles` / `ssh-backend` / `trust-host` 共享排他锁，防止跨进程并发写入。上述命令的预览模式及其余只读 CLI 不取得该锁；`version` / `--version` 和 `help` / `--help` 还会在加载配置与创建应用服务之前直接返回，因此 GUI 运行时仍可用于脚本和发布验证。
+GUI 与带 `--yes` 的 `apply` / `apply-profiles` / `ssh-backend` / `trust-host` 及全部 `save-*` / `delete-*` 共享排他锁，防止跨进程并发写入。上述命令的预览模式及其余只读 CLI 不取得该锁；`version` / `--version` 和 `help` / `--help` 还会在加载配置与创建应用服务之前直接返回，因此 GUI 运行时仍可用于脚本和发布验证。
 
 `test-route --connect` 必须同时提供真实 `--url`，避免程序对虚构仓库发起网络请求。
+
+### AI 与脚本管理
+
+无需启动 GUI 或配置 MCP。AI 可以调用现有 EXE，先查询 JSON，再保存记录、预览并应用。`diagnose`、全部 `list-*`、`parse-url`、`resolve-profile`、`test-route`（离线预览）、`apply` 和 `apply-profiles` 支持 `--json`；新管理命令也支持。
+
+JSON 模式在 stdout 输出一个对象：`{"schemaVersion":1,"command":"list-services","exitCode":0,"data":[],"error":null}`。`data` 保留模型的 PascalCase 属性，枚举使用名称字符串。错误提供 `error.code` / `message`，验证错误还提供 `details`。退出码：`0` 成功，`1` 有待应用变更/未匹配/诊断警告，`2` 执行或验证失败，`3` 参数或 JSON 无效，`4` GUI/其他写进程占用或配置冲突。已有 `gh-* --json` 和纯文本命令保留原有输出及退出码约定。
+
+```powershell
+GitKeyRouter.exe list-templates --json
+GitKeyRouter.exe list-services --json
+GitKeyRouter.exe list-identities --json
+GitKeyRouter.exe list-routes --json
+GitKeyRouter.exe list-profiles --json
+GitKeyRouter.exe list-profile-rules --json
+GitKeyRouter.exe save-service --file gitee.json --yes --json
+GitKeyRouter.exe save-identity --file identity.json --yes --json
+GitKeyRouter.exe save-route --file route.json --yes --json
+GitKeyRouter.exe test-route team --service gitee.com --url https://gitee.com/team/repo.git --json
+GitKeyRouter.exe apply --json
+GitKeyRouter.exe apply --yes --json
+GitKeyRouter.exe save-profile --file profile.json --yes --json
+GitKeyRouter.exe save-profile-rule --file rule.json --yes --json
+GitKeyRouter.exe apply-profiles --json
+GitKeyRouter.exe apply-profiles --yes --json
+GitKeyRouter.exe delete-route team-route --yes --json
+```
+
+`save-service` / `save-identity` / `save-route` / `save-profile` / `save-profile-rule` 从 UTF-8 JSON 文件读取**完整记录**，也可用 `--file -` 从标准输入读取。必须显式提供稳定的 `Id`；同 Id 再次保存会替换该记录，省略字段使用模型默认值，所以编辑现有记录时先从对应 `list-* --json` 的 `data` 取出整条记录并修改。不要把响应外层对象当记录提交。拒绝未知属性、重复属性、无效枚举及非空字段的 null。
+
+对应的 `delete-service` / `delete-identity` / `delete-route` / `delete-profile` / `delete-profile-rule` 接受**精确 Id**，不按显示名或 HostAlias 删除。保存和删除都必须带 `--yes`；缺少确认会返回 3 且不写入，没有交互式询问。删除身份不删密钥文件，删除 Profile 同时删除其规则；仍被身份/路由引用的服务无法删除。保存/删除遵循现有校验、快照备份及并发版本检查，仅修改应用记录；路由和 Profile 生效或撤销仍需分别预览并执行 `apply --yes`、`apply-profiles --yes`。两次命令之间若配置被编辑，应用会重新计算当前计划，请重新检查预览。
+
+写入前请关闭 GUI（包括托盘），占用时返回结构化的 `instance_busy` 错误。参数错误在启动恢复和写入前被拒绝。配置、身份列表仅包含密钥路径，不读取密钥正文；保存身份也不会创建、导入或删除密钥。`test-route --json` 不接受 `--connect`，需要联网测试时单独使用现有文本命令。
+
+最小记录示例（路径替换为已有密钥路径，不要放私钥正文）：
+
+```json
+{"Id":"gitee.com","DisplayName":"Gitee","ProviderKind":"Generic","HostName":"gitee.com","SshPort":22,"SshUser":"git","WebBaseUrl":"https://gitee.com"}
+```
+
+```json
+{"Id":"gitee-work","ServiceInstanceId":"gitee.com","DisplayName":"Gitee Work","AccountName":"your-account","HostAlias":"gitee-work","PrivateKeyPath":"C:/Users/you/.ssh/id_ed25519_gitee","PublicKeyPath":"C:/Users/you/.ssh/id_ed25519_gitee.pub"}
+```
+
+```json
+{"Id":"team-route","ServiceInstanceId":"gitee.com","Scope":"Owner","NamespacePath":"team","IdentityId":"gitee-work","Enabled":true}
+```
+
+```json
+{"Id":"work","DisplayName":"Work","UserName":"Your Name","UserEmail":"you@example.com"}
+```
+
+```json
+{"Id":"work-directory","ProfileId":"work","Kind":"Directory","Pattern":"C:/code/work/","Enabled":true}
+```
+
+Gitee 模板同时出现在 GUI 快速模板和 `list-templates` 中，使用 `gitee.com:22`、SSH 用户 `git`、`https://gitee.com`，复用 Generic 适配器，不引入 Gitea 专属重写或旧 RSA-SHA1 选项。模板不会自动添加到现有配置。协议地址参考 [Gitee 官方说明](https://help.gitee.com/repository/ssh-key)。
 
 ### GitHub CLI 多账号路由
 

@@ -169,6 +169,7 @@ public sealed class GitServiceService
         "Gitea Local",
         "Gitea Cloud",
         "GitLab.com",
+        "Gitee",
         "自建 GitLab",
         "自建 Gitea",
         "Gogs",
@@ -180,6 +181,16 @@ public sealed class GitServiceService
     public static GitServiceInstance CreateTemplate(string template)
         => template switch
         {
+            "Gitee" => new GitServiceInstance
+            {
+                Id = "gitee.com",
+                DisplayName = "Gitee",
+                ProviderKind = GitProviderKind.Generic,
+                HostName = "gitee.com",
+                SshPort = 22,
+                SshUser = "git",
+                WebBaseUrl = "https://gitee.com"
+            },
             "GitLab.com" => new GitServiceInstance
             {
                 DisplayName = "GitLab.com",

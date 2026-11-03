@@ -44,6 +44,16 @@ public sealed class CliCommandPolicyTests
     }
 
     [Theory]
+    [InlineData("save-service")]
+    [InlineData("SAVE-IDENTITY")]
+    [InlineData("save-route")]
+    [InlineData("save-profile")]
+    [InlineData("save-profile-rule")]
+    [InlineData("delete-service")]
+    [InlineData("delete-identity")]
+    [InlineData("delete-route")]
+    [InlineData("delete-profile")]
+    [InlineData("delete-profile-rule")]
     [InlineData("apply")]
     [InlineData("APPLY-PROFILES")]
     [InlineData("SSH-BACKEND")]

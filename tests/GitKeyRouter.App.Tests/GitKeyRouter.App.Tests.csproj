@@ -19,6 +19,8 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="..\GitKeyRouter.Tests\TestSupport\TestDoubles.cs" Link="TestSupport\TestDoubles.cs" />
+    <Compile Include="..\GitKeyRouter.Tests\TestSupport\TemporaryDirectory.cs" Link="TestSupport\TemporaryDirectory.cs" />
     <ProjectReference Include="..\..\src\GitKeyRouter.App\GitKeyRouter.App.csproj" />
     <ProjectReference Include="..\..\src\GitKeyRouter.Updater\GitKeyRouter.Updater.csproj" />
   </ItemGroup>

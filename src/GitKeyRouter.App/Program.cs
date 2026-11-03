@@ -15,12 +15,18 @@ internal static class Program
             return CliApplication.RunWithoutServices(args);
         }
 
+        if (args.Length > 0 && CliApplication.ValidateArguments(args) is { } argumentError)
+        {
+            ConsoleBridge.Attach();
+            return CliApplication.ReportError(args, 3, "invalid_arguments", argumentError);
+        }
+
         using var instanceGuard = CliApplication.RequiresExclusiveInstance(args)
             ? SingleInstanceGuard.TryAcquire(signalExistingInstance: args.Length == 0)
             : null;
         if (instanceGuard is { IsPrimaryInstance: false })
         {
-            return args.Length == 0 ? 0 : ReportExistingInstance(isCli: true);
+            return args.Length == 0 ? 0 : ReportExistingInstance(args);
         }
 
         ApplicationServices? services = null;
@@ -90,7 +96,7 @@ internal static class Program
             if (args.Length > 0)
             {
                 ConsoleBridge.Attach();
-                Console.Error.WriteLine(exception);
+                return CliApplication.ReportError(args, 2, "startup_failed", exception.Message);
             }
             else
             {
@@ -105,24 +111,10 @@ internal static class Program
         }
     }
 
-    private static int ReportExistingInstance(bool isCli)
+    private static int ReportExistingInstance(string[] args)
     {
-        const string message = "GitKeyRouter 已在当前 Windows 用户下运行。\n\nGitKeyRouter is already running for this Windows user.";
-        if (isCli)
-        {
-            ConsoleBridge.Attach();
-            Console.Error.WriteLine(message.Replace("\n\n", Environment.NewLine, StringComparison.Ordinal));
-        }
-        else
-        {
-            ApplicationConfiguration.Initialize();
-            MessageBox.Show(
-                message,
-                "GitKeyRouter",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
-        }
-
-        return 4;
+        ConsoleBridge.Attach();
+        return CliApplication.ReportError(args, 4, "instance_busy",
+            "GitKeyRouter is already running for this Windows user. Close the GUI (including the tray) and retry this write.");
     }
 }
