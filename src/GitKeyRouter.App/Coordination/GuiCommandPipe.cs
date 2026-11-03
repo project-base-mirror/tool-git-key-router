@@ -48,7 +48,8 @@ public static class GuiCommandPipe
     {
         using var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut,
             PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-        await pipe.ConnectAsync(2_000, cancellationToken).ConfigureAwait(false);
+        // Allow a short queue of callers while the single server finishes a prior write.
+        await pipe.ConnectAsync(10_000, cancellationToken).ConfigureAwait(false);
         await WriteAsync(pipe, request, cancellationToken).ConfigureAwait(false);
         // Do not time out and then retry a write whose outcome may already be committed.
         return await ReadAsync<GuiCommandResponse>(pipe, cancellationToken).ConfigureAwait(false);

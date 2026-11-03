@@ -17,43 +17,14 @@ public sealed partial class MainForm
         {
             BeginInvoke(new Action(async () =>
             {
-                using var operation = GuiOperationGate.Shared.TryEnter();
-                if (operation is null || _closing || IsDisposed || Disposing
-                    || Application.OpenForms.Cast<Form>().Any(form => form != this && form.Modal))
-                {
-                    completion.TrySetResult(GuiCommandPipe.Error(request.Arguments, 4, "gui_busy",
-                        "The GUI is editing or performing an operation. Finish or cancel that operation and retry; the GUI can stay open."));
-                    return;
-                }
-                var wasEnabled = Enabled;
-                Enabled = false;
                 try
                 {
-                    using var input = new StringReader(request.StandardInput ?? string.Empty);
-                    using var output = new StringWriter();
-                    using var error = new StringWriter();
-                    var exitCode = await new CliApplication(_services, input, output, error).RunAsync(request.Arguments);
-                    try
-                    {
-                        if (_pages.TryGetValue(_activePageKey, out var page) && page is IAsyncRefreshable refreshable)
-                            await UiHelpers.RefreshPreservingSelectionAsync(page, refreshable.RefreshAsync);
-                        SetStatus(AppLocalization.T("命令行操作已完成，页面已刷新。", "CLI operation completed; view refreshed."));
-                    }
-                    catch (Exception exception)
-                    {
-                        // A refresh failure must not turn an already committed write into a retryable failure.
-                        _services.Logger.Error("Failed to refresh after a forwarded CLI command.", exception);
-                        SetStatus(AppLocalization.T("命令行操作已完成，请手动刷新页面。", "CLI operation completed; refresh the view manually."));
-                    }
-                    completion.TrySetResult(new GuiCommandResponse(exitCode, output.ToString(), error.ToString()));
+                    // Complete only after the UI action has restored controls and released its lease.
+                    completion.TrySetResult(await ExecuteForwardedCommandAsync(request));
                 }
                 catch (Exception exception)
                 {
                     completion.TrySetResult(GuiCommandPipe.Error(request.Arguments, 2, "operation_failed", exception.Message));
-                }
-                finally
-                {
-                    if (!IsDisposed) Enabled = wasEnabled;
                 }
             }));
         }
@@ -62,5 +33,42 @@ public sealed partial class MainForm
             completion.TrySetResult(GuiCommandPipe.Error(request.Arguments, 4, "gui_busy", "The GUI is closing. Retry shortly."));
         }
         return completion.Task;
+    }
+
+    private async Task<GuiCommandResponse> ExecuteForwardedCommandAsync(GuiCommandRequest request)
+    {
+        using var operation = GuiOperationGate.Shared.TryEnter();
+        if (operation is null || _closing || IsDisposed || Disposing
+            || Application.OpenForms.Cast<Form>().Any(form => form != this && form.Modal))
+        {
+            return GuiCommandPipe.Error(request.Arguments, 4, "gui_busy",
+                "The GUI is editing or performing an operation. Finish or cancel that operation and retry; the GUI can stay open.");
+        }
+        var wasEnabled = Enabled;
+        Enabled = false;
+        try
+        {
+            using var input = new StringReader(request.StandardInput ?? string.Empty);
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+            var exitCode = await new CliApplication(_services, input, output, error).RunAsync(request.Arguments);
+            try
+            {
+                if (_pages.TryGetValue(_activePageKey, out var page) && page is IAsyncRefreshable refreshable)
+                    await UiHelpers.RefreshPreservingSelectionAsync(page, refreshable.RefreshAsync);
+                SetStatus(AppLocalization.T("命令行操作已完成，页面已刷新。", "CLI operation completed; view refreshed."));
+            }
+            catch (Exception exception)
+            {
+                // A refresh failure must not turn an already committed write into a retryable failure.
+                _services.Logger.Error("Failed to refresh after a forwarded CLI command.", exception);
+                SetStatus(AppLocalization.T("命令行操作已完成，请手动刷新页面。", "CLI operation completed; refresh the view manually."));
+            }
+            return new GuiCommandResponse(exitCode, output.ToString(), error.ToString());
+        }
+        finally
+        {
+            if (!IsDisposed) Enabled = wasEnabled;
+        }
     }
 }

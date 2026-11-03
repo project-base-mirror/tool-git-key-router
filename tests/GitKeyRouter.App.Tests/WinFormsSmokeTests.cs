@@ -825,7 +825,7 @@ public sealed class WinFormsSmokeTests
             Pump(all);
             Assert.All(all.Result, result =>
             {
-                Assert.Equal(0, result.ExitCode);
+                Assert.True(result.ExitCode == 0, $"Exit {result.ExitCode}: {result.Output} {result.Error}");
                 Assert.Empty(result.Error);
                 using var json = System.Text.Json.JsonDocument.Parse(result.Output);
                 Assert.Equal(0, json.RootElement.GetProperty("exitCode").GetInt32());
