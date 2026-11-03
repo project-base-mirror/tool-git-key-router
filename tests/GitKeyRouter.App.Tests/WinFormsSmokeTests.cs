@@ -740,16 +740,16 @@ public sealed class WinFormsSmokeTests
         => StaTest.Run(() =>
         {
             var service = GitKeyRouter.Core.Services.GitServiceService.CreateTemplate("Gitee");
-            service.Id = "legacy-gitee";
+            service.Id = "gitea-local";
             using var form = new GitServiceEditForm(service);
             form.Show();
             var id = Assert.IsType<TextBox>(Assert.Single(form.Controls.Find("ServiceId", true)));
             Assert.False(id.ReadOnly);
-            Assert.Equal("legacy-gitee", id.Text);
+            Assert.Equal("gitea-local", id.Text);
             id.Text = "gitee.com";
             Assert.IsType<Button>(form.AcceptButton).PerformClick();
             Assert.Equal("gitee.com", form.ResultService?.Id);
-            Assert.Equal("legacy-gitee", service.Id);
+            Assert.Equal("gitea-local", service.Id);
         });
 
     [Fact]

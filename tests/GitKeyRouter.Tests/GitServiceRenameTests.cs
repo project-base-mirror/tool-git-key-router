@@ -7,8 +7,10 @@ namespace GitKeyRouter.Tests;
 
 public sealed class GitServiceRenameTests
 {
-    [Fact]
-    public async Task RenameUpdatesAllReferencesAndPreservesRoutingAndKeyPaths()
+    [Theory]
+    [InlineData("gitee.com")]
+    [InlineData("gitee-work")]
+    public async Task RenameUpdatesAllReferencesAndPreservesRoutingAndKeyPaths(string newId)
     {
         var config = CreateLegacyConfig();
         var originalJson = JsonSerializer.Serialize(config);
@@ -17,20 +19,20 @@ public sealed class GitServiceRenameTests
         var backup = new NoOpBackupService();
         var service = CreateService(store, backup);
 
-        var result = await service.RenameAsync("legacy-gitee", "gitee.com");
+        var result = await service.RenameAsync("gitea-local", newId);
 
         Assert.True(result.Success);
-        Assert.Null(store.Config.FindService("legacy-gitee"));
-        Assert.Equal("Gitee", store.Config.FindService("gitee.com")?.DisplayName);
+        Assert.Null(store.Config.FindService("gitea-local"));
+        Assert.Equal("Gitee", store.Config.FindService(newId)?.DisplayName);
         var identity = Assert.Single(store.Config.Identities);
-        Assert.Equal("gitee.com", identity.ServiceInstanceId);
+        Assert.Equal(newId, identity.ServiceInstanceId);
         Assert.Equal("gitee-work", identity.HostAlias);
         Assert.Equal("C:/fake/keys/gitee", identity.PrivateKeyPath);
-        Assert.All(store.Config.RepositoryRoutes, route => Assert.Equal("gitee.com", route.ServiceInstanceId));
-        Assert.Contains(store.Config.RepositoryRoutes, route => route.Id == "service-default:gitee.com");
+        Assert.All(store.Config.RepositoryRoutes, route => Assert.Equal(newId, route.ServiceInstanceId));
+        Assert.Contains(store.Config.RepositoryRoutes, route => route.Id == $"service-default:{newId}");
         Assert.Contains(store.Config.RepositoryRoutes, route => route.Id == "team-route");
         var profile = Assert.Single(store.Config.GitProfiles);
-        Assert.Equal("gitee.com", profile.DefaultServiceInstanceId);
+        Assert.Equal(newId, profile.DefaultServiceInstanceId);
         Assert.Equal(identity.Id, profile.DefaultIdentityId);
         Assert.Single(store.Config.GitProfileRules);
         Assert.Equal(expectedRules, OwnerRouteService.BuildExpectedRules(store.Config));
@@ -47,7 +49,7 @@ public sealed class GitServiceRenameTests
         edited.DisplayName = "Gitee Work";
         edited.DefaultIdentityId = "work";
 
-        var result = await CreateService(store, backup).SaveAsync(edited, "legacy-gitee");
+        var result = await CreateService(store, backup).SaveAsync(edited, "gitea-local");
 
         Assert.True(result.Success);
         Assert.Equal("Gitee Work", store.Config.FindService("gitee.com")?.DisplayName);
@@ -57,10 +59,10 @@ public sealed class GitServiceRenameTests
 
     [Theory]
     [InlineData("github.com", "renamed")]
-    [InlineData("legacy-gitee", "github.com")]
-    [InlineData("legacy-gitee", "GITHUB.COM")]
-    [InlineData("legacy-gitee", "bad id")]
-    [InlineData("legacy-gitee", "")]
+    [InlineData("gitea-local", "github.com")]
+    [InlineData("gitea-local", "GITHUB.COM")]
+    [InlineData("gitea-local", "bad id")]
+    [InlineData("gitea-local", "")]
     [InlineData("missing", "gitee.com")]
     public async Task InvalidRenameLeavesOriginalConfigurationUntouched(string id, string newId)
     {
@@ -84,7 +86,7 @@ public sealed class GitServiceRenameTests
         edited.SshPort = -1;
         var backup = new NoOpBackupService();
 
-        Assert.False((await CreateService(store, backup).SaveAsync(edited, "legacy-gitee")).Success);
+        Assert.False((await CreateService(store, backup).SaveAsync(edited, "gitea-local")).Success);
         Assert.Equal(before, JsonSerializer.Serialize(store.Config));
         Assert.Equal(0, backup.SnapshotCount);
     }
@@ -107,7 +109,7 @@ public sealed class GitServiceRenameTests
     private static AppConfig CreateLegacyConfig()
     {
         var gitee = GitServiceService.CreateTemplate("Gitee");
-        gitee.Id = "legacy-gitee";
+        gitee.Id = "gitea-local";
         gitee.DefaultIdentityId = "work";
         var config = new AppConfig
         {

@@ -406,7 +406,7 @@ GitKeyRouter.exe help
 
 `apply` displays the SSH diff and Git rewrite plan by default. Changes are executed only with `--yes`. `apply-profiles` follows the same policy and displays the conditional Git Config diff by default.
 
-The GUI and confirmed `apply`, `apply-profiles`, `ssh-backend`, `trust-host`, and all `save-*` / `delete-*` writes share the exclusive lock to prevent cross-process changes. Their preview modes and other read-only CLI commands do not acquire it. `version` / `--version` and `help` / `--help` return before configuration loading or application-service construction, so scripts and release validation can use them while the GUI is running.
+The GUI and confirmed `apply`, `apply-profiles`, `ssh-backend`, `trust-host`, `rename-service`, and all `save-*` / `delete-*` writes share the exclusive lock to prevent cross-process changes. Their preview modes and other read-only CLI commands do not acquire it. `version` / `--version` and `help` / `--help` return before configuration loading or application-service construction, so scripts and release validation can use them while the GUI is running.
 
 `test-route --connect` also requires a real `--url`, preventing the application from sending network requests for an invented repository.
 

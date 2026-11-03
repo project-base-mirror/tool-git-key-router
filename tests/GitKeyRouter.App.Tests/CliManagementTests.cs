@@ -89,10 +89,10 @@ public sealed class CliManagementTests
     public async Task ServiceRenameUsesSharedReferenceMigrationAndRejectsCollisions()
     {
         using var fixture = new CliFixture();
-        await fixture.SaveAsync("service", """{"Id":"legacy-gitee","DisplayName":"Gitee","ProviderKind":"Generic","HostName":"gitee.com","WebBaseUrl":"https://gitee.com"}""");
-        var renamed = await fixture.RunAsync("rename-service", "legacy-gitee", "gitee.com", "--yes", "--json");
+        await fixture.SaveAsync("service", """{"Id":"gitea-local","DisplayName":"Gitee","ProviderKind":"Generic","HostName":"gitee.com","WebBaseUrl":"https://gitee.com"}""");
+        var renamed = await fixture.RunAsync("rename-service", "gitea-local", "gitee.com", "--yes", "--json");
         Assert.Equal(0, renamed.GetProperty("exitCode").GetInt32());
-        Assert.Null((await fixture.Store.LoadAsync()).FindService("legacy-gitee"));
+        Assert.Null((await fixture.Store.LoadAsync()).FindService("gitea-local"));
         Assert.NotNull((await fixture.Store.LoadAsync()).FindService("gitee.com"));
         var collision = await fixture.RunAsync("rename-service", "gitee.com", "github.com", "--yes", "--json");
         Assert.Equal(2, collision.GetProperty("exitCode").GetInt32());
