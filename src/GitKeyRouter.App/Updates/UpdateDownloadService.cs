@@ -20,6 +20,10 @@ public sealed class UpdateDownloadService
         @"^(?<hash>[A-Fa-f0-9]{64})\s+\*?(?<name>[^\r\n]+)$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
+    // GUI entry points already reject duplicate checks. Also serialize downloads across
+    // service instances so cache validation/publication cannot race within the process.
+    private static readonly SemaphoreSlim DownloadGate = new(1, 1);
+
     private readonly string _rootDirectory;
     private readonly HttpClient _httpClient;
 
@@ -54,84 +58,104 @@ public sealed class UpdateDownloadService
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(DownloadTimeout);
 
-        var checksumText = await DownloadTextBoundedAsync(checksumUri, MaxChecksumBytes, timeout.Token).ConfigureAwait(false);
+        await DownloadGate.WaitAsync(timeout.Token).ConfigureAwait(false);
+        try
+        {
+            return await DownloadInstallerAsync(release, packageKind, packageUri, checksumUri, fileName, timeout.Token)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            DownloadGate.Release();
+        }
+    }
+
+    private async Task<VerifiedUpdatePackage> DownloadInstallerAsync(
+        UpdateReleaseInfo release,
+        UpdatePackageKind packageKind,
+        Uri packageUri,
+        Uri checksumUri,
+        string fileName,
+        CancellationToken cancellationToken)
+    {
+        var checksumText = await DownloadTextBoundedAsync(checksumUri, MaxChecksumBytes, cancellationToken).ConfigureAwait(false);
         var expectedSha256 = ParseExpectedSha256(checksumText, fileName);
 
         var versionDirectory = Path.Combine(_rootDirectory, $"v{release.Version}");
         Directory.CreateDirectory(versionDirectory);
         var destinationPath = Path.Combine(versionDirectory, fileName);
         if (File.Exists(destinationPath)
-            && string.Equals(await ComputeSha256Async(destinationPath, timeout.Token).ConfigureAwait(false),
+            && string.Equals(await ComputeSha256Async(destinationPath, cancellationToken).ConfigureAwait(false),
                 expectedSha256,
                 StringComparison.OrdinalIgnoreCase))
         {
             return new VerifiedUpdatePackage(destinationPath, fileName, expectedSha256, release.Version, packageKind);
         }
 
-        var partialPath = destinationPath + ".partial";
-        if (File.Exists(partialPath))
-        {
-            File.Delete(partialPath);
-        }
+        // Own only this attempt's staging file; never delete another download's file.
+        var partialPath = destinationPath + $".{Guid.NewGuid():N}.partial";
 
         try
         {
             using var response = await _httpClient.GetAsync(
                 packageUri,
                 HttpCompletionOption.ResponseHeadersRead,
-                timeout.Token).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
             if (response.Content.Headers.ContentLength is long contentLength && contentLength > MaxPackageBytes)
             {
                 throw new InvalidDataException("The update installer exceeds the maximum allowed size.");
             }
 
-            await using var input = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
-            await using var output = new FileStream(
+            await using var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            await using (var output = new FileStream(
                 partialPath,
                 FileMode.CreateNew,
                 FileAccess.Write,
                 FileShare.None,
                 128 * 1024,
-                FileOptions.Asynchronous | FileOptions.SequentialScan);
-
-            using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-            var buffer = ArrayPool<byte>.Shared.Rent(128 * 1024);
-            long total = 0;
-            try
+                FileOptions.Asynchronous | FileOptions.SequentialScan))
             {
-                while (true)
+                using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+                var buffer = ArrayPool<byte>.Shared.Rent(128 * 1024);
+                long total = 0;
+                try
                 {
-                    var read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), timeout.Token).ConfigureAwait(false);
-                    if (read == 0)
+                    while (true)
                     {
-                        break;
-                    }
+                        var read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken).ConfigureAwait(false);
+                        if (read == 0)
+                        {
+                            break;
+                        }
 
-                    total += read;
-                    if (total > MaxPackageBytes)
-                    {
-                        throw new InvalidDataException("The update installer exceeds the maximum allowed size.");
-                    }
+                        total += read;
+                        if (total > MaxPackageBytes)
+                        {
+                            throw new InvalidDataException("The update installer exceeds the maximum allowed size.");
+                        }
 
-                    hash.AppendData(buffer, 0, read);
-                    await output.WriteAsync(buffer.AsMemory(0, read), timeout.Token).ConfigureAwait(false);
+                        hash.AppendData(buffer, 0, read);
+                        await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                    }
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(buffer);
+                }
+
+                await output.FlushAsync(cancellationToken).ConfigureAwait(false);
+                output.Flush(flushToDisk: true);
+
+                var actualHash = Convert.ToHexString(hash.GetHashAndReset());
+                if (!FixedTimeHexEquals(actualHash, expectedSha256))
+                {
+                    throw new InvalidDataException("The downloaded update installer failed SHA-256 verification.");
                 }
             }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(buffer);
-            }
 
-            await output.FlushAsync(timeout.Token).ConfigureAwait(false);
-            output.Flush(flushToDisk: true);
-
-            var actualHash = Convert.ToHexString(hash.GetHashAndReset());
-            if (!FixedTimeHexEquals(actualHash, expectedSha256))
-            {
-                throw new InvalidDataException("The downloaded update installer failed SHA-256 verification.");
-            }
-
+            // Windows cannot rename a FileShare.None stream until it is disposed.
+            cancellationToken.ThrowIfCancellationRequested();
             File.Move(partialPath, destinationPath, overwrite: true);
             return new VerifiedUpdatePackage(destinationPath, fileName, expectedSha256, release.Version, packageKind);
         }

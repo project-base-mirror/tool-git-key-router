@@ -35,6 +35,10 @@ GitHub Releases provides Windows x64 packages:
 
 Both MSI packages use a normal multi-file layout and support in-place upgrades, repair, and uninstall through Windows Installed apps. The wizard allows changing the install directory. If installation fails, look for the newest `MSI*.log` under `%TEMP%`. Both ZIP packages remain single-file applications for portable use.
 
+Update checks read public release metadata first. After confirmation, installer builds download the package, verify SHA-256, and launch installation. Downloads close their staging file before publication; concurrent requests wait and reuse the verified cache. Cancelled or failed downloads can be retried. Error messages distinguish metadata check failures from download, verification, or launch failures.
+
+**Upgrading from v0.4.25 / v0.4.26:** If in-app updates report a file in use, download the MSI matching your current installation from the [latest Release](https://github.com/project-base-mirror/tool-git-key-router/releases/latest), exit GitKeyRouter including the tray icon, and run the MSI for an in-place upgrade. v0.4.27 fixes renaming the download staging file before its handle was closed.
+
 Building from source requires the .NET 10 SDK. The self-contained MSI and ZIP do not require an SDK or preinstalled runtime for normal use.
 
 ## Safety and operational boundaries

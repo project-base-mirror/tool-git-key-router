@@ -532,6 +532,7 @@ public sealed class MainForm : Form
             _trayCheckUpdatesMenuItem.Enabled = false;
         }
 
+        var handlingAvailableUpdate = false;
         try
         {
             SetStatus(AppLocalization.T("正在检查更新…", "Checking for updates…"));
@@ -555,20 +556,29 @@ public sealed class MainForm : Form
                 return;
             }
 
+            handlingAvailableUpdate = true;
             await HandleAvailableUpdateAsync(release);
         }
         catch (Exception exception)
         {
-            _services.Logger.Error("Update check failed.", exception);
-            SetStatus(AppLocalization.T("检查更新失败", "Update check failed"));
+            _services.Logger.Error(handlingAvailableUpdate ? "Update download or launch failed." : "Update check failed.", exception);
+            SetStatus(handlingAvailableUpdate
+                ? AppLocalization.T("更新未完成", "Update did not complete")
+                : AppLocalization.T("检查更新失败", "Update check failed"));
             if (showCurrentMessage)
             {
                 MessageBox.Show(
                     this,
-                    AppLocalization.T(
-                        $"无法检查更新。\r\n\r\n{exception.Message}",
-                        $"Unable to check for updates.\r\n\r\n{exception.Message}"),
-                    AppLocalization.T("检查更新", "Check for updates"),
+                    handlingAvailableUpdate
+                        ? AppLocalization.T(
+                            $"已找到新版本，但下载、校验或启动更新失败。\r\n\r\n{exception.Message}",
+                            $"A new version was found, but downloading, verifying, or launching the update failed.\r\n\r\n{exception.Message}")
+                        : AppLocalization.T(
+                            $"无法检查更新。\r\n\r\n{exception.Message}",
+                            $"Unable to check for updates.\r\n\r\n{exception.Message}"),
+                    handlingAvailableUpdate
+                        ? AppLocalization.T("更新未完成", "Update did not complete")
+                        : AppLocalization.T("检查更新", "Check for updates"),
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
             }
