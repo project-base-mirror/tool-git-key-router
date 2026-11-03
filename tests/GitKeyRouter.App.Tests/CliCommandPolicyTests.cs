@@ -44,6 +44,7 @@ public sealed class CliCommandPolicyTests
     }
 
     [Theory]
+    [InlineData("rename-service")]
     [InlineData("save-service")]
     [InlineData("SAVE-IDENTITY")]
     [InlineData("save-route")]

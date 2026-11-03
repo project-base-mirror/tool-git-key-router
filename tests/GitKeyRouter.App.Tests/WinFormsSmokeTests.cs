@@ -735,6 +735,33 @@ public sealed class WinFormsSmokeTests
         }
     }
 
+    [Fact]
+    public void CustomServiceIdCanBeEditedWithoutMutatingOriginalRecord()
+        => StaTest.Run(() =>
+        {
+            var service = GitKeyRouter.Core.Services.GitServiceService.CreateTemplate("Gitee");
+            service.Id = "legacy-gitee";
+            using var form = new GitServiceEditForm(service);
+            form.Show();
+            var id = Assert.IsType<TextBox>(Assert.Single(form.Controls.Find("ServiceId", true)));
+            Assert.False(id.ReadOnly);
+            Assert.Equal("legacy-gitee", id.Text);
+            id.Text = "gitee.com";
+            Assert.IsType<Button>(form.AcceptButton).PerformClick();
+            Assert.Equal("gitee.com", form.ResultService?.Id);
+            Assert.Equal("legacy-gitee", service.Id);
+        });
+
+    [Fact]
+    public void BuiltInServiceIdRemainsReadOnly()
+        => StaTest.Run(() =>
+        {
+            using var form = new GitServiceEditForm(GitServiceInstance.CreateGitHubCom());
+            var id = Assert.IsType<TextBox>(Assert.Single(form.Controls.Find("ServiceId", true)));
+            Assert.True(id.ReadOnly);
+            Assert.Equal("github.com", id.Text);
+        });
+
     private static class StaTest
     {
         public static void Run(Action action)

@@ -448,6 +448,8 @@ GitKeyRouter.exe delete-route team-route --yes --json
 
 写入前请关闭 GUI（包括托盘），占用时返回结构化的 `instance_busy` 错误。参数错误在启动恢复和写入前被拒绝。配置、身份列表仅包含密钥路径，不读取密钥正文；保存身份也不会创建、导入或删除密钥。`test-route --json` 不接受 `--connect`，需要联网测试时单独使用现有文本命令。
 
+服务编辑窗口现在显示可编辑的“服务 ID”（内置 GitHub.com 只读）。已有非内置服务也可以用 `GitKeyRouter.exe rename-service <当前Id> <新Id> --yes --json` 改名；它会在一次带备份、并发校验的保存中同步更新身份、路由、服务默认路由 ID 和 Profile 引用，拒绝已有 ID 冲突，不修改密钥路径或 HostAlias。Gitee 推荐使用 `gitee.com`。读取旧配置不会擅自改名；自建模板的新服务留空 ID 时按主机名生成。
+
 最小记录示例（路径替换为已有密钥路径，不要放私钥正文）：
 
 ```json

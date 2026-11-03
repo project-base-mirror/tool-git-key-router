@@ -1,3 +1,4 @@
+using System.Text.Json;
 using GitKeyRouter.Core.Abstractions;
 using GitKeyRouter.Core.Models;
 using GitKeyRouter.Core.Validation;
@@ -35,13 +36,82 @@ public sealed class GitServiceService
             .ToList();
     }
 
+    public Task<OperationResult<GitServiceInstance>> SaveAsync(
+        GitServiceInstance service,
+        CancellationToken cancellationToken = default)
+        => SaveAsync(service, originalId: null, cancellationToken);
+
     public async Task<OperationResult<GitServiceInstance>> SaveAsync(
         GitServiceInstance service,
+        string? originalId,
         CancellationToken cancellationToken = default)
     {
         var snapshot = await _configStore.LoadSnapshotAsync(cancellationToken).ConfigureAwait(false);
-        var config = snapshot.Config;
-        var existing = config.FindService(service.Id);
+        return await SaveAsync(service, originalId, snapshot, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<OperationResult<GitServiceInstance>> RenameAsync(
+        string id,
+        string newId,
+        CancellationToken cancellationToken = default)
+    {
+        var snapshot = await _configStore.LoadSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        var existing = snapshot.Config.FindService(id);
+        if (existing is null)
+        {
+            return OperationResult<GitServiceInstance>.Fail("Git service does not exist.");
+        }
+
+        var service = JsonSerializer.Deserialize<GitServiceInstance>(JsonSerializer.Serialize(existing))!;
+        service.Id = newId;
+        return await SaveAsync(service, id, snapshot, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<OperationResult<GitServiceInstance>> SaveAsync(
+        GitServiceInstance service,
+        string? originalId,
+        AppConfigSnapshot snapshot,
+        CancellationToken cancellationToken)
+    {
+        // Validate a detached candidate so a rejected rename cannot mutate the loaded snapshot.
+        var config = JsonSerializer.Deserialize<AppConfig>(JsonSerializer.Serialize(snapshot.Config))!;
+        var existing = config.FindService(originalId ?? service.Id);
+        if (originalId is not null && existing is null)
+        {
+            return OperationResult<GitServiceInstance>.Fail("The original Git service no longer exists. Reload and retry.");
+        }
+
+        if (originalId is not null && string.IsNullOrWhiteSpace(service.Id))
+        {
+            return OperationResult<GitServiceInstance>.Fail("A new service ID is required.");
+        }
+
+        var newId = NormalizeId(service.Id, service.DisplayName, service.HostName);
+        var renamed = existing is not null && !string.Equals(existing.Id, newId, StringComparison.OrdinalIgnoreCase);
+        if (renamed && existing!.IsBuiltIn)
+        {
+            return OperationResult<GitServiceInstance>.Fail("The built-in GitHub.com service ID cannot be changed.");
+        }
+
+        if ((existing is null || renamed)
+            && (newId.Length > 128 || !newId.All(character => char.IsLetterOrDigit(character) || character is '.' or '-' or '_')))
+        {
+            return OperationResult<GitServiceInstance>.Fail("Service ID must use letters, digits, dots, hyphens or underscores (up to 128 characters).");
+        }
+
+        if (renamed && config.FindService(newId) is not null)
+        {
+            return OperationResult<GitServiceInstance>.Fail("The new service ID is already in use.");
+        }
+
+        if (renamed && config.RepositoryRoutes.Any(route =>
+                string.Equals(route.Id, $"service-default:{newId}", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(route.ServiceInstanceId, existing!.Id, StringComparison.OrdinalIgnoreCase)))
+        {
+            return OperationResult<GitServiceInstance>.Fail("The new service ID conflicts with an existing managed route ID.");
+        }
+
+        var existingIndex = existing is null ? -1 : config.GitServices.IndexOf(existing);
         if (existing?.IsBuiltIn == true)
         {
             service.Id = existing.Id;
@@ -55,7 +125,13 @@ public sealed class GitServiceService
             service.IsBuiltIn = true;
         }
 
-        service.Id = NormalizeId(service.Id, service.DisplayName, service.HostName);
+        service.Id = newId;
+        if (renamed)
+        {
+            RenameReferences(config, existing!.Id, newId);
+            config.GitServices[existingIndex] = service;
+        }
+
         service.HostName = service.HostName.Trim();
         service.SshUser = service.SshUser.Trim();
         service.WebBaseUrl = service.WebBaseUrl.TrimEnd('/');
@@ -66,11 +142,12 @@ public sealed class GitServiceService
             return OperationResult<GitServiceInstance>.Fail("Git service validation failed.", validation.Errors.ToArray());
         }
 
-        await _backupService.CreateSnapshotAsync($"Save Git service: {service.DisplayName}", cancellationToken).ConfigureAwait(false);
-        var index = config.GitServices.FindIndex(item => string.Equals(item.Id, service.Id, StringComparison.OrdinalIgnoreCase));
-        if (index >= 0)
+        await _backupService.CreateSnapshotAsync(renamed
+            ? $"Rename Git service: {existing!.Id} -> {service.Id}"
+            : $"Save Git service: {service.DisplayName}", cancellationToken).ConfigureAwait(false);
+        if (existingIndex >= 0)
         {
-            config.GitServices[index] = service;
+            config.GitServices[existingIndex] = service;
         }
         else
         {
@@ -80,7 +157,31 @@ public sealed class GitServiceService
         config.SynchronizeDefaultServiceRoutes();
 
         await _configStore.SaveIfUnchangedAsync(config, snapshot.Version, cancellationToken).ConfigureAwait(false);
-        return OperationResult<GitServiceInstance>.Ok(service, "Git service saved.");
+        return OperationResult<GitServiceInstance>.Ok(service, renamed
+            ? "Git service saved; identity, route and profile references were updated."
+            : "Git service saved.");
+    }
+
+    private static void RenameReferences(AppConfig config, string oldId, string newId)
+    {
+        foreach (var identity in config.Identities.Where(item => string.Equals(item.ServiceInstanceId, oldId, StringComparison.OrdinalIgnoreCase)))
+        {
+            identity.ServiceInstanceId = newId;
+        }
+
+        foreach (var route in config.RepositoryRoutes.Where(item => string.Equals(item.ServiceInstanceId, oldId, StringComparison.OrdinalIgnoreCase)))
+        {
+            route.ServiceInstanceId = newId;
+            if (string.Equals(route.Id, $"service-default:{oldId}", StringComparison.OrdinalIgnoreCase))
+            {
+                route.Id = $"service-default:{newId}";
+            }
+        }
+
+        foreach (var profile in config.GitProfiles.Where(item => string.Equals(item.DefaultServiceInstanceId, oldId, StringComparison.OrdinalIgnoreCase)))
+        {
+            profile.DefaultServiceInstanceId = newId;
+        }
     }
 
     public async Task<OperationResult> DeleteAsync(string id, CancellationToken cancellationToken = default)
@@ -193,13 +294,14 @@ public sealed class GitServiceService
             },
             "GitLab.com" => new GitServiceInstance
             {
+                Id = "gitlab.com",
                 DisplayName = "GitLab.com",
                 ProviderKind = GitProviderKind.GitLab,
                 HostName = "gitlab.com",
                 SshUser = "git",
                 WebBaseUrl = "https://gitlab.com"
             },
-            "自建 GitLab" => new GitServiceInstance { DisplayName = "自建 GitLab", ProviderKind = GitProviderKind.GitLab, SshUser = "git" },
+            "自建 GitLab" => new GitServiceInstance { Id = string.Empty, DisplayName = "自建 GitLab", ProviderKind = GitProviderKind.GitLab, SshUser = "git" },
             "Gitea Local" => new GitServiceInstance
             {
                 Id = "gitea-local",
@@ -220,16 +322,17 @@ public sealed class GitServiceService
                 SshUser = "git",
                 WebBaseUrl = "https://git.policoil.top"
             },
-            "自建 Gitea" => new GitServiceInstance { DisplayName = "自建 Gitea", ProviderKind = GitProviderKind.Gitea, SshPort = 22, SshUser = "git" },
+            "自建 Gitea" => new GitServiceInstance { Id = string.Empty, DisplayName = "自建 Gitea", ProviderKind = GitProviderKind.Gitea, SshPort = 22, SshUser = "git" },
             "Gogs" => CreateSelfHostedGenericTemplate("Gogs"),
             "OneDev" => CreateSelfHostedGenericTemplate("OneDev"),
             "GitBucket" => CreateSelfHostedGenericTemplate("GitBucket"),
-            _ => new GitServiceInstance { DisplayName = "自定义 Git 服务", ProviderKind = GitProviderKind.Generic, SshUser = "git" }
+            _ => new GitServiceInstance { Id = string.Empty, DisplayName = "自定义 Git 服务", ProviderKind = GitProviderKind.Generic, SshUser = "git" }
         };
 
     private static GitServiceInstance CreateSelfHostedGenericTemplate(string displayName)
         => new()
         {
+            Id = string.Empty,
             DisplayName = displayName,
             ProviderKind = GitProviderKind.Generic,
             SshPort = 22,

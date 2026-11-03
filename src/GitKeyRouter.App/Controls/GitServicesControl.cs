@@ -20,7 +20,7 @@ public sealed class GitServicesControl : UserControl, IAsyncRefreshable
         _status = status;
         var header = UiHelpers.CreatePageHeader(
             AppLocalization.T("Git 服务", "Git Services"),
-            AppLocalization.T("管理 GitHub.com、GitLab、Gitea 与其他自建 Git 服务实例", "Manage GitHub.com, GitLab, Gitea, and other self-hosted Git services"),
+            AppLocalization.T("管理 GitHub.com、GitLab、Gitee、Gitea 与其他自建 Git 服务实例", "Manage GitHub.com, GitLab, Gitee, Gitea, and other self-hosted Git services"),
             AppLocalization.T(
                 "Git 服务描述远端主机和连接方式。\r\n\r\n• 先新建服务，再到“Git 身份”创建账号和密钥。\r\n• 默认身份是该服务的兜底身份。\r\n• Owner 和仓库路由会优先于默认身份。\r\n• 选择默认身份后，使用“应用服务配置”同步 SSH 与 Git 重写规则。\r\n• 应用前会显示变更预览。",
                 "A Git service describes a remote host and how to connect to it.\r\n\r\n• Create the service first, then create an account and key under Git Identities.\r\n• The default identity is the fallback for this service.\r\n• Owner and repository routes override the default identity.\r\n• After selecting a default identity, use Apply service configuration to synchronize SSH and Git rewrite rules.\r\n• Changes are previewed before they are applied."));
@@ -91,12 +91,12 @@ public sealed class GitServicesControl : UserControl, IAsyncRefreshable
             return;
         }
 
-        await SaveAsync(form.ResultService);
+        await SaveAsync(form.ResultService, selected.Id);
     }
 
-    private async Task SaveAsync(GitServiceInstance service)
+    private async Task SaveAsync(GitServiceInstance service, string? originalId = null)
     {
-        var result = await _services.GitServiceService.SaveAsync(service);
+        var result = await _services.GitServiceService.SaveAsync(service, originalId);
         if (!result.Success)
         {
             UiHelpers.ShowErrors(this, result);

@@ -75,10 +75,29 @@ public sealed class CliManagementTests
         }));
         var rules = await fixture.RunAsync("list-profile-rules", "--json");
         Assert.Equal("work-dir", rules.GetProperty("data")[0].GetProperty("Id").GetString());
+        var preview = await fixture.RunAsync("apply-profiles", "--json");
+        Assert.Equal(1, preview.GetProperty("exitCode").GetInt32());
+        Assert.Single(preview.GetProperty("data").GetProperty("preview").GetProperty("ProfileFiles").EnumerateObject());
+        Assert.False(Directory.Exists(Path.Combine(fixture.Paths.AppDataDirectory, "git-profiles")));
         var resolved = await fixture.RunAsync("resolve-profile", Path.Combine(directory, "repo"), "--json");
         Assert.Equal("work", resolved.GetProperty("data").GetProperty("Id").GetString());
         await fixture.RunAsync("delete-profile", "work", "--yes", "--json");
         Assert.Empty((await fixture.Store.LoadAsync()).GitProfileRules);
+    }
+
+    [Fact]
+    public async Task ServiceRenameUsesSharedReferenceMigrationAndRejectsCollisions()
+    {
+        using var fixture = new CliFixture();
+        await fixture.SaveAsync("service", """{"Id":"legacy-gitee","DisplayName":"Gitee","ProviderKind":"Generic","HostName":"gitee.com","WebBaseUrl":"https://gitee.com"}""");
+        var renamed = await fixture.RunAsync("rename-service", "legacy-gitee", "gitee.com", "--yes", "--json");
+        Assert.Equal(0, renamed.GetProperty("exitCode").GetInt32());
+        Assert.Null((await fixture.Store.LoadAsync()).FindService("legacy-gitee"));
+        Assert.NotNull((await fixture.Store.LoadAsync()).FindService("gitee.com"));
+        var collision = await fixture.RunAsync("rename-service", "gitee.com", "github.com", "--yes", "--json");
+        Assert.Equal(2, collision.GetProperty("exitCode").GetInt32());
+        Assert.NotNull((await fixture.Store.LoadAsync()).FindService("gitee.com"));
+        Assert.False(File.Exists(fixture.Paths.SshConfigPath));
     }
 
     [Theory]
@@ -90,6 +109,8 @@ public sealed class CliManagementTests
     [InlineData("parse-url --json")]
     [InlineData("test-route team --connect --json")]
     [InlineData("unknown --json")]
+    [InlineData("rename-service old new --json")]
+    [InlineData("rename-service old --yes --json")]
     public async Task InvalidArgumentsReturnOneJsonErrorAndNeverWrite(string command)
     {
         using var fixture = new CliFixture();

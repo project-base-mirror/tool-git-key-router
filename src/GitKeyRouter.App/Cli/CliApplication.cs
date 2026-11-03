@@ -633,6 +633,7 @@ public sealed partial class CliApplication
     {
         Console.WriteLine("GitKeyRouter commands:");
         Console.WriteLine("  list-templates [--json]");
+        Console.WriteLine("  rename-service <current-id> <new-id> --yes [--json] (updates all app references)");
         Console.WriteLine("  list-profile-rules [--json]");
         Console.WriteLine("  save-service|save-identity|save-route|save-profile|save-profile-rule --file <record.json|-> --yes [--json]");
         Console.WriteLine("  delete-service|delete-identity|delete-route|delete-profile|delete-profile-rule <id> --yes [--json]");

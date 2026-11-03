@@ -7,6 +7,11 @@ namespace GitKeyRouter.App.Forms;
 public sealed class GitServiceEditForm : Form
 {
     private readonly ComboBox _template = new() { DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly TextBox _id = new()
+    {
+        Name = "ServiceId",
+        PlaceholderText = AppLocalization.T("新建时留空，按主机名生成", "Leave blank for a new service to use its host name")
+    };
     private readonly TextBox _displayName = new();
     private readonly ComboBox _provider = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly TextBox _hostName = new();
@@ -27,13 +32,12 @@ public sealed class GitServiceEditForm : Form
         Visible = false
     };
     private readonly GitServiceInstance? _original;
-    private string _suggestedId = string.Empty;
 
     public GitServiceEditForm(GitServiceInstance? service = null, IReadOnlyList<GitIdentity>? identities = null)
     {
         _original = service;
         Text = service is null ? "新建 Git 服务" : "编辑 Git 服务";
-        UiHelpers.ConfigureDialog(this, 680, 500);
+        UiHelpers.ConfigureDialog(this, 680, 540);
 
         _template.Items.AddRange(GitServiceService.AvailableTemplates.Cast<object>().ToArray());
         _provider.Items.AddRange(Enum.GetValues<GitProviderKind>().Cast<object>().ToArray());
@@ -51,16 +55,17 @@ public sealed class GitServiceEditForm : Form
 
         var table = UiHelpers.CreateCompactDialogTable(2, 140);
         UiHelpers.AddCompactDialogRow(table, 0, "快速模板", _template);
-        UiHelpers.AddCompactDialogRow(table, 1, "显示名称", _displayName);
-        UiHelpers.AddCompactDialogRow(table, 2, "服务类型", _provider);
-        UiHelpers.AddCompactDialogRow(table, 3, "域名 / 主机名", _hostName);
-        UiHelpers.AddCompactDialogRow(table, 4, "SSH 端口", _sshPort);
-        UiHelpers.AddCompactDialogRow(table, 5, "SSH 用户", _sshUser);
-        UiHelpers.AddCompactDialogRow(table, 6, "Web Base URL", _webBaseUrl);
-        UiHelpers.AddCompactDialogRow(table, 7, "默认身份", _defaultIdentity);
-        UiHelpers.AddCompactDialogContent(table, 8, _defaultIdentityHint, 1);
-        UiHelpers.AddCompactDialogRow(table, 9, "扩展 URL", _extendedSshUrls);
-        UiHelpers.AddCompactDialogRow(table, 10, "HTTP 兼容", _allowInsecureHttp);
+        UiHelpers.AddCompactDialogRow(table, 1, AppLocalization.T("服务 ID", "Service ID"), _id);
+        UiHelpers.AddCompactDialogRow(table, 2, "显示名称", _displayName);
+        UiHelpers.AddCompactDialogRow(table, 3, "服务类型", _provider);
+        UiHelpers.AddCompactDialogRow(table, 4, "域名 / 主机名", _hostName);
+        UiHelpers.AddCompactDialogRow(table, 5, "SSH 端口", _sshPort);
+        UiHelpers.AddCompactDialogRow(table, 6, "SSH 用户", _sshUser);
+        UiHelpers.AddCompactDialogRow(table, 7, "Web Base URL", _webBaseUrl);
+        UiHelpers.AddCompactDialogRow(table, 8, "默认身份", _defaultIdentity);
+        UiHelpers.AddCompactDialogContent(table, 9, _defaultIdentityHint, 1);
+        UiHelpers.AddCompactDialogRow(table, 10, "扩展 URL", _extendedSshUrls);
+        UiHelpers.AddCompactDialogRow(table, 11, "HTTP 兼容", _allowInsecureHttp);
 
         var save = UiHelpers.CreateDialogButton("保存", DialogResult.OK, primary: true);
         var cancel = UiHelpers.CreateDialogButton("取消", DialogResult.Cancel);
@@ -83,6 +88,7 @@ public sealed class GitServiceEditForm : Form
             _template.Enabled = false;
             if (service.IsBuiltIn)
             {
+                _id.ReadOnly = true;
                 _provider.Enabled = false;
                 _hostName.ReadOnly = true;
                 _sshPort.Enabled = false;
@@ -104,12 +110,12 @@ public sealed class GitServiceEditForm : Form
         }
 
         var service = GitServiceService.CreateTemplate(template);
-        _suggestedId = service.Id;
         LoadService(service);
     }
 
     private void LoadService(GitServiceInstance service)
     {
+        _id.Text = service.Id;
         _displayName.Text = service.DisplayName;
         _provider.SelectedItem = service.ProviderKind;
         _hostName.Text = service.HostName;
@@ -137,19 +143,20 @@ public sealed class GitServiceEditForm : Form
 
     private void SaveClicked(object? sender, EventArgs eventArgs)
     {
-        if (string.IsNullOrWhiteSpace(_displayName.Text)
+        if ((_original is not null && string.IsNullOrWhiteSpace(_id.Text))
+            || string.IsNullOrWhiteSpace(_displayName.Text)
             || string.IsNullOrWhiteSpace(_hostName.Text)
             || string.IsNullOrWhiteSpace(_sshUser.Text)
             || string.IsNullOrWhiteSpace(_webBaseUrl.Text))
         {
-            MessageBox.Show(this, "显示名称、主机名、SSH 用户和 Web Base URL 为必填项。", "GitKeyRouter", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(this, AppLocalization.T("显示名称、主机名、SSH 用户和 Web Base URL 为必填项；编辑已有服务时 ID 也不能为空。", "Display name, host, SSH user and Web Base URL are required; an existing service must also have an ID."), "GitKeyRouter", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             DialogResult = DialogResult.None;
             return;
         }
 
         ResultService = new GitServiceInstance
         {
-            Id = _original?.Id ?? _suggestedId,
+            Id = _id.Text.Trim(),
             DisplayName = _displayName.Text.Trim(),
             ProviderKind = _provider.SelectedItem is GitProviderKind kind ? kind : GitProviderKind.Generic,
             HostName = _hostName.Text.Trim(),

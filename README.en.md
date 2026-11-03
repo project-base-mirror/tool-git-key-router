@@ -442,6 +442,8 @@ The matching `delete-service`, `delete-identity`, `delete-route`, `delete-profil
 
 Close the GUI (including its tray icon) before writing; an active instance produces a structured `instance_busy` error. Invalid arguments are rejected before recovery or writes. Identity records contain key paths only; saving an identity does not read, create, import or delete keys. `test-route --json` rejects `--connect`; use the existing text command for an explicit network test.
 
+The service editor now exposes an editable **Service ID** (read-only for built-in GitHub.com). Rename an existing custom service with `GitKeyRouter.exe rename-service <current-id> <new-id> --yes --json`. A single backed-up, concurrency-checked save updates identity, route, managed default-route ID, and profile references, rejects ID collisions, and preserves key paths and HostAlias. The suggested Gitee ID is `gitee.com`. Loading old configurations never silently renames them; new self-hosted templates derive a readable ID from the host when the ID is left blank.
+
 Minimal record examples (replace paths with existing key paths; never put private-key contents here):
 
 ```json

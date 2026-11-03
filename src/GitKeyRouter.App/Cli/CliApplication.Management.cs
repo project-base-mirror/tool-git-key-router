@@ -26,7 +26,7 @@ public sealed partial class CliApplication
     };
 
     private static bool IsManagementCommand(string command)
-        => command is "save-service" or "save-identity" or "save-route" or "save-profile" or "save-profile-rule"
+        => command is "rename-service" or "save-service" or "save-identity" or "save-route" or "save-profile" or "save-profile-rule"
             or "delete-service" or "delete-identity" or "delete-route" or "delete-profile" or "delete-profile-rule";
 
     public static bool WantsJson(string[] args)
@@ -73,6 +73,7 @@ public sealed partial class CliApplication
         {
             "diagnose" or "list-services" or "list-identities" or "list-profiles" or "list-routes"
                 or "list-profile-rules" or "list-templates" => (0, "--json", ""),
+            "rename-service" => (2, "--json --yes", ""),
             "parse-url" => (1, "--json", ""),
             "resolve-profile" => (1, "--json", "--url"),
             "test-route" => (1, "--json --connect", "--service --url"),
@@ -187,6 +188,7 @@ public sealed partial class CliApplication
     {
         OperationResult result = command switch
         {
+            "rename-service" => await _services.GitServiceService.RenameAsync(args[0], args[1], cancellationToken),
             "save-service" => await SaveServiceAsync(await ReadRecordAsync<GitServiceInstance>(args, cancellationToken), cancellationToken),
             "save-identity" => await _services.IdentityService.SaveAsync(await ReadRecordAsync<GitIdentity>(args, cancellationToken), cancellationToken),
             "save-route" => await _services.OwnerRouteService.SaveAsync(await ReadRecordAsync<RepositoryRoute>(args, cancellationToken), cancellationToken: cancellationToken),
